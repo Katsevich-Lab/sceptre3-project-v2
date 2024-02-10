@@ -33,4 +33,7 @@ nextflow run "/Users/timbarry/research_code/sceptre-pipeline/main.nf" \
  --grna_assignment_method mixture \
  --pair_pod_size 500 \
  --grna_pod_size 25 \
- --trial -resume
+ --response_n_nonzero_range_lower 0.07 \
+ --trial \
+ --pipeline_stop run_qc \
+ -resume \
