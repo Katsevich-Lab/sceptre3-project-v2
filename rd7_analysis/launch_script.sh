@@ -24,8 +24,7 @@ output_directory=$HOME"/sceptre_outputs"
 #################
 # Invoke pipeline
 #################
-# nextflow run timothy-barry/sceptre-pipeline -r main \
-nextflow run "/Users/timbarry/research_code/sceptre-pipeline/main.nf" \
+nextflow run timothy-barry/sceptre-pipeline -r main \
  --sceptre_object_fp $sceptre_object_fp \
  --response_odm_fp $response_odm_fp \
  --grna_odm_fp $grna_odm_fp \
@@ -34,6 +33,4 @@ nextflow run "/Users/timbarry/research_code/sceptre-pipeline/main.nf" \
  --pair_pod_size 500 \
  --grna_pod_size 25 \
  --response_n_nonzero_range_lower 0.07 \
- --trial \
- --pipeline_stop run_qc \
- -resume \
+ --trial
