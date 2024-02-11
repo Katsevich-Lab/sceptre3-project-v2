@@ -30,7 +30,5 @@ nextflow run timothy-barry/sceptre-pipeline -r main \
  --grna_odm_fp $grna_odm_fp \
  --output_directory $output_directory \
  --grna_assignment_method mixture \
- --pair_pod_size 500 \
- --grna_pod_size 25 \
  --response_n_nonzero_range_lower 0.07 \
  --trial
