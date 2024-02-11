@@ -15,7 +15,7 @@ discovery_pairs <- discovery_pairs |> dplyr::filter(grna_target %in% targets_to_
 sceptre_object <- set_analysis_parameters(sceptre_object,
                                           discovery_pairs = discovery_pairs,
                                           positive_control_pairs = positive_control_pairs,
-                                          formula_object = formula(~ log(grna_n_nonzero) + log(grna_n_umis) + log(response_n_nonzero) + log(response_n_umis)))
+                                          formula_object = formula(~ log(grna_n_nonzero + 1) + log(grna_n_umis + 1) + log(response_n_nonzero) + log(response_n_umis)))
 
 # save the sceptre_object with analysis parameters set
 write_ondisc_backed_sceptre_object(sceptre_object = sceptre_object,
