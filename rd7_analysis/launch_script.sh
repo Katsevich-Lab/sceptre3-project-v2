@@ -1,5 +1,6 @@
-#$ -l m_mem_free=8G
-export NXF_OPTS="-Xms500M -Xmx8G"
+#$ -pe openmp 2
+#$ -l m_mem_free=4G
+export NXF_OPTS="-Xms500M -Xmx4G"
 
 source $HOME/.research_config
 nextflow pull timothy-barry/sceptre-pipeline
