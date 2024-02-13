@@ -33,5 +33,5 @@ nextflow run timothy-barry/sceptre-pipeline -r main \
  --grna_assignment_method mixture \
  --response_n_nonzero_range_lower 0.07 \
  --pipeline_stop assign_grnas \
- -resume
+ --trial
  
