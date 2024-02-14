@@ -30,7 +30,7 @@ nextflow run timothy-barry/sceptre-pipeline -r improved_memory \
  --response_odm_fp $response_odm_fp \
  --grna_odm_fp $grna_odm_fp \
  --output_directory $output_directory \
- --grna_assignment_method mixture \
+ --grna_assignment_method thresholding \
  --response_n_nonzero_range_lower 0.07 \
  --pipeline_stop run_discovery_analysis
  
