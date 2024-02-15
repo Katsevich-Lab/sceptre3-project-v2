@@ -32,5 +32,5 @@ nextflow run timothy-barry/sceptre-pipeline -r improved_memory \
  --output_directory $output_directory \
  --grna_assignment_method thresholding \
  --response_n_nonzero_range_lower 0.07 \
- --pipeline_stop run_discovery_analysis
- 
+ --pipeline_stop run_discovery_analysis \
+ --trial
