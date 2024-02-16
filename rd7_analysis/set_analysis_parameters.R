@@ -10,7 +10,7 @@ positive_control_pairs <- construct_positive_control_pairs(sceptre_object)
 discovery_pairs <- construct_trans_pairs(sceptre_object = sceptre_object,
                                          positive_control_pairs = positive_control_pairs,
                                          pairs_to_exclude = "pc_pairs")
-targets_to_study <- unique(discovery_pairs$grna_target)[1:1000]
+targets_to_study <- unique(discovery_pairs$grna_target)[1:500]
 discovery_pairs <- discovery_pairs |> dplyr::filter(grna_target %in% targets_to_study)
 sceptre_object <- set_analysis_parameters(sceptre_object,
                                           discovery_pairs = discovery_pairs,
