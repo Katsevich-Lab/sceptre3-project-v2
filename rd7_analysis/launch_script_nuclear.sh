@@ -33,4 +33,4 @@ nextflow run timothy-barry/sceptre-pipeline -r improved_memory \
  --grna_assignment_method thresholding \
  --response_n_nonzero_range_lower 0.07 \
  --pipeline_stop run_discovery_analysis \
- --trial
+ --discovery_pairs trans
