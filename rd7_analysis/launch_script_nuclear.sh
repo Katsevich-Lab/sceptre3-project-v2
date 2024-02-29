@@ -34,6 +34,4 @@ nextflow run timothy-barry/sceptre-pipeline -r nuclear \
  --response_n_nonzero_range_lower 0.07 \
  --pipeline_stop run_discovery_analysis \
  --discovery_pairs trans \
- --pair_pod_size 5000000 \
- --trial
- 
+ -resume
