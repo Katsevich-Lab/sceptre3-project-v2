@@ -25,12 +25,14 @@ output_directory=$HOME"/sceptre_outputs"
 #################
 # Invoke pipeline
 #################
-nextflow run timothy-barry/sceptre-pipeline -r improved_memory \
+# nextflow run timothy-barry/sceptre-pipeline -r improved_memory \
+nextflow run /Users/tib163/research_code/sceptre-pipeline/main.nf \
  --sceptre_object_fp $sceptre_object_fp \
  --response_odm_fp $response_odm_fp \
  --grna_odm_fp $grna_odm_fp \
  --output_directory $output_directory \
- --grna_assignment_method thresholding \
  --response_n_nonzero_range_lower 0.07 \
- --pipeline_stop run_discovery_analysis \
- --trial
+ --resampling_approximation no_approximation \
+ --grna_assignment_method maximum \
+ --pipeline_stop assign_grnas
+ 
