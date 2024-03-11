@@ -33,5 +33,8 @@ nextflow run timothy-barry/sceptre-pipeline -r improved_memory \
  --response_n_nonzero_range_lower 0.07 \
  --grna_assignment_method thresholding \
  --threshold 10 \
- --pipeline_stop run_qc
- 
+ --n_calibration_pairs 10000000 \
+ --calibration_group_size 1 \
+ --n_nonzero_trt_thresh 0 \
+ --n_nonzero_cntrl_thresh 0 \
+ --pipeline_stop run_calibration_check
