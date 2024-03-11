@@ -35,6 +35,7 @@ nextflow run timothy-barry/sceptre-pipeline -r improved_memory \
  --threshold 10 \
  --n_calibration_pairs 10000000 \
  --calibration_group_size 1 \
- --n_nonzero_trt_thresh 0 \
- --n_nonzero_cntrl_thresh 0 \
- --pipeline_stop run_calibration_check
+ --n_nonzero_trt_thresh 1 \
+ --n_nonzero_cntrl_thresh 1 \
+ --pipeline_stop run_calibration_check \
+ --pair_pod_size 100000 
