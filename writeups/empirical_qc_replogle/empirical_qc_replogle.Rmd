@@ -1,0 +1,228 @@
+---
+title: "Empirical QC on Replogle data"
+author: "Tim"
+date: "2024-03-13"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In this writeup I investigate the question of pairwise QC on the Replogle rd7 data. First, I condition on `n_nonzero_trt` and `n_nonzero_cntrl` to see if there is evidence of inflation due to selection bias. Next, I implement the Poisson-based pairwise QC, retaining pairs for which the two-sided pilot alternative p-value is sufficiently small. Finally, I check to see whether implementing this alternative pairwise QC strategy helps to resolve miscalibration.
+
+Takeaway: the more sophisticated QC strategy **does not** seem to improve calibration.
+
+# Filtering on `n_nonzero_trt` and `n_nonzero_cntrl`
+
+I applied `sceptre` to analyze the negative control pairs of the rd7 dataset. I restricted my attention to pairs for which `n_nonzero_trt` and `n_nonzero_cntrl` are greater than or equal to 1. (We might consider relaxing this restriction in a subsequent analysis.)
+
+```{r,out.width="5in",out.height="7in",results="hide",error=FALSE,warning=FALSE,echo=FALSE}
+library(tidyverse)
+library(sceptre)
+conflicted::conflicts_prefer(dplyr::filter)
+data_dir <- paste0(.get_config_path("LOCAL_REPLOGLE_2022_DATA_DIR"), "/processed/rd7/")
+project_dir <- paste0(.get_config_path("LOCAL_SCEPTRE3_DATA_DIR"), "/replogle-2022/rd7/")
+sceptre_object_fp <- paste0(project_dir, "sceptre_object_calib_check_run.rds")
+response_odm_fp <- paste0(data_dir, "gene.odm")
+grna_odm_fp <- paste0(data_dir, "grna.odm")
+sceptre_object <- read_ondisc_backed_sceptre_object(sceptre_object_fp = sceptre_object_fp,
+                                                    response_odm_file_fp = response_odm_fp,
+                                                    grna_odm_file_fp = grna_odm_fp)
+```
+
+I start by rendering the standard calibration check plot.
+
+```{r,results="hide",warning=FALSE,error=FALSE,echo=FALSE}
+plot_run_calibration_check(sceptre_object)
+```
+
+Clearly, `sceptre` is pretty severely miscalibrated on the rd7 dataset.
+
+Below, I plot two sets of pairs: the entire set of pairs, and the pairs for which `n_nonzero_trt` and `n_nonzero_cntrl` are greater than or equal to 7. I downsample the former set of pairs such that the former set of pairs and the latter set of pairs are equal in number.
+
+```{r,results="hide",warning=FALSE,error=FALSE,echo=FALSE}
+# define downsample_df funct
+downsample_df <- function(df, col_name) {
+  n_to_sample <- min(table(df[[col_name]]))
+  df |>
+    group_by_at(col_name) |>
+    sample_n(n_to_sample)
+}
+
+# read results
+calib_res_0 <- sceptre_object@calibration_result
+
+# prepare data frame
+n_nonzero_trt_thresh <- 7L
+n_nonzero_cntrl_thresh <- 7L
+res_low <- calib_res_0 |>
+  mutate(filtering = FALSE)
+res_high <- calib_res_0 |>
+    filter(n_nonzero_trt >= n_nonzero_trt_thresh,
+           n_nonzero_cntrl >= n_nonzero_cntrl_thresh) |>
+  mutate(filtering = TRUE)
+res_combined <- rbind(res_low, res_high) |>
+  downsample_df(col_name = "filtering")
+
+# create the untrans qq plot
+revlog_trans <- sceptre:::revlog_trans
+stat_qq_points <- sceptre:::stat_qq_points
+stat_qq_band <-  sceptre:::stat_qq_band
+
+p_untrans <- ggplot(data = res_combined,
+       mapping = aes(y = p_value, col = filtering)) +
+  stat_qq_points(ymin = 1e-8, size = 0.55) +
+  stat_qq_band() +
+  scale_x_reverse() +
+  scale_y_reverse() +
+  labs(x = "Expected null p-value", y = "Observed p-value") +
+  geom_abline(col = "black") +
+  theme_bw()
+
+# create the trans qq plot
+p_trans <- ggplot(data = res_combined,
+                  mapping = aes(y = p_value, col = filtering)) +
+  sceptre:::stat_qq_points(ymin = 1e-8, size = 0.55) +
+  stat_qq_band() +
+  scale_x_continuous(trans = revlog_trans(10)) +
+  scale_y_continuous(trans = revlog_trans(10)) +
+  labs(x = "Expected null p-value", y = "Observed p-value") +
+  geom_abline(col = "black") +
+  theme_bw()
+
+p <- cowplot::plot_grid(p_untrans, p_trans, ncol = 1)
+plot(p)
+```
+
+The untransformed (resp., transformed) QQ plot is shown on the top (resp., bottom). The two sets of pairs seem to exhibit roughly equal calibration. Thus, we do not see immediate evidence that filtering on `n_nonzero_trt` and `n_nonzero_cntrl` introduces selection bias to the rd7 dataset.
+
+# Implementing the Poisson-based pairwise QC strategy
+
+I implement the Poisson-based pairwise QC strategy on the Replogle negative control pairs. To this end I compute the pilot, two-tailed alternative p-value $p_\textrm{pilot}$ for each pair, setting the hypothesized fold change to 1/2 and 2 for the left- and right-tailed p-value, respectively. I retain pairs for which $p_\textrm{pilot}$ is less than 0.005. Below, I plot the outcome of the pairwise QC. Each point represents a pair, with $t$ (total UMI count) on the y-axis and $n$ (number of treatment cells) on the x-axis.
+
+```{r,results="hide",warning=FALSE,error=FALSE,echo=FALSE,cache=TRUE}
+response_matrix <- sceptre_object |> get_response_matrix()
+cells_in_use <- sceptre_object@cells_in_use
+all_nt_idxs <- sceptre_object@grna_assignments$all_nt_idxs
+indiv_nt_idxs <- sceptre_object@grna_assignments$indiv_nt_grna_idxs
+calib_result <- sceptre_object@calibration_result
+
+# first, compute t, the sum of the gene UMIs in the NT cells, across genes
+gene_ids <- rownames(response_matrix)
+t <- sapply(gene_ids, FUN = function(gene_id) {
+  v <- (((response_matrix[gene_id,])[cells_in_use])[all_nt_idxs])
+  sum(v)
+}, USE.NAMES = TRUE)
+dt_t <- data.frame(response_id = names(t), t = t)
+rownames(dt_t) <- NULL
+
+# next, compute n and m, the number of treatment and control cells across vector ids
+n <- sapply(X = indiv_nt_idxs, length)
+m <- length(all_nt_idxs) - n
+dt_mn <- data.frame(grna_target = names(indiv_nt_idxs), n = n, m = m)
+rownames(dt_mn) <- NULL
+
+# next, perform a join operation to add this info the the calib_
+calib_result_2 <- left_join(x = left_join(x = calib_result,
+                                          y = dt_t, by = "response_id"),
+                            y = dt_mn, by = "grna_target")
+
+# next, compute the pilot alternative two-tailed p-value
+L_left <- 1/2
+L_right <- 2
+gamma_left <- Vectorize(function(n, m, t, L) {
+  x <- (sqrt(n) * sqrt(t) / sqrt(m)) * ((m + n)/(m/L + n) - 1)
+  pnorm(x)
+})
+gamma_right <- Vectorize(function(n, m, t, L) {
+  x <- (sqrt(n) * sqrt(t) / sqrt(m)) * ((m + n)/(m/L + n) - 1)
+  pnorm(x, lower.tail = FALSE)
+})
+p_pilot_left <- gamma_left(n = calib_result_2$n,
+                           m = calib_result_2$m, 
+                           t = calib_result_2$t,
+                           L = L_left)
+p_pilot_right <- 1 - p_pilot_left
+p_pilot <- 2 * pmin(p_pilot_left, p_pilot_right)
+retain_new_qc <- p_pilot < 0.005
+calib_result_2$retain_new_qc <- retain_new_qc
+
+# create a plot of the pairwise qc
+p <- ggplot(data = calib_result_2 |> sample_n(size = 100000),
+       mapping = aes(x = n, y = t, col = retain_new_qc)) +
+  geom_point() +
+  theme_bw() +
+  xlab("N treatment cells") +
+  ylab("Total gene expression") +
+  scale_y_log10() +
+  theme(legend.position = "bottom")
+p
+```
+
+The Poisson-based pairwise QC seems reasonable. We retain pairs for which $t$ and $n$ are sufficiently large.
+
+Next, I plot the calibration results for the pairs that pass the Poisson-based pairwise QC. Unfortauntely, the miscalibration remains severe.
+
+```{r,results="hide",warning=FALSE,error=FALSE,echo=FALSE,cache=TRUE}
+calib_result_2_sub <- calib_result_2 |> filter(retain_new_qc)
+calib_result_2_sub$significant <- p.adjust(p = calib_result_2_sub$p_value, method = "BH") < 0.1
+sceptre_object@calibration_result <- calib_result_2_sub
+plot_run_calibration_check(sceptre_object)
+```
+
+# Comparing to the original pairwise QC strategy
+
+Finally, I implement the original pairwise QC strategy, filtering for pairs for which `n_nonzero_trt >= 7` and `n_nonzero_cntrl >= 7`. I plot the calibration results for these pairs.
+
+```{r,results="hide",warning=FALSE,error=FALSE,echo=FALSE,cache=TRUE}
+calib_result_3 <- calib_result |>
+  filter(n_nonzero_trt >= 7, n_nonzero_cntrl >= 7)
+calib_result_3$significant <- p.adjust(p = calib_result_3$p_value, method = "BH") < 0.1
+sceptre_object@calibration_result <- calib_result_3
+plot_run_calibration_check(sceptre_object)
+```
+
+Perforance across the two pairwise QC strategies seems to be broadly similar. In conclusion, the more sophisticated pairwise QC **does not** seem to improve calibration.
+
+Why are we not seeing an improvement? It is instructive to look at the top pairs across the two QC strategies. The top ten pairs under the new QC strategy are as follows.
+
+```{r,results="hide",echo=FALSE,warning=FALSE,error=FALSE,cache=TRUE}
+new_qc_res <- calib_result_2_sub
+orig_qc_res <- calib_result_3
+```
+
+```{r}
+new_qc_res |>
+  select(response_id, grna_target, p_value, n_nonzero_trt, n_nonzero_cntrl) |>
+  arrange(p_value) |>
+  slice(1:10)
+```
+
+The top ten pairs under the original QC strategy are below.
+
+```{r}
+orig_qc_res |>
+  select(response_id, grna_target, p_value, n_nonzero_trt, n_nonzero_cntrl) |>
+  arrange(p_value) |>
+  slice(1:10)
+```
+
+These sets of pairs coincide exactly. Moreover, each of these pairs has a large effective sample size and thus surives *both* QC filters.
+
+In conclusion our suboptimal pairwise QC strategy does **not** explain the miscalibration we observe on the rd7 dataset.
+
+# Addendum: number of negative control pairs in each set
+
+The number of negative control pairs in each set of negative control pairs is as follows.
+
+```{r}
+# unfiltered set
+nrow(calib_res_0)
+# original QC
+nrow(orig_qc_res)
+# Poisson-based QC
+nrow(new_qc_res)
+```

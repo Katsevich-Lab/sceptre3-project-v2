@@ -1,0 +1,242 @@
+---
+title: "Pairwise QC pt. 2"
+author: "Tim"
+date: "2024-03-11"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+This writeup focuses on the question of pairwise QC from an empirical perspective. There are two takeaway points.
+
+1. The Poisson-based pairwise QC strategy seems to be reasonable on real data.
+2. I find evidence of inflation due to selection bias on the example Gasperini data. The inflation is detectable only for the sparsest pairs.
+
+# Application of the Poisson-based QC strategy to the example Gasperini dataset
+
+I apply the Poisson-based pairwise QC strategy to the example Gasperini dataset in the `sceptredata` package. To this end, for each *trans* discovery pair, I compute (i) the number of treatment cells (*n*), (ii) the number of control cells (*m*), and (iii) the total gene expression across treatment and control cells (*t*). I set the hypothesized fold change under the alternative (*L*) to 1/2 for the left-tailed QC and 2 for the right-tailed QC. I compute a "pilot" alternative p-value for each pair using the formula derived in the previous writeup. For example, the left-tailed pilot p-value $p_\textrm{pilot}$ for a given pair is
+
+$$
+p_\textrm{pilot} = \Phi \left(\frac{nt / (m/L + n) - nt/(m+n) }{ \sqrt{tmn}/(m+n)} \right).
+$$
+
+I retain all pairs for which $p_\textrm{pilot} < \alpha$, where I set $\alpha$ to $0.005$.
+
+```{r,echo=FALSE,results="hide",warning=FALSE,error=FALSE}
+library(tidyverse, quietly = TRUE, warn.conflicts = FALSE)
+conflicted::conflicts_prefer(dplyr::filter)
+library(sceptre, quietly = TRUE)
+library(sceptredata, quietly = TRUE)
+library(katlabutils)
+
+# 1. import data
+directories <- paste0(system.file("extdata", package = "sceptredata"),
+  "/highmoi_example/gem_group_", 1:2)
+data(grna_target_data_frame_highmoi)
+sceptre_object <- import_data_from_cellranger(directories = directories,
+  moi = "high",
+  grna_target_data_frame = grna_target_data_frame_highmoi
+)
+print(sceptre_object)
+
+# 2. set the analysis parameters, including the discovery pairs
+discovery_pairs <- construct_trans_pairs(sceptre_object)
+sceptre_object <- set_analysis_parameters(
+  sceptre_object = sceptre_object,
+  discovery_pairs = discovery_pairs,
+  resampling_mechanism = "permutations",
+  side = "right"
+)
+
+# 3. assign grnas
+sceptre_object <- sceptre_object |>
+  assign_grnas(parallel = TRUE, n_processors = 8)
+
+# 4. run qc
+sceptre_object <- sceptre_object |>
+  run_qc(p_mito_threshold = 0.075,
+         n_nonzero_trt_thresh = 1,
+         n_nonzero_cntrl_thresh = 1)
+
+# 5. get the response matrix; compute the expression of the gene across cells
+response_matrix <- get_response_matrix(sceptre_object)[,sceptre_object@cells_in_use]
+genewise_umi_counts <- Matrix::rowSums(response_matrix)
+
+# 6. get the number of trt, cntrl cells for each grna group
+n_trt_cells <- sapply(sceptre_object@grna_assignments$grna_group_idxs, length)
+n_cells <- ncol(response_matrix)
+n_cntrl_cells <- n_cells - n_trt_cells
+
+# 7. perform join operation
+gene_count_df <- data.frame(t = genewise_umi_counts,
+                            response_id = names(genewise_umi_counts))
+sample_size_df <- data.frame(grna_target = names(n_trt_cells),
+                             n = n_trt_cells,
+                             m = n_cntrl_cells)
+rownames(gene_count_df) <- rownames(sample_size_df) <- NULL
+discovery_pairs <- sceptre_object@discovery_pairs_with_info |>
+  rename(grna_target = grna_group, pass_qc_simple = pass_qc)
+
+discovery_pairs_updated <- left_join(x = left_join(x = discovery_pairs,
+                                                   y = gene_count_df,
+                                                   by = "response_id"),
+                                     y = sample_size_df,
+                                     by = "grna_target")
+
+# 8. compute the left-tailed and right-tailed p-value for each pair
+# we assume a fold change of 1/4 for the left tail and 4 for the right tail
+gamma_left <- Vectorize(function(n, m, t, L) {
+  x <- (n * t / (m / L + n) - (n * t)/(m + n))/(sqrt(t * m * n)/(m + n))
+  pnorm(x)
+})
+gamma_right <- Vectorize(function(n, m, t, L) {
+  x <- (n * t / (m / L + n) - (n * t)/(m + n))/(sqrt(t * m * n)/(m + n))
+  pnorm(x, lower.tail = FALSE)
+})
+
+L_left <- 1/2
+L_right <- 2
+p_left <- gamma_left(n = discovery_pairs_updated$n,
+                     m = discovery_pairs_updated$m,
+                     t = discovery_pairs_updated$t, L = L_left)
+p_right <- gamma_right(n = discovery_pairs_updated$n,
+                       m = discovery_pairs_updated$m,
+                       t = discovery_pairs_updated$t, L = L_right)
+discovery_pairs_updated$pass_qc_left <- p_left < 0.005
+discovery_pairs_updated$pass_qc_right <- p_right < 0.005
+```
+
+Below, I plot the results of the pairwise QC. Each point represents a pair; the vertical position of a point indicates the total gene expression (*t*) of that pair, while the horizontal position of a point indicates the number of treatment cells (*n*) in that pair. I do not plot the number of control cells (*m*), as the number of control cells is highly similar across pairs and thus does not contain much information. The left-tailed (resp., right-tailed) QC is shown on the left (resp., right).
+
+```{r,echo=FALSE, out.width="6in", out.height="5in"}
+to_plot <- discovery_pairs_updated |> pivot_longer(cols = c("pass_qc_left", "pass_qc_right"),
+                                                   names_to = "side", values_to = "pass_qc")
+
+# make a plot similar to Gene's, plotting number of treatment cells against gene expression
+p <- ggplot(data = to_plot, mapping = aes(x = n, y = t, col = pass_qc)) +
+  facet_grid(. ~ side) +
+  geom_point() +
+  theme_bw() +
+  xlab("N treatment cells") +
+  ylab("Total gene expression") +
+  scale_y_log10() +
+  theme(legend.position = "bottom")
+plot(p)
+```
+
+The plot looks reasonable. In particular, a pair is more likely to be retained as its gene expression and/or number of treatment cells increases. Furthermore there are no "outliers;" that is, there is no errant red point (or set of red points) that falls among the blue points (or vice versa).
+
+I repeat this analysis on ~12,000 singleton negative control pairs. I create the same plot for these pairs (below). Again, the plot looks reasonable.
+
+```{r,echo=FALSE,message="hide",warning=FALSE,error=FALSE, out.width="6in", out.height="5in"}
+sceptre_object <- invisible(run_calibration_check(sceptre_object = sceptre_object,
+                                        n_calibration_pairs = 20000,
+                                        calibration_group_size = 1,
+                                        parallel = TRUE,
+                                        n_processors = 4))
+# obtain the calibration result
+calib_res <- get_result(sceptre_object, "run_calibration_check")
+
+# compute the new pairwise QC for each pair
+n_trt_cells <- sapply(sceptre_object@grna_assignments$indiv_nt_grna_idxs, length)
+n_cells <- ncol(response_matrix)
+n_cntrl_cells <- n_cells - n_trt_cells
+
+# 7. perform join operation
+sample_size_df <- data.frame(grna_target = names(n_trt_cells),
+                             n = n_trt_cells,
+                             m = n_cntrl_cells)
+rownames(gene_count_df) <- rownames(sample_size_df) <- NULL
+calib_res <- left_join(x = left_join(x = calib_res,
+                                     y = gene_count_df,
+                                     by = "response_id"),
+                       y = sample_size_df,
+                       by = "grna_target")
+pilot_p_left <- gamma_left(n = calib_res$n,
+                           m = calib_res$m,
+                           t = calib_res$t,
+                           L = L_left)
+pilot_p_right <- gamma_right(n = calib_res$n,
+                             m = calib_res$m,
+                             t = calib_res$t,
+                             L = L_right)
+calib_res$pilot_p_left <- pilot_p_left
+calib_res$pass_qc_left <- pilot_p_left < 0.005
+calib_res$pilot_p_right <- pilot_p_right
+calib_res$pass_qc_right <- pilot_p_right < 0.005
+
+to_plot <- calib_res |> pivot_longer(cols = c("pass_qc_left", "pass_qc_right"),
+                                     names_to = "side", values_to = "pass_qc_pois")
+
+# make a plot similar to Gene's, plotting number of treatment cells against gene expression
+p <- ggplot(data = to_plot, mapping = aes(x = n, y = t, col = pass_qc_pois)) +
+  facet_grid(. ~ side) +
+  geom_point() +
+  theme_bw() +
+  xlab("N treatment cells") +
+  ylab("Total gene expression") +
+  scale_y_log10() +
+  theme(legend.position = "bottom")
+plot(p)
+```
+
+I apply `sceptre` to compute a **right-tailed** p-value for each negative control pair. These right-tailed p-values are uniformly distributed.
+
+```{r,echo=FALSE,message="hide",warning=FALSE,error=FALSE}
+plot_run_calibration_check(sceptre_object)
+```
+
+Next, I seek to explore whether conditioning on `n_nonzero_trt` (and `n_nonzero_cntrl`) might induce a selection bias. To this end, following Gene, I partition the pairs into three categories based on their "effective sample size," where the effective sample $\mu_0$ of a given pair is defined as the mean UMI count of the gene in the treatment cells under the null hypotheses, as follows.
+$$ \mu_0 = \frac{tn}{m + n}.$$
+I plot the p-values on a QQ plot, colored by category (red = smallest effective sample size; green = intermediate effective sample size; blue = largest effective sample size). Calibration looks good across all three categories.
+
+```{r,echo=FALSE,message="hide",warning=FALSE,error=FALSE}
+my_bin <- function(x, n_bins) {
+   quantiles <- quantile(x = x, probs = seq(0, 1, 1/n_bins))
+   cut(x, breaks = quantiles, include.lowest = TRUE)
+}
+downsample_df <- function(df) {
+  n_to_sample <- min(table(df$eff_ss_bin))
+  df |>
+    group_by(eff_ss_bin) |>
+    sample_n(n_to_sample)
+}
+
+revlog_trans <- sceptre:::revlog_trans
+calib_res_binned <- calib_res |>
+  mutate(mu_0 = (t * n)/(m + n)) |>
+  mutate(eff_ss_bin = my_bin(mu_0, n_bins = 3)) |>
+  downsample_df()
+
+p <- ggplot(data = calib_res_binned,
+       mapping = aes(y = p_value, col = eff_ss_bin)) +
+  stat_qq_points(ymin = 1e-8, size = 0.55) +
+  stat_qq_band() +
+  scale_x_reverse() +
+  scale_y_reverse() +
+  labs(x = "Expected null p-value", y = "Observed p-value") +
+  geom_abline(col = "black") +
+  theme_bw()
+p
+```
+
+Next, I filter on `n_nonzero_trt` and `n_nonzero_cntrl`, retaining pairs for which these quantities exceed 15. 
+
+```{r,echo=FALSE,message="hide",warning=FALSE,error=FALSE}
+calib_res_binned_filtered <- calib_res_binned |>
+  filter(n_nonzero_trt >= 15 & n_nonzero_cntrl >= 15) |>
+  downsample_df()
+
+p <- ggplot(data = calib_res_binned_filtered,
+       mapping = aes(y = p_value, col = eff_ss_bin)) +
+  stat_qq_points(ymin = 1e-8, size = 0.55) +
+  stat_qq_band() +
+  scale_x_reverse() +
+  scale_y_reverse() +
+  labs(x = "Expected null p-value", y = "Observed p-value") +
+  geom_abline(col = "black") +
+  theme_bw()
+p
+```
+
+The pairs with a small effective sample size show mild inflation in the bulk of the distribution. This is consistent with Gene's prediction. (Nicely done Gene!)
