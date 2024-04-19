@@ -25,7 +25,7 @@ output_directory=$HOME"/sceptre_outputs"
 #################
 # Invoke pipeline
 #################
-nextflow run timothy-barry/sceptre-pipeline -r improved_memory \
+nextflow run timothy-barry/sceptre-pipeline -r main \
  --sceptre_object_fp $sceptre_object_fp \
  --response_odm_fp $response_odm_fp \
  --grna_odm_fp $grna_odm_fp \
