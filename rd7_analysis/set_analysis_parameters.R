@@ -9,7 +9,7 @@ sceptre_object <- read_ondisc_backed_sceptre_object(sceptre_object_fp = paste0(i
 positive_control_pairs <- construct_positive_control_pairs(sceptre_object)
 sceptre_object <- set_analysis_parameters(sceptre_object,
                                           positive_control_pairs = positive_control_pairs,
-                                          formula_object = formula(~ log(grna_n_nonzero + 1) + log(grna_n_umis + 1) + log(response_n_nonzero) + log(response_n_umis)))
+                                          formula_object = formula(~ log(grna_n_nonzero + 1) + log(grna_n_umis + 1) + log(response_n_nonzero) + log(response_n_umis) + batch))
 # save the sceptre_object with analysis parameters set
 write_ondisc_backed_sceptre_object(sceptre_object = sceptre_object,
                                    directory_to_write = sceptre3_rd7_offsite)
