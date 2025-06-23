@@ -2,11 +2,14 @@
 title: "Replogle Miscalibration Exploration"
 author: "Gene"
 date: "`r Sys.Date()`"
-output: pdf_document
+output: 
+  pdf_document:
+    keep_tex: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 6)
+knitr::opts_knit$set(root.dir = getwd())
 ```
 
 This analysis explores our miscalibration issues with Replogle rd7 by comparing to Velten's analysis.
