@@ -14,8 +14,6 @@ knitr::opts_knit$set(root.dir = getwd())
 
 This analysis explores our miscalibration issues with Replogle rd7 by comparing to Velten's analysis.
 
-# Setup
-
 ```{r libraries, echo = FALSE}
 library(sceptre)
 library(ondisc)
@@ -25,7 +23,6 @@ library(knitr)
 library(patchwork)
 ```
 
-# Data Import
 
 ```{r data-import, echo=FALSE}
 repl_offsite <- paste0(.get_config_path("LOCAL_REPLOGLE_2022_DATA_DIR"))
@@ -53,7 +50,7 @@ crispat_sceptre_object <- readRDS("~/data/external/braunger-2024/sceptre_object_
 sceptre3_rd7_offsite <- paste0(.get_config_path("LOCAL_SCEPTRE3_DATA_DIR"), "replogle-2022/rd7-cell-cycle/")
 ```
 
-# Basic Object Comparison
+# Sceptre Object Comparison
 
 Let's first compare our `sceptre_object` to Velten's:
 ```{r object-comparison}
