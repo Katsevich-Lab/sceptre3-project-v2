@@ -1,0 +1,219 @@
+---
+title: "Replogle Miscalibration Exploration"
+author: "Gene"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 6)
+```
+
+This analysis explores our miscalibration issues with Replogle rd7 by comparing to Velten's analysis.
+
+# Setup
+
+```{r libraries, echo = FALSE}
+library(sceptre)
+library(ondisc)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(patchwork)
+```
+
+# Data Import
+
+```{r data-import, echo=FALSE}
+repl_offsite <- paste0(.get_config_path("LOCAL_REPLOGLE_2022_DATA_DIR"))
+
+# Load original sceptre object (without cell cycle scores)
+import_dir_original <- paste0(repl_offsite, "processed/rd7/")
+our_sceptre_object <- read_ondisc_backed_sceptre_object(
+  sceptre_object_fp = paste0(import_dir_original, "sceptre_object.rds"),
+  response_odm_file_fp = paste0(import_dir_original, "gene.odm"),
+  grna_odm_file_fp = paste0(import_dir_original, "grna.odm")
+)
+
+# Load our sceptre object with cell cycle scores
+import_dir_cell_cycle <- paste0(repl_offsite, "processed/rd7/with-cell-cycle/")
+our_sceptre_object_cell_cycle <- read_ondisc_backed_sceptre_object(
+  sceptre_object_fp = paste0(import_dir_cell_cycle, "sceptre_object.rds"),
+  response_odm_file_fp = paste0(import_dir_cell_cycle, "gene.odm"),
+  grna_odm_file_fp = paste0(import_dir_cell_cycle, "grna.odm")
+)
+
+# Load crispat/Velten sceptre object
+crispat_sceptre_object <- readRDS("~/data/external/braunger-2024/sceptre_object_RPE1.rds")
+
+# Set path for cell cycle analysis results
+sceptre3_rd7_offsite <- paste0(.get_config_path("LOCAL_SCEPTRE3_DATA_DIR"), "replogle-2022/rd7-cell-cycle/")
+```
+
+# Basic Object Comparison
+
+Let's first compare our `sceptre_object` to Velten's:
+```{r object-comparison}
+crispat_sceptre_object
+our_sceptre_object
+```
+
+The main differences are that 
+
+1. they have way fewer cells, 
+2. they have 17 fewer NT gRNAs, and 
+3. they have extra covariates `G2M_score` and `S_score`, which encode cell cycle state. 
+
+The first is largely irrelevant to us because what we care about are the cells with NT gRNAs only, and so we don't care about the other cells anyways. An inspection of Velten's codebase revealed that they retained all cells with NT gRNAs, *except* those containing 17 NT gRNAs found by Replogle to have apparent effects on genes. This brings us to difference 2, which is very important. Throwing out NT gRNAs with an apparent effect on genes prior to a calibration check is circular reasoning, so we would want to repeat the calibration check with all NT gRNAs. Item 3 may be important; if the cell cycle state acts as a confounder. Let's check whether this is the case in the next section.
+
+# Cell Cycle Effects on Non-targeting gRNAs
+
+Cell cycle state is known to impact gene expression; let's check based on Velten's data whether it also impacts which gRNA a cell received.
+
+```{r cell-cycle-nt-grnas, echo = FALSE}
+nt_grnas <- crispat_sceptre_object@grna_assignments$indiv_nt_grna_idxs |> names()
+
+velten_df <- crispat_sceptre_object |> 
+  get_cell_covariates() |> 
+  select(S_score, G2M_score)
+velten_df$grna <- character(length = nrow(velten_df))
+
+for(nt_grna in nt_grnas){
+  velten_df$grna[crispat_sceptre_object@initial_grna_assignment_list[[nt_grna]]] <- nt_grna
+}
+
+velten_df <- velten_df |> filter(grna != "")
+```
+
+```{r}
+aov(S_score ~ grna, data = velten_df) |> summary()
+aov(G2M_score ~ grna, data = velten_df) |> summary()
+```
+
+We see that both cell cycle variables are correlated with gRNA, which makes cell cycle a possible confounder. Maybe controlling for cell cycle is enough to explain the miscalibration we're seeing. 
+
+# Calibration Check with Cell Cycle Scores
+
+We can't rely on the Velten data to get the cell cycle scores for our calibration check, since they excluded 17 gRNAs. Therefore, I added functionality to `ondisc` to calculate cell cycle during import (which I hope will be independently useful). Below is a check that the cell cycle scores I computed from scratch match those from the Velten data, for the cells that overlap. 
+
+```{r cell-matching, echo = FALSE}
+# Examine covariate data frames to understand structure
+crispat_covariates <- crispat_sceptre_object |> get_cell_covariates() |> as.data.frame()
+our_covariates <- our_sceptre_object_cell_cycle |> get_cell_covariates() |> as.data.frame()
+
+# Identify shared covariates
+shared_covariates <- intersect(names(crispat_covariates), names(our_covariates))
+
+# Cell matching function
+create_matching_key <- function(covariate_df, shared_cols) {
+  if(length(shared_cols) == 0) {
+    stop("No shared covariates found for matching")
+  }
+  
+  # Round numeric columns to avoid floating point precision issues
+  key_df <- covariate_df[shared_cols]
+  numeric_cols <- sapply(key_df, is.numeric)
+  key_df[numeric_cols] <- lapply(key_df[numeric_cols], function(x) round(x, 6))
+  
+  # Create composite key
+  apply(key_df, 1, function(row) paste(row, collapse = "_"))
+}
+
+# Create matching keys for both objects using only response covariates
+matching_covariates <- c("response_n_nonzero", "response_n_umis")
+crispat_keys <- create_matching_key(crispat_covariates, matching_covariates)
+our_keys <- create_matching_key(our_covariates, matching_covariates)
+
+# Find matches
+matches <- match(crispat_keys, our_keys)
+valid_matches <- !is.na(matches)
+
+# Create mapping data frame
+cell_mapping <- data.frame(
+  crispat_idx = seq_along(crispat_keys),
+  our_idx = matches,
+  matched = valid_matches,
+  stringsAsFactors = FALSE
+)
+
+# Filter to only matched cells
+matched_cells <- cell_mapping[cell_mapping$matched, ]
+
+# Extract unique matches only
+unique_matches <- matched_cells[!duplicated(matched_cells$our_idx), ]
+```
+
+```{r cell-cycle-correlation, echo = FALSE}
+# Compare cell cycle scores for uniquely matched cells
+crispat_indices <- unique_matches$crispat_idx
+our_indices <- unique_matches$our_idx
+
+# Extract cell cycle scores
+crispat_g2m <- crispat_covariates$G2M_score[crispat_indices]
+crispat_s <- crispat_covariates$S_score[crispat_indices]
+our_g2m <- our_covariates$response_g2m_score[our_indices]
+our_s <- our_covariates$response_s_score[our_indices]
+
+# Create comparison data frame
+cell_cycle_comparison <- data.frame(
+  crispat_G2M = crispat_g2m,
+  our_G2M = our_g2m,
+  crispat_S = crispat_s,
+  our_S = our_s
+)
+
+# Calculate correlations
+g2m_cor <- cor(crispat_g2m, our_g2m)
+s_cor <- cor(crispat_s, our_s)
+
+# G2M score scatter plot
+g2m_plot <- ggplot(cell_cycle_comparison, aes(x = crispat_G2M, y = our_G2M)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", formula = "y~x", color = "red", se = TRUE) +
+  labs(
+    title = paste("G2M Score Comparison (r =", round(g2m_cor, 3), ")"),
+    x = "Crispat G2M Score",
+    y = "Our G2M Score"
+  ) +
+  theme_bw() +
+  theme(aspect.ratio = 1)
+
+# S score scatter plot
+s_plot <- ggplot(cell_cycle_comparison, aes(x = crispat_S, y = our_S)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", formula = "y~x", color = "red", se = TRUE) +
+  labs(
+    title = paste("S Score Comparison (r =", round(s_cor, 3), ")"),
+    x = "Crispat S Score",
+    y = "Our S Score"  
+  ) +
+  theme_bw() +
+  theme(aspect.ratio = 1)
+
+# Display plots side by side using patchwork
+g2m_plot + s_plot
+```
+
+The agreement seems pretty good. I then reran the calibration check using this newly imported data on a million negative control pairs, with the same formula (and other analysis parameters) used by Velten. 
+
+```{r calibration-plot, echo=FALSE, out.width="100%"}
+knitr::include_graphics("~/data/projects/sceptre3/replogle-2022/rd7-cell-cycle/plot_run_calibration_check.png")
+```
+
+Unfortunately, the miscalibration remains. Below is a table of how the false positives are distributed across gRNAs:
+
+```{r worst-offenders, echo = FALSE}
+calibration_results <- readRDS(paste0(sceptre3_rd7_offsite, "results_run_calibration_check.rds"))
+calibration_results |> 
+  filter(significant) |> 
+  count(grna_target) |>
+  arrange(desc(n)) |>
+  as_tibble() |>
+  print(n = 20)
+```
+
+So we have about 20 NT gRNAs that make up the bulk of the problem; likely these contain the 17 filtered out by Replogle and Velten.
+
+# Conclusion
+
+Adding cell cycle didn't resolve the calibration issue, leading me to believe that the Replogle data simply have NT gRNAs that "didn't work", in the sense that they do have effects on some genes. In my opinion, this means that the Replogle data are too low-quality for us to analyze.
