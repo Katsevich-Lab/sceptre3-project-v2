@@ -38,4 +38,4 @@ nextflow run timothy-barry/sceptre-pipeline -r main \
  --n_nonzero_trt_thresh 0 \
  --n_nonzero_cntrl_thresh 7 \
  --pipeline_stop run_calibration_check \
- --pair_pod_size 100000
+ --pair_pod_size 50000
