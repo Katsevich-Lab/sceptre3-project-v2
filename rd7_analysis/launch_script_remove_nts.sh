@@ -25,7 +25,7 @@ nextflow run timothy-barry/sceptre-pipeline -r main \
  --sceptre_object_fp $sceptre_object_fp \
  --response_odm_fp $response_odm_fp \
  --grna_odm_fp $grna_odm_fp \
- --output_directory $project_directory \
+ --output_directory $output_directory \
  --response_n_umis_range_lower 0 \
  --response_n_umis_range_upper 1 \
  --response_n_nonzero_range_lower 0 \
