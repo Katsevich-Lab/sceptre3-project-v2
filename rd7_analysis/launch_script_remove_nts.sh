@@ -9,14 +9,13 @@ nextflow pull timothy-barry/sceptre-pipeline
 # REQUIRED INPUT ARGUMENTS
 ##########################
 data_directory=$LOCAL_REPLOGLE_2022_DATA_DIR"/processed/rd7/"
+project_directory=$LOCAL_SCEPTRE3_DATA_DIR"/replogle-2022/rd7-remove-nts/"
 # sceptre object
-sceptre_object_fp=$data_directory"sceptre_object.rds"
+sceptre_object_fp=$project_directory"sceptre_object.rds"
 # response ODM
 response_odm_fp=$data_directory"gene.odm"
 # grna ODM
 grna_odm_fp=$data_directory"grna.odm"
-# output directory
-output_directory=$LOCAL_SCEPTRE3_DATA_DIR"/replogle-2022/rd7-remove-nts/"
 
 #################
 # Invoke pipeline
@@ -25,7 +24,7 @@ nextflow run timothy-barry/sceptre-pipeline -r main \
  --sceptre_object_fp $sceptre_object_fp \
  --response_odm_fp $response_odm_fp \
  --grna_odm_fp $grna_odm_fp \
- --output_directory $output_directory \
+ --output_directory $project_directory \
  --response_n_umis_range_lower 0 \
  --response_n_umis_range_upper 1 \
  --response_n_nonzero_range_lower 0 \
