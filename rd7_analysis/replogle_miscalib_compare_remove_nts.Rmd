@@ -1,0 +1,100 @@
+---
+title: "Replogle Miscalibration Exploration without bad NTs"
+author: "Louis"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    keep_tex: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 6)
+knitr::opts_knit$set(root.dir = getwd())
+```
+
+
+This analysis continues the exploration of our miscalibration issues with Replogle rd7 by comparing to Velten's analysis. In particular, it uses our sceptre_object made with only using the same NTs as Velten, and with cell cycle added.
+
+```{r libraries, echo = FALSE}
+library(sceptre)
+library(ondisc)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(patchwork)
+```
+
+
+```{r data-import, echo=FALSE, }
+repl_offsite <- paste0(.get_config_path("LOCAL_REPLOGLE_2022_DATA_DIR"))
+sceptre3_rd7_offsite <- paste0(.get_config_path("LOCAL_SCEPTRE3_DATA_DIR"), "replogle-2022/rd7-remove-nts-add-cell-cycle/")
+import_dir <- paste0(repl_offsite, "processed/rd7/remove-nts-add-cell-cycle/")
+ours <- read_ondisc_backed_sceptre_object(sceptre_object_fp = paste0(sceptre3_rd7_offsite, "sceptre_object.rds"),
+                                                    response_odm_file_fp = paste0(import_dir, "gene.odm"),
+                                                    grna_odm_file_fp = paste0(import_dir, "grna.odm"))
+
+
+theirs <- readRDS("~/data/external/braunger-2024/sceptre_object_RPE1.rds")
+```
+
+```{r NT-filtering, echo=FALSE}
+## filtering down to just non-targeting gRNAs for crispat data
+
+crispat_covariates <- theirs |> get_cell_covariates() |> as.data.frame()
+
+nt_grnas <- theirs@grna_assignments$indiv_nt_grna_idxs |> names()
+
+crispat_covariates$grna <- character(length = nrow(crispat_covariates))
+
+for(nt_grna in nt_grnas){
+  crispat_covariates$grna[theirs@initial_grna_assignment_list[[nt_grna]]] <- nt_grna
+}
+
+crispat_covariates <- crispat_covariates |> filter(grna != "")
+
+```
+
+
+
+```{r compare-covariates, echo=FALSE}
+## getting the cells in their data that are matched to 
+
+our_covariates <- ours |> get_cell_covariates() |> as.data.frame()
+
+key_cols <-  c("response_n_nonzero", "response_n_umis")
+
+# making it clear which df the non-key columns belong to
+colnames(our_covariates)[!names(our_covariates) %in% key_cols] <- paste0(colnames(our_covariates)[!names(our_covariates) %in% key_cols], "_ours")
+colnames(crispat_covariates)[!names(crispat_covariates) %in% key_cols] <- paste0(colnames(crispat_covariates)[!names(crispat_covariates) %in% key_cols], "_theirs")
+
+# getting the number of times each key pair occurs
+our_counts <- our_covariates %>%
+  count(response_n_nonzero, response_n_umis, name = "n_matches")
+
+# left_joining our covariates to theirs, for just the pairs with exactly one occurrence in ours and exactly one match to theirs
+
+matched <- crispat_covariates %>%
+  left_join(our_counts, by = key_cols) %>%
+  filter(n_matches == 1) %>%
+  select(-n_matches) %>%        
+  left_join(our_covariates, by = key_cols)  
+
+# what'd we lose? not much
+print(nrow(matched))
+print(nrow(crispat_covariates))
+
+# cool. Now how to analyze?
+
+with(matched, cor(response_p_mito_ours, response_p_mito_theirs))
+with(matched, cor(grna_n_nonzero_ours, grna_n_nonzero_theirs))
+with(matched, cor(grna_n_umis_ours, grna_n_umis_theirs))
+# with(matched, all.equal(batch_ours |> as.character(), paste0("batch_", Batch_theirs |> as.character())))
+setequal(table(matched$Batch_theirs), table(matched$Batch_theirs))
+
+
+with(matched, cor(response_g2m_score_ours, G2M_score_theirs))
+with(matched, cor(response_s_score_ours, S_score_theirs))
+
+```
+
+
