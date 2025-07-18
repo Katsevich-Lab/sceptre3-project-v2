@@ -53,7 +53,10 @@ Supplementary figures: Benchmarking
 Functionalities:
 - Data import
 - gRNA assignment
-- Association analysis
+- QC
+- Calibration check and power check
+- Discovery association analysis
+- Visualization
 
 Competitors (choose among the following): 
 - MUSIC (Nature Communications 2019)
@@ -63,10 +66,12 @@ Competitors (choose among the following):
 - sceptre (Genome Biology 2024)
 - PySpade (Genome Biology 2025)
 - MixScale (Nature Cell Biology 2025)
+- CLEANSER (for gRNA assignment)
+- crispat (for gRNA assignment)
 - PertPy (Nature Methods minor revision 2025+)
 
 Datasets (choose among the following):
-- Gasperini (~200K cells)
+- Gasperini (~200K cells); concern is that this dataset is getting old. Don't we have any more up-to-date examples?
 - Replogle RPE1 essential-wide (~600K cells)
 - Replogle K562 essential-wide (~600K cells)
 - Replogle K562 genome-wide (~1.2M cells)
@@ -76,3 +81,29 @@ Evaluation metrics:
 - Power
 - Peak RAM
 - Runtime
+
+# Discussion
+
+## gRNA assignment
+
+- For benchmarking, prioritize mixture models that the competing softwares offer.
+- Consider using data simulated from scDesign3
+
+## Bioconductor submission
+- Ideally we would be able to say "submitted to Bioconductor"
+- Next deadline for Bioconductor submission is October?
+
+## Paper organization
+Follow the Kraken 2 model.
+- Figure 1: More conceptual, illustrating the functionality of the package, some insight into algorithms. Illustrate the steps of the pipeline, along with the visualizations. Some illustration of the algorithms the ondisc is using for efficient data import. Some illustration of the Nextflow pipeline. Ideally also the code you would use to interact with the sceptre object.
+- Figure 2: More empirical; results we obtained on two large-scale datasets. Calibration, power, computation.
+
+## Software solidification
+Make decisions about what state we want the software to be in at submission. Prerequisite for Bioconductor submission.
+- What are we going to do with QC? This has an impact on the generation of the negative control pairs.
+- Are we adding tests to NF?
+
+## Next steps
+- Tim: Outline figures
+- Gene: Construct some kind of a roadmap
+- Louis: Get started on playing with CLEANSER and crispat, e.g. on Gasperini
