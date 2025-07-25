@@ -1,1 +1,14 @@
 rd7_analysis/.nextflow*
+
+# Nextflow working files
+work/
+.nextflow*
+
+# Conda/Python environments
+conda-cache/
+**/venv/
+**/__pycache__/
+*.pyc
+
+# Logs
+*.log
