@@ -9,16 +9,16 @@ process CRISPAT_ASSIGN {
     cpus { resources.cpus }
     memory { resources.memory }
     
-    publishDir "${outdir}", 
-               mode: 'copy',
-               saveAs: { filename -> "assignments_crispat_${dataset_id}.csv" }
-    
     input:
     tuple val(dataset_id), path(dataset_dir), val(method), val(resources)
     val outdir
     
     output:
     tuple val(dataset_id), val(method), path("assignments_crispat.csv"), emit: assignments
+        
+    publishDir "${outdir}", 
+               mode: 'copy',
+               saveAs: { filename -> "assignments_crispat_${dataset_id}.csv" }
     
     script:
     """

@@ -42,7 +42,8 @@ workflow {
     }
         
     // Run crispat with explicit output directory
-    crispat_results = CRISPAT_ASSIGN(branched_ch.crispat, outdir)   
+    crispat_results = CRISPAT_ASSIGN(branched_ch.crispat, outdir)
+    // TODO: Add more methods here
 }
 
 workflow.onComplete {

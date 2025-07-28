@@ -96,7 +96,7 @@ outputs/{run_id}/
 
 ## Adding New Methods
 
-### 1. Create Conda Environment
+### 1. Create Conda or Singularity Environment
 
 Create `modules/{method}/environment.yml` with all dependencies your method needs. See `modules/crispat/environment.yml` as an example - it specifies Python version, pandas for data handling, and method-specific dependencies.
 
