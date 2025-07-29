@@ -12,3 +12,6 @@ conda-cache/
 
 # Logs
 *.log
+
+# vscode
+.vscode/*
