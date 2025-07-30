@@ -4,6 +4,7 @@ nextflow.enable.dsl = 2
 
 // Import method modules directly
 include { CRISPAT_ASSIGN } from './modules/crispat'
+include { CLEANSER_ASSIGN } from './modules/cleanser'
 // TODO: Add more methods as needed
 
 workflow {
@@ -38,11 +39,15 @@ workflow {
     // Route to appropriate method based on method name
     branched_ch = dataset_method_ch.branch {
         crispat: it[2] == 'crispat'
+        cleanser: it[2] == 'cleanser'
         // TODO: Add more methods here
     }
         
     // Run crispat with explicit output directory
     crispat_results = CRISPAT_ASSIGN(branched_ch.crispat, outdir)
+    
+    // Run cleanser with explicit output directory
+    cleanser_results = CLEANSER_ASSIGN(branched_ch.cleanser, outdir)
     // TODO: Add more methods here
 }
 
