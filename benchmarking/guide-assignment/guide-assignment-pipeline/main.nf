@@ -5,6 +5,7 @@ nextflow.enable.dsl = 2
 // Import method modules directly
 include { CRISPAT_ASSIGN } from './modules/crispat'
 include { CLEANSER_ASSIGN } from './modules/cleanser'
+include { PERTPY_ASSIGN } from './modules/pertpy'
 // TODO: Add more methods as needed
 
 workflow {
@@ -40,6 +41,7 @@ workflow {
     branched_ch = dataset_method_ch.branch {
         crispat: it[2] == 'crispat'
         cleanser: it[2] == 'cleanser'
+        pertpy: it[2] == 'pertpy'
         // TODO: Add more methods here
     }
         
@@ -48,6 +50,9 @@ workflow {
     
     // Run cleanser with explicit output directory
     cleanser_results = CLEANSER_ASSIGN(branched_ch.cleanser, outdir)
+    
+    // Run pertpy with explicit output directory
+    pertpy_results = PERTPY_ASSIGN(branched_ch.pertpy, outdir)
     // TODO: Add more methods here
 }
 

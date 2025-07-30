@@ -1,0 +1,5 @@
+name: pertpy
+channels:
+  - conda-forge
+dependencies:
+  - pertpy
