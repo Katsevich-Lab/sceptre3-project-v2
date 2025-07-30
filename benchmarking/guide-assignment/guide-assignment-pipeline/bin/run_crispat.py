@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import sys
 import pandas as pd
-from pathlib import Path
 from crispat import ga_poisson_gauss
 
 input_h5ad = sys.argv[1]
@@ -11,7 +10,7 @@ output_dir = "crispat_output/"
 ga_poisson_gauss(input_h5ad, output_dir)
 
 # Post-process output to standardized format
-crispat_output = Path(output_dir) / "assignments.csv"
+crispat_output = f"{output_dir}/assignments.csv"
 df = pd.read_csv(crispat_output)
 
 # Convert to standardized format (cell_id, grna_id)

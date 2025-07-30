@@ -5,7 +5,7 @@ process CLEANSER_ASSIGN {
     
     conda "${moduleDir}/environment.yml"
     
-    // Resources set dynamically from configs/config.csv
+    // Resources set dynamically from configs/{run_id}_config.csv
     cpus { resources.cpus }
     memory { resources.memory }
     
