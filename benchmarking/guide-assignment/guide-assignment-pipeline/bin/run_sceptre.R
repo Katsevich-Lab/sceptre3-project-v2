@@ -4,6 +4,8 @@
 args <- commandArgs(trailingOnly = TRUE)
 input_dir <- args[1]  # Directory containing sceptre-compatible data
 
+# input_dir <- "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/sceptre_example/sceptre_input/"
+
 # Initialize renv and restore from lockfile if it exists
 # Use a simple working directory approach for lockfile
 lockfile_path <- "renv.lock"
@@ -63,25 +65,28 @@ sceptre_object <- set_analysis_parameters(sceptre_object)
 # Assign gRNAs using thresholding method (more robust for dummy data)
 # TODO: Change back to mixture method once realistic data is available
 cat("Assigning gRNAs using thresholding method...\n")
-sceptre_object <- assign_grnas(sceptre_object, method = "thresholding", threshold = 1)
+sceptre_object <- assign_grnas(sceptre_object, method = "thresholding", threshold = 9)
 
 # Extract guide assignments as sparse logical matrix
 assignment_matrix <- get_grna_assignments(sceptre_object)
 cat("Assignment matrix dimensions:", nrow(assignment_matrix), "gRNAs x", ncol(assignment_matrix), "cells\n")
 
-# Convert sparse logical matrix to standard format
-# Find which gRNA is TRUE for each cell
-assignments_list <- apply(assignment_matrix, 2, function(cell_col) {
-  assigned_grnas <- rownames(assignment_matrix)[cell_col]
-  if(length(assigned_grnas) == 1) return(assigned_grnas)
-  else if(length(assigned_grnas) == 0) return(NA)
-  else return(assigned_grnas[1])  # Take first if multiple
-})
+# Debug the assignment matrix structure
+debug_info <- paste(
+  "Assignment matrix class:", paste(class(assignment_matrix), collapse = ", "), "\n",
+  "Row names length:", length(rownames(assignment_matrix)), "\n",
+  "Col names length:", length(colnames(assignment_matrix)), "\n", 
+  "Sum of assignments:", sum(assignment_matrix), "\n",
+  "First 5 row names:", paste(head(rownames(assignment_matrix), 5), collapse = ", "), "\n",
+  "First 5 col names:", paste(head(colnames(assignment_matrix), 5), collapse = ", "), "\n"
+)
+writeLines(debug_info, "debug_assignment_matrix.txt")
+cat(debug_info)
 
-# Create standardized output using matrix column names for cell IDs
+# Create standardized output using cell names from sceptre object
 output_df <- data.frame(
-  cell_id = colnames(assignment_matrix),
-  grna_id = as.character(assignments_list),
+  cell_id = colnames(grna_matrix),
+  grna_id = rownames(assignment_matrix)[assignment_matrix |> apply(2, which)],
   stringsAsFactors = FALSE
 )
 

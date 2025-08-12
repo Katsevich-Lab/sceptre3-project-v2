@@ -34,11 +34,11 @@ def main():
     
     for i in range(num_cells):
         # Primary gRNA gets high expression
-        grna_matrix[grnas_expressed[i], i] = np.random.poisson(10) + 2
+        grna_matrix[grnas_expressed[i], i] = np.random.uniform(10, 15, 1)
         
         # Other gRNAs get background expression (sparse)
         other_grnas = [j for j in range(num_grnas + num_NTs) if j != grnas_expressed[i]]
-        background_counts = np.random.poisson(4, len(other_grnas))
+        background_counts = np.random.uniform(1,8, len(other_grnas))
         background_mask = np.random.binomial(1, 0.5, len(other_grnas))
         for j, grna_idx in enumerate(other_grnas):
             grna_matrix[grna_idx, i] = background_counts[j] * background_mask[j]
