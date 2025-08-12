@@ -6,6 +6,7 @@ nextflow.enable.dsl = 2
 include { CRISPAT_ASSIGN } from './modules/crispat'
 include { CLEANSER_ASSIGN } from './modules/cleanser'
 include { PERTPY_ASSIGN } from './modules/pertpy'
+include { SCEPTRE_ASSIGN } from './modules/sceptre'
 // TODO: Add more methods as needed
 
 workflow {
@@ -42,6 +43,7 @@ workflow {
         crispat: it[2] == 'crispat'
         cleanser: it[2] == 'cleanser'
         pertpy: it[2] == 'pertpy'
+        sceptre: it[2] == 'sceptre'
         // TODO: Add more methods here
     }
         
@@ -53,6 +55,9 @@ workflow {
     
     // Run pertpy with explicit output directory
     pertpy_results = PERTPY_ASSIGN(branched_ch.pertpy, outdir)
+    
+    // Run sceptre with explicit output directory
+    sceptre_results = SCEPTRE_ASSIGN(branched_ch.sceptre, outdir)
     // TODO: Add more methods here
 }
 

@@ -1,0 +1,14 @@
+name: sceptre
+channels:
+  - conda-forge
+  - r
+dependencies:
+  - r-base
+  - r-devtools
+  - r-remotes
+  - r-renv
+  - r-data.table
+  - gcc_linux-64
+  - gxx_linux-64
+  - make
+  - zlib

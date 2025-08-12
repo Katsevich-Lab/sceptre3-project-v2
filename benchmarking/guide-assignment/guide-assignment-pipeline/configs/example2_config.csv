@@ -2,3 +2,4 @@ method,dataset,cpus,memory
 crispat,example2,1,4.GB
 cleanser,example2,2,8.GB
 pertpy,example2,1,4.GB
+sceptre,example2,2,8.GB
