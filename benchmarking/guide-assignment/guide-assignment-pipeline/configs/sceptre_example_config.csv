@@ -1,0 +1,2 @@
+method,dataset,cpus,memory
+sceptre,sceptre_example,2,8.GB
