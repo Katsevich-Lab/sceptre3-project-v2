@@ -6,34 +6,7 @@ input_dir <- args[1]  # Directory containing sceptre-compatible data
 
 # input_dir <- "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/sceptre_example/sceptre_input/"
 
-# Initialize renv and restore from lockfile if it exists
-# Use a simple working directory approach for lockfile
-lockfile_path <- "renv.lock"
-
-if (file.exists(lockfile_path)) {
-  # Restore from existing lockfile (reproducible mode)
-  cat("Restoring R environment from lockfile...\n")
-  renv::restore(lockfile = lockfile_path, prompt = FALSE)
-} else {
-  # First time setup: install sceptre and create lockfile
-  cat("First time setup: installing sceptre and creating lockfile...\n")
-  renv::init(bare = TRUE)
-  
-  # Install remotes first (needed for GitHub installations)
-  install.packages("remotes", repos = "https://cran.r-project.org")
-  
-  # Install data.table first from CRAN (required dependency for sceptre)
-  install.packages("data.table", repos = "https://cran.r-project.org")
-  
-  # Install sceptre with pinned version
-  remotes::install_github("Katsevich-Lab/sceptre", ref = "v0.10.1")
-  
-  # Create lockfile for future reproducibility
-  renv::snapshot(lockfile = lockfile_path, prompt = FALSE)
-  cat("Lockfile created at:", lockfile_path, "\n")
-}
-
-# Load sceptre
+# Load sceptre library (pre-installed in container)
 library(sceptre)
 
 # Load the sceptre-compatible data files

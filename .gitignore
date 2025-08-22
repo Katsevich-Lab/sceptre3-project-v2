@@ -15,3 +15,7 @@ conda-cache/
 
 # vscode
 .vscode/*
+
+# singularity images
+*.sif
+

@@ -1,0 +1,44 @@
+Bootstrap: docker
+From: rocker/r-ver:4.4.3
+
+%labels
+    Author Louis Deutsch
+    Description Sceptre guide assignment container with latest main branch
+    Version 1.0
+
+%post
+    # Update system packages
+    apt-get update && apt-get install -y \
+        build-essential \
+        cmake \
+        curl \
+        git \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libxml2-dev \
+        zlib1g-dev \
+        libfontconfig1-dev \
+        libfreetype6-dev \
+        libfribidi-dev \
+        libharfbuzz-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libtiff5-dev \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Install R packages and sceptre directly
+    R --slave -e 'install.packages("remotes", repos="https://cran.r-project.org")'
+    R --slave -e 'remotes::install_github("Katsevich-Lab/sceptre")'
+
+    # Create working directory
+    mkdir -p /opt/sceptre
+
+%files
+    # Copy the R script (will be done at runtime via bind mount)
+
+%runscript
+    exec Rscript "$@"
+
+%environment
+    export LC_ALL=C
+    export PATH=/usr/local/bin:$PATH

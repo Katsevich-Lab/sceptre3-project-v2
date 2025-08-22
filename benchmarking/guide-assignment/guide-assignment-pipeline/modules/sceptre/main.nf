@@ -3,7 +3,7 @@
 process SCEPTRE_ASSIGN {
     tag "${dataset_id}"
     
-    conda "${moduleDir}/environment.yml"
+    container "${moduleDir}/sceptre.sif"
     
     // Resources set dynamically from configs/{run_id}_config.csv
     cpus { resources.cpus }
