@@ -43,10 +43,54 @@
 #'   adata$write_h5ad(path_to_write)
 #' } 
 
+row_to_sparse_matrix <- function(values) {
+  nonzero <- which(values != 0)
+  Matrix::sparseMatrix(
+    i = rep(1L, length(nonzero)),  # it's all one row
+    j = nonzero,          
+    x = values[nonzero],                
+    dims = c(1L, length(values)),
+    repr = "R"
+  )
+}
+
+odm_to_R <- function(odm) {
+  if(!inherits(odm, "odm")) {
+    stop("`odm` must be an object of class odm as defined in the ondisc package.")
+  }
+  out <- lapply(1:nrow(odm), function(i) odm[i,] |> row_to_sparse_matrix()) |>
+    do.call(what = rbind)
+  rownames(out) <- rownames(odm)
+  return(out)
+}
 
 
 
+R_to_h5ad <- function(mat, path_to_write) {
+  if(is.null(colnames(mat))) {
+    colnames(mat) <- paste0("CELL_", seq_len(ncol(mat)))
+  }
+  
+  # Wrap & write (zellkonverter streams blocks to .h5ad)
+  sce <- SingleCellExperiment(assays = list(counts = mat))
+  writeH5AD(sce, path_to_write)
+}
 
+# making a small piece of gasperini
+gasperini_odm <- ondisc::initialize_odm_from_backing_file("~/katsevich-lab/data/external/gasperini-2019-v3/at-scale/processed/grna.odm")
+gasperini_mat <- odm_to_R(gasperini_odm)
+dim(gasperini_mat)
+
+gasp_small <- gasperini_mat[1:500, 1:1000]
+
+library(reticulate)
+
+conda_create("r-anndata", packages = c("python=3.12"))
+use_condaenv("r-anndata", required = TRUE)
+py_install(c("numpy", "scipy", "h5py", "anndata"), #"zarr")
+           envname = "r-anndata", pip = TRUE)
+py_config()
+R_to_h5ad(gasp_small, "~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/gasperini/grna_small.h5ad")
 
 
 
