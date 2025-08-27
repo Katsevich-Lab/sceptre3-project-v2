@@ -3,7 +3,7 @@
 process PERTPY_ASSIGN {
     tag "${dataset_id}"
     
-    conda "${moduleDir}/environment.yml"
+    container "${moduleDir}/pertpy.sif"
     
     // Resources set dynamically from configs/{run_id}_config.csv
     cpus { resources.cpus }
