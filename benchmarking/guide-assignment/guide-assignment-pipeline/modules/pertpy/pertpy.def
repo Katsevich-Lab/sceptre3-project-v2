@@ -1,0 +1,47 @@
+Bootstrap: docker
+From: python:3.11-slim
+
+%labels
+    Author Louis Deutsch
+    Description Pertpy guide assignment container with fixed anndata
+    Version 1.0
+
+%post
+    # Install system packages required to build scientific Python packages
+    apt-get update && apt-get install -y \
+        gcc \
+        g++ \
+        build-essential \
+        libhdf5-dev \
+        libblas-dev \
+        liblapack-dev \
+        libatlas-base-dev \
+        libffi-dev \
+        libxml2-dev \
+        libxslt-dev \
+        zlib1g-dev \
+        libjpeg-dev \
+        git \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Upgrade pip
+    pip install --no-cache-dir --upgrade pip
+
+    # Pin anndata to avoid missing 'anndata.io'
+    pip install --no-cache-dir "anndata==0.8.0"
+
+    # Install scanpy (compatible with anndata 0.8.0)
+    pip install --no-cache-dir scanpy
+
+    # Install pertpy on top
+    pip install --no-cache-dir pertpy
+
+    # Optional: check install health
+    pip check
+
+%runscript
+    exec python "$@"
+
+%environment
+    export LC_ALL=C
+    export PATH=/usr/local/bin:$PATH

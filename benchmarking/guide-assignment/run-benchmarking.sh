@@ -3,7 +3,7 @@
 # Nextflow invocation script for guide assignment benchmarking pipeline
 
 # Set run identifier (required)
-RUN_ID="sceptre_example"
+RUN_ID="gasperini"
 
 # Run the pipeline
 nextflow run guide-assignment-pipeline/main.nf \
