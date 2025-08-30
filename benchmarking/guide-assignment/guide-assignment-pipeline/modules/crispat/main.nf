@@ -1,14 +1,10 @@
-// modules/crispat/main.nf
-// Nextflow DSL2 process: CRISPAT_ASSIGN
-
 process CRISPAT_ASSIGN {
   label 'crispat'
   tag "${dataset_id}"
 
-  // Use the env file that lives next to this module
+  // uses modules/crispat/environment.yml (next to this file)
   conda "${moduleDir}/environment.yml"
 
-  // Resources set dynamically from configs/{run_id}_config.csv
   cpus { resources.cpus }
   memory { resources.memory }
 
@@ -23,20 +19,23 @@ process CRISPAT_ASSIGN {
              mode: 'copy',
              saveAs: { "assignments_crispat_${dataset_id}.csv" }
 
-  // Use triple *single* quotes so $VARS are passed to bash untouched.
+  // Triple *single* quotes: shell $VARS pass through unchanged.
   // Inject Nextflow vars with !{...}.
-  script:
-  '''
-  set -euo pipefail
+script:
+"""
+set -euo pipefail
 
-  export PYTHONNOUSERSITE=1
-  [ -n "${PYTHONPATH:-}" ] && unset PYTHONPATH
-  export MPLCONFIGDIR="$PWD/.mplconfig";      mkdir -p "$MPLCONFIGDIR"
-  export NUMBA_CACHE_DIR="$PWD/.numba_cache"; mkdir -p "$NUMBA_CACHE_DIR"
-  export XDG_CACHE_HOME="$PWD/.cache";        mkdir -p "$XDG_CACHE_HOME"
+echo "NF projectDir: ${projectDir}"
+echo "dataset_dir: ${dataset_dir}"
+ls -l "${dataset_dir}" || true
 
-  # Run crispat guide assignment
-  python !{projectDir}/bin/run_crispat.py !{dataset_dir}/grna_counts_crispat.h5ad
-  '''
+export PYTHONNOUSERSITE=1
+[ -n "\${PYTHONPATH:-}" ] && unset PYTHONPATH
+export MPLCONFIGDIR="\$PWD/.mplconfig";      mkdir -p "\$MPLCONFIGDIR"
+export NUMBA_CACHE_DIR="\$PWD/.numba_cache"; mkdir -p "\$NUMBA_CACHE_DIR"
+export XDG_CACHE_HOME="\$PWD/.cache";        mkdir -p "\$XDG_CACHE_HOME"
+
+python "${projectDir}/bin/run_crispat.py" "${dataset_dir}/grna_counts_crispat.h5ad"
+"""
+
 }
-

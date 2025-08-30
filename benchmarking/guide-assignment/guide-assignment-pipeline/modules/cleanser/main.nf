@@ -1,28 +1,38 @@
-// Nextflow module for CLEANSER guide assignment
-
 process CLEANSER_ASSIGN {
-    tag "${dataset_id}"
-    
-    conda "${moduleDir}/environment.yml"
-    
-    // Resources set dynamically from configs/{run_id}_config.csv
-    cpus { resources.cpus }
-    memory { resources.memory }
-    
-    input:
-    tuple val(dataset_id), path(dataset_dir), val(method), val(resources)
-    val outdir
-    
-    output:
-    tuple val(dataset_id), val(method), path("assignments_cleanser.csv"), emit: assignments
-        
-    publishDir "${outdir}", 
-               mode: 'copy',
-               saveAs: { filename -> "assignments_cleanser_${dataset_id}.csv" }
-    
-    script:
-    """
-    # Run CLEANSER guide assignment
-    python ${projectDir}/bin/run_cleanser.py ${dataset_dir}/grna_counts_cleanser.mtx
-    """
+  label 'cleanser'
+  tag "${dataset_id}"
+
+  conda "${moduleDir}/environment.yml"
+
+  cpus { resources.cpus }
+  memory { resources.memory }
+
+  input:
+  tuple val(dataset_id), path(dataset_dir), val(method), val(resources)
+  val outdir
+
+  output:
+  tuple val(dataset_id), val(method), path("assignments_cleanser.csv"), emit: assignments
+
+  publishDir "${outdir}",
+             mode: 'copy',
+             saveAs: { "assignments_cleanser_${dataset_id}.csv" }
+
+script:
+"""
+set -euo pipefail
+
+echo "NF projectDir: ${projectDir}"
+echo "dataset_dir: ${dataset_dir}"
+ls -l "${dataset_dir}" || true
+
+export PYTHONNOUSERSITE=1
+[ -n "\${PYTHONPATH:-}" ] && unset PYTHONPATH
+export MPLCONFIGDIR="\$PWD/.mplconfig";      mkdir -p "\$MPLCONFIGDIR"
+export NUMBA_CACHE_DIR="\$PWD/.numba_cache"; mkdir -p "\$NUMBA_CACHE_DIR"
+export XDG_CACHE_HOME="\$PWD/.cache";        mkdir -p "\$XDG_CACHE_HOME"
+
+python "${projectDir}/bin/run_cleanser.py" "${dataset_dir}/grna_counts_cleanser.mtx"
+"""
+
 }
