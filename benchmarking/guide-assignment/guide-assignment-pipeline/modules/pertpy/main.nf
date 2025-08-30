@@ -1,6 +1,7 @@
 // Nextflow module for pertpy guide assignment (simple + strict)
 
 process PERTPY_ASSIGN {
+  label 'pertpy'
   tag "${dataset_id}"
   stageInMode 'copy'                 // copy inputs into task dir (no symlinks)
 
