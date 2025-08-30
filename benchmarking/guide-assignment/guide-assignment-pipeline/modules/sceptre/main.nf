@@ -1,28 +1,43 @@
-// Nextflow module for sceptre guide assignment
-
+// modules/sceptre/main.nf
 process SCEPTRE_ASSIGN {
-    tag "${dataset_id}"
-    
-    container "${moduleDir}/sceptre.sif"
-    
-    // Resources set dynamically from configs/{run_id}_config.csv
-    cpus { resources.cpus }
-    memory { resources.memory }
-    
-    input:
-    tuple val(dataset_id), path(dataset_dir), val(method), val(resources)
-    val outdir
-    
-    output:
-    tuple val(dataset_id), val(method), path("assignments_sceptre.csv"), emit: assignments
-        
-    publishDir "${outdir}", 
-               mode: 'copy',
-               saveAs: { filename -> "assignments_sceptre_${dataset_id}.csv" }
-    
-    script:
-    """
-    # Run sceptre guide assignment
-    Rscript ${projectDir}/bin/run_sceptre.R ${dataset_dir}/sceptre_input
-    """
+  tag "${dataset_id}"
+
+  container "${moduleDir}/sceptre.sif"
+
+  cpus { resources.cpus }
+  memory { resources.memory }
+
+  // optional: copy staged inputs into the task dir (avoids symlink issues under --containall)
+  stageInMode 'copy'
+
+  input:
+  tuple val(dataset_id), path(dataset_dir), val(method), val(resources)
+  val outdir
+
+  output:
+  tuple val(dataset_id), val(method), path("assignments_sceptre.csv"), emit: assignments
+
+  publishDir "${outdir}",
+             mode: 'copy',
+             saveAs: { "assignments_sceptre_${dataset_id}.csv" }
+
+  script:
+  """
+  set -euo pipefail
+
+  echo "dataset_dir: ${dataset_dir}"
+  ls -l "${dataset_dir}" || true
+  ls -l "${dataset_dir}/sceptre_input" || true
+
+  # R needs writable temp and (if any package tries) a user lib dir
+  export TMPDIR="\$PWD/tmp";           mkdir -p "\$TMPDIR"
+  export R_TMPDIR="\$TMPDIR"
+  export R_USER="\$PWD"
+  export R_LIBS_USER="\$PWD/.Rlibs";   mkdir -p "\$R_LIBS_USER"
+
+  # Run sceptre; --vanilla avoids reading host/user profiles or writing history
+  Rscript --vanilla ${projectDir}/bin/run_sceptre.R ${dataset_dir}/sceptre_input
+
+  """
 }
+
