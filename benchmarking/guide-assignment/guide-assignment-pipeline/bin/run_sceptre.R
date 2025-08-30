@@ -4,8 +4,6 @@
 args <- commandArgs(trailingOnly = TRUE)
 input_dir <- args[1]  # Directory containing sceptre-compatible data
 
-# input_dir <- "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/sceptre_example/sceptre_input/"
-
 # Load sceptre library (pre-installed in container)
 library(sceptre)
 
@@ -37,8 +35,8 @@ sceptre_object <- set_analysis_parameters(sceptre_object)
 
 # Assign gRNAs using thresholding method (more robust for dummy data)
 # TODO: Change back to mixture method once realistic data is available
-cat("Assigning gRNAs using thresholding method...\n")
-sceptre_object <- assign_grnas(sceptre_object, method = "thresholding", threshold = 9)
+cat("Assigning gRNAs using maximum method...\n")
+sceptre_object <- assign_grnas(sceptre_object, method = "maximum")
 
 # Extract guide assignments as sparse logical matrix
 assignment_matrix <- get_grna_assignments(sceptre_object)
@@ -57,9 +55,13 @@ writeLines(debug_info, "debug_assignment_matrix.txt")
 cat(debug_info)
 
 # Create standardized output using cell names from sceptre object
+cells_with_assignments <- assignment_matrix |> apply(2, which)
+if(any(sapply(cells_with_assignments, length) == 0)) {
+  stop("some cells did not get assigned to any gRNAs.")
+}
 output_df <- data.frame(
   cell_id = colnames(grna_matrix),
-  grna_id = rownames(assignment_matrix)[assignment_matrix |> apply(2, which)],
+  grna_id = rownames(assignment_matrix)[cells_with_assignments],
   stringsAsFactors = FALSE
 )
 
