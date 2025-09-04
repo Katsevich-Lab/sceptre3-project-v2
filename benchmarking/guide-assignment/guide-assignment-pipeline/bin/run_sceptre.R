@@ -10,9 +10,10 @@ library(sceptre)
 # Load the sceptre-compatible data files
 cat("Loading data from:", input_dir, "\n")
 
-# Load matrices and data frames
-response_matrix <- read.csv(file.path(input_dir, "response_matrix.csv"), row.names = 1)
-grna_matrix <- read.csv(file.path(input_dir, "grna_matrix.csv"), row.names = 1)
+# Load sparse matrices and data frames
+library(Matrix)
+response_matrix <- readRDS(file.path(input_dir, "response_matrix.rds"))
+grna_matrix <- readRDS(file.path(input_dir, "grna_matrix.rds"))
 grna_target_df <- read.csv(file.path(input_dir, "grna_target_data_frame.csv"))
 
 cat("Data loaded:\n")
@@ -23,8 +24,8 @@ cat("  gRNA targets:", nrow(grna_target_df), "gRNAs mapped to targets\n")
 # Create sceptre object
 cat("Creating sceptre object...\n")
 sceptre_object <- import_data(
-  response_matrix = as.matrix(response_matrix),
-  grna_matrix = as.matrix(grna_matrix),
+  response_matrix = response_matrix,
+  grna_matrix = grna_matrix,
   grna_target_data_frame = grna_target_df,
   moi = "low"  # Assume low MOI for now
 )
