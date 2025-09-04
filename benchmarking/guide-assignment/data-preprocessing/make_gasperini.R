@@ -58,9 +58,9 @@ gasperini_base_fp <- .get_config_path("LOCAL_GASPERINI_2019_V3_DATA_DIR")
 
 data_dir <- file.path(gasperini_base_fp, "at-scale/processed")
 
-write_cleanser_fp <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/gasperini/grna_counts_cleanser.mtx")
-write_crispat_fp <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/gasperini/grna_counts_crispat.h5ad")
-write_pertpy_fp <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/gasperini/grna_counts_pertpy.h5ad")
+write_cleanser_fp <- NULL # file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/gasperini/grna_counts_cleanser.mtx")
+write_crispat_fp <- NULL # file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/gasperini/grna_counts_crispat.h5ad")
+write_pertpy_fp <- NULL # file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/gasperini/grna_counts_pertpy.h5ad")
 write_sceptre_fp <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/gasperini/sceptre_input")
 
 

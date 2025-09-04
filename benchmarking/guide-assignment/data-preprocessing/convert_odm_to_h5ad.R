@@ -1,9 +1,6 @@
 
 
-library(reticulate)
-# library(anndata)
-library(SingleCellExperiment)
-library(zellkonverter)
+
 
 #' 
 #' conda_create("r-anndata", packages = c("python=3.12"))
@@ -71,6 +68,10 @@ odm_to_R <- function(odm, num_rows=NULL) {
 
 
 R_to_h5ad <- function(mat, path_to_write) {
+  library(reticulate)
+  library(SingleCellExperiment)
+  library(zellkonverter)
+  
   if(is.null(colnames(mat))) {
     colnames(mat) <- paste0("CELL_", seq_len(ncol(mat)))
   }
