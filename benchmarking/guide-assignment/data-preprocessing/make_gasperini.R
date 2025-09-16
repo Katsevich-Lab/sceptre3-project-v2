@@ -10,8 +10,8 @@ make_data <- function(data_dir, write_crispat_fp=NULL, write_pertpy_fp=NULL, wri
   # loading grna_matrix into R
   grna_odm <- ondisc::initialize_odm_from_backing_file(file.path(data_dir, "grna.odm"))
   cell_names <- paste0("CELL_", 1:ncol(grna_odm))
-  grna_mat <- odm_to_R(grna_odm)  # sparse matrix
-  colnames(grna_mat) <- cell_names
+  # grna_mat <- odm_to_R(grna_odm)  # sparse matrix
+  # colnames(grna_mat) <- cell_names
   
   if(!is.null(write_cleanser_fp)) {
     Matrix::writeMM(grna_mat, write_cleanser_fp)
@@ -38,18 +38,20 @@ make_data <- function(data_dir, write_crispat_fp=NULL, write_pertpy_fp=NULL, wri
   }
   
   if(!is.null(write_sceptre_fp)) {
-    saveRDS(grna_mat, file.path(write_sceptre_fp, "grna_matrix.rds"))
+    # saveRDS(grna_mat, file.path(write_sceptre_fp, "grna_matrix.rds"))
     
-    rm(grna_mat)
+    # rm(grna_mat)
     
-    response_odm <- ondisc::initialize_odm_from_backing_file(file.path(data_dir, "response.odm"))
-    response_mat <- odm_to_R(response_odm)
-    colnames(response_mat) <- cell_names
-    saveRDS(response_mat, file.path(write_sceptre_fp, "response_matrix.rds"))
-    rm(response_mat)
+    #response_odm <- ondisc::initialize_odm_from_backing_file(file.path(data_dir, "response.odm"))
+    print("loading...")
+    #response_mat <- odm_to_R(response_odm)
+    print("loaded")
+    #colnames(response_mat) <- cell_names
+    #saveRDS(response_mat, file.path(write_sceptre_fp, "response_matrix.rds"))
+    #rm(response_mat)
     
-    scep <- readRDS(file.path(data_dir, "response.odm"))
-    write.csv(scep@grna_target_data_frame, file.path(write_sceptre_fp, "grna_target_data_frame.csv"))
+    scep <- readRDS(file.path(data_dir, "sceptre_object.rds"))
+    write.csv(scep@grna_target_data_frame, file.path(write_sceptre_fp, "grna_target_data_frame.csv"), row.names=FALSE)
   }
 }
 
