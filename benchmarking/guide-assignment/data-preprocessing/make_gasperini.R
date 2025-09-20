@@ -3,68 +3,151 @@ script_dir <- dirname(this_file)
 source(file.path(script_dir, "convert_odm_to_h5ad.R"))
 source("~/.Rprofile")
 
-make_data <- function(data_dir, write_crispat_fp=NULL, write_pertpy_fp=NULL, write_sceptre_fp=NULL,
-                      write_cleanser_fp=NULL) {
-  make_h5ad <- !is.null(write_crispat_fp) || !is.null(write_pertpy_fp)  # only need to do one, and copy the other if both needed
+
+
+make_data <- function(data_dir, output_base_dir,
+                     make_crispat=FALSE, make_pertpy=FALSE, 
+                     make_sceptre=FALSE, make_cleanser=FALSE,
+                     sizes = NULL) {
   
-  # loading grna_matrix into R
-  grna_odm <- ondisc::initialize_odm_from_backing_file(file.path(data_dir, "grna.odm"))
-  cell_names <- paste0("CELL_", 1:ncol(grna_odm))
-  # grna_mat <- odm_to_R(grna_odm)  # sparse matrix
-  # colnames(grna_mat) <- cell_names
-  
-  if(!is.null(write_cleanser_fp)) {
-    Matrix::writeMM(grna_mat, write_cleanser_fp)
-  } 
-  if(make_h5ad) {
+  # Setup Python/reticulate if needed for h5ad
+  if(make_crispat || make_pertpy) {
     library(reticulate)
     conda_create("r-anndata", packages = c("python=3.12"))
     use_condaenv("r-anndata", required = TRUE)
     py_install(c("numpy", "scipy", "h5py", "anndata"), 
                envname = "r-anndata", pip = TRUE)
     py_config()
+  }
+  
+  # PHASE 1: Load and process gRNA matrix
+  grna_odm <- ondisc::initialize_odm_from_backing_file(file.path(data_dir, "grna.odm"))
+  cell_names <- paste0("CELL_", 1:ncol(grna_odm))
+  print("Loading gRNA matrix...")
+  grna_mat <- odm_to_R(grna_odm)  # SLOW - do once
+  print("gRNA matrix loaded")
+  colnames(grna_mat) <- cell_names
+  
+  # Store original dimensions before clearing from memory
+  original_num_grnas <- nrow(grna_mat)
+  original_num_cells <- ncol(grna_mat)
+  
+  # Loop through sizes for gRNA-based outputs
+  for(i in 1:nrow(sizes)) {
+    name <- sizes[i, "name"]
+    num_grnas <- min(sizes[i, "num_grnas"], nrow(grna_mat))
+    num_cells <- min(sizes[i, "num_cells"], ncol(grna_mat))
     
-    # if only doing one, just write that one. Otherwise write pertpy first
-    # and then cp that to make crispat's
-    if(!is.null(write_crispat_fp) && is.null(write_pertpy_fp)) {
-      R_to_h5ad(grna_mat, write_crispat_fp)
-    } else if(is.null(write_crispat_fp) && !is.null(write_pertpy_fp)) {
-      R_to_h5ad(grna_mat, write_pertpy_fp)
-    } else {
-      R_to_h5ad(grna_mat, write_pertpy_fp)
-      cmd <- paste("cp", write_pertpy_fp, write_crispat_fp)
-      system(cmd)
+    print(paste("Processing", name, "- gRNAs:", num_grnas, "cells:", num_cells))
+    
+    # Subset gRNA matrix
+    grna_subset <- grna_mat[1:num_grnas, 1:num_cells]
+    output_dir <- file.path(output_base_dir, name)
+    
+    # Write crispat
+    if(make_crispat) {
+      crispat_dir <- file.path(output_dir, "crispat")
+      dir.create(crispat_dir, recursive=TRUE, showWarnings=FALSE)
+      print(paste("  Writing crispat to", crispat_dir))
+      R_to_h5ad(grna_subset, file.path(crispat_dir, "grna_matrix.h5ad"))
+    }
+    
+    # Write pertpy
+    if(make_pertpy) {
+      pertpy_dir <- file.path(output_dir, "pertpy")
+      dir.create(pertpy_dir, recursive=TRUE, showWarnings=FALSE)
+      print(paste("  Writing pertpy to", pertpy_dir))
+      R_to_h5ad(grna_subset, file.path(pertpy_dir, "grna_matrix.h5ad"))
+    }
+    
+    # Write cleanser
+    if(make_cleanser) {
+      cleanser_dir <- file.path(output_dir, "cleanser")
+      dir.create(cleanser_dir, recursive=TRUE, showWarnings=FALSE)
+      print(paste("  Writing cleanser to", cleanser_dir))
+      Matrix::writeMM(grna_subset, file.path(cleanser_dir, "grna_matrix.mtx"))
+    }
+    
+    # Write sceptre gRNA matrix
+    if(make_sceptre) {
+      sceptre_dir <- file.path(output_dir, "sceptre")
+      dir.create(sceptre_dir, recursive=TRUE, showWarnings=FALSE)
+      print(paste("  Writing sceptre gRNA matrix to", sceptre_dir))
+      saveRDS(grna_subset, file.path(sceptre_dir, "grna_matrix.rds"))
     }
   }
   
-  if(!is.null(write_sceptre_fp)) {
-    # saveRDS(grna_mat, file.path(write_sceptre_fp, "grna_matrix.rds"))
+  # Clear gRNA matrix from memory
+  rm(grna_mat)
+  gc()
+  print("gRNA matrix cleared from memory")
+  
+  # PHASE 2: If sceptre needed, load and process response matrix
+  if(make_sceptre) {
+    # Load response data ONCE (slow step)
+    response_odm <- ondisc::initialize_odm_from_backing_file(file.path(data_dir, "response.odm"))
+    print("Loading response matrix...")
+    response_mat <- odm_to_R(response_odm)  # SLOW - do once
+    print("Response matrix loaded")
+    colnames(response_mat) <- cell_names
     
-    # rm(grna_mat)
-    
-    #response_odm <- ondisc::initialize_odm_from_backing_file(file.path(data_dir, "response.odm"))
-    print("loading...")
-    #response_mat <- odm_to_R(response_odm)
-    print("loaded")
-    #colnames(response_mat) <- cell_names
-    #saveRDS(response_mat, file.path(write_sceptre_fp, "response_matrix.rds"))
-    #rm(response_mat)
-    
+    # Load grna_target_data_frame once
     scep <- readRDS(file.path(data_dir, "sceptre_object.rds"))
-    write.csv(scep@grna_target_data_frame, file.path(write_sceptre_fp, "grna_target_data_frame.csv"), row.names=FALSE)
+    grna_target_df <- scep@grna_target_data_frame
+    
+    # Loop through sizes for response outputs
+    for(i in 1:nrow(sizes)) {
+      name <- sizes[i, "name"]
+      num_grnas <- min(sizes[i, "num_grnas"], original_num_grnas)  # Using stored dimension
+      num_responses <- min(sizes[i, "num_responses"], nrow(response_mat))
+      num_cells <- min(sizes[i, "num_cells"], ncol(response_mat))
+      
+      print(paste("Processing", name, "- responses:", num_responses, "cells:", num_cells))
+      
+      # Subset response matrix
+      response_subset <- response_mat[1:num_responses, 1:num_cells]
+      
+      # Subset grna_target_data_frame to match the gRNAs
+      grna_target_subset <- grna_target_df[1:num_grnas, ]
+      
+      # Write to sceptre directory
+      sceptre_dir <- file.path(output_base_dir, name, "sceptre")
+      print(paste("  Writing sceptre response matrix to", sceptre_dir))
+      saveRDS(response_subset, file.path(sceptre_dir, "response_matrix.rds"))
+      write.csv(grna_target_subset, file.path(sceptre_dir, "grna_target_data_frame.csv"), row.names=FALSE)
+    }
+    
+    # Clear response matrix from memory
+    # rm(response_mat)
+    # gc()
+    # print("Response matrix cleared from memory")
   }
+  
+  print("Data generation complete!")
 }
+
+
+
+sizes <- data.frame(
+  name = c("gasperini_small", "gasperini_medium", "gasperini"),
+  num_grnas = c(500, 2500, Inf),
+  num_cells = c(5000, 50000, Inf),
+  num_responses = c(500, 1000, Inf),
+  stringsAsFactors = FALSE
+)
+
 
 # paths
 gasperini_base_fp <- .get_config_path("LOCAL_GASPERINI_2019_V3_DATA_DIR")
-
 data_dir <- file.path(gasperini_base_fp, "at-scale/processed")
+output_base_dir <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data")
 
-write_cleanser_fp <- NULL # file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/gasperini/grna_counts_cleanser.mtx")
-write_crispat_fp <- NULL # file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/gasperini/grna_counts_crispat.h5ad")
-write_pertpy_fp <- NULL # file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/gasperini/grna_counts_pertpy.h5ad")
-write_sceptre_fp <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/gasperini/sceptre_input")
-
-
-make_data(data_dir = data_dir, write_cleanser_fp = write_cleanser_fp, write_crispat_fp = write_crispat_fp, 
-          write_pertpy_fp = write_pertpy_fp, write_sceptre_fp = write_sceptre_fp)
+make_data(
+  data_dir = data_dir,
+  output_base_dir = output_base_dir,
+  make_crispat = TRUE,
+  make_pertpy = TRUE,
+  make_cleanser = TRUE,
+  make_sceptre = TRUE,
+  sizes = sizes
+)

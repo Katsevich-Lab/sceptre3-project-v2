@@ -31,7 +31,7 @@ process PERTPY_ASSIGN {
 
   # Run from the dataset subdir so the script writes output there
   pushd ${dataset_dir} >/dev/null
-  python ${projectDir}/bin/run_pertpy.py "\$PWD/grna_counts_pertpy.h5ad"
+  python ${projectDir}/bin/run_pertpy.py "\$PWD/grna_matrix.h5ad"
   # Move the output up to the task work dir with the expected name
   mv assignments_pertpy.csv ..
   popd >/dev/null

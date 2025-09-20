@@ -27,7 +27,6 @@ process SCEPTRE_ASSIGN {
 
   echo "dataset_dir: ${dataset_dir}"
   ls -l "${dataset_dir}" || true
-  ls -l "${dataset_dir}/sceptre_input" || true
 
   # R needs writable temp and (if any package tries) a user lib dir
   export TMPDIR="\$PWD/tmp";           mkdir -p "\$TMPDIR"
@@ -36,7 +35,7 @@ process SCEPTRE_ASSIGN {
   export R_LIBS_USER="\$PWD/.Rlibs";   mkdir -p "\$R_LIBS_USER"
 
   # Run sceptre; --vanilla avoids reading host/user profiles or writing history
-  Rscript --vanilla ${projectDir}/bin/run_sceptre.R ${dataset_dir}/sceptre_input
+  Rscript --vanilla ${projectDir}/bin/run_sceptre.R ${dataset_dir}
 
   """
 }

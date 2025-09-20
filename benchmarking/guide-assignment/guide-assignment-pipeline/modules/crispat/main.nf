@@ -35,7 +35,7 @@ export MPLCONFIGDIR="\$PWD/.mplconfig";      mkdir -p "\$MPLCONFIGDIR"
 export NUMBA_CACHE_DIR="\$PWD/.numba_cache"; mkdir -p "\$NUMBA_CACHE_DIR"
 export XDG_CACHE_HOME="\$PWD/.cache";        mkdir -p "\$XDG_CACHE_HOME"
 
-python "${projectDir}/bin/run_crispat.py" "${dataset_dir}/grna_counts_crispat.h5ad"
+python "${projectDir}/bin/run_crispat.py" "${dataset_dir}/grna_matrix.h5ad"
 """
 
 }

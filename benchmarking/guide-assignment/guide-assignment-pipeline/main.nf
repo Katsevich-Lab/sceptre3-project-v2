@@ -32,7 +32,7 @@ workflow {
         .map { resource_row ->
             def dataset_id = resource_row.dataset
             def method = resource_row.method
-            def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}")
+            def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${method}")
             def resources = [cpus: resource_row.cpus, memory: resource_row.memory]
             
             [dataset_id, dataset_dir, method, resources]
