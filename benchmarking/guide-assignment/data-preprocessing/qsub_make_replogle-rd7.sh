@@ -1,5 +1,5 @@
 #!/bin/bash
-#$ -N make_gasperini
+#$ -N make_replogle
 #$ -j y
 #$ -cwd
 #$ -V
@@ -14,5 +14,5 @@ export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 
-R --vanilla -e 'source("make_gasperini.R")'
+R --vanilla -e 'source("make_replogle-rd7.R")'
 
