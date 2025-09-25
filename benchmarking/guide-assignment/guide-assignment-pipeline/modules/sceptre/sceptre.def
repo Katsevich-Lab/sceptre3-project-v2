@@ -13,6 +13,7 @@ From: rocker/r-ver:4.4.3
         cmake \
         curl \
         git \
+        procps \
         libcurl4-openssl-dev \
         libssl-dev \
         libxml2-dev \

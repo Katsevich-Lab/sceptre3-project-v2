@@ -12,6 +12,7 @@ From: python:3.11-slim
         gcc \
         g++ \
         build-essential \
+        procps \
         libhdf5-dev \
         libblas-dev \
         liblapack-dev \
