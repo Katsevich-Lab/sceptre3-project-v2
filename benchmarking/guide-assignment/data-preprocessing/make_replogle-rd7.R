@@ -81,17 +81,24 @@ make_data <- function(data_dir, output_base_dir,
   rm(grna_mat)
   gc()
   print("gRNA matrix cleared from memory")
-  if(make_sceptre) {
-    warning("`make_sceptre = TRUE` but sceptre is not currently supported by this script.")
-  }
   
   # PHASE 2: If sceptre needed, load and process response matrix
   if(make_sceptre) {
-    # Load response data ONCE (slow step)
+    # Load response ODM metadata (not the data itself)
     response_odm <- ondisc::initialize_odm_from_backing_file(file.path(data_dir, "gene.odm"))
-    print("Loading response matrix...")
-    response_mat <- odm_to_R(response_odm)  # SLOW - do once
-    print("Response matrix loaded")
+
+    # Find the maximum number of responses we'll need across all sizes
+    max_responses_needed <- max(sizes$num_responses[!is.infinite(sizes$num_responses)])
+    if(length(max_responses_needed) == 0 || is.na(max_responses_needed)) {
+        # All are Inf, we need to load everything (but this shouldn't happen in practice)
+        max_responses_needed <- nrow(response_odm)
+        warning("All num_responses are Inf - loading entire response matrix!")
+    }
+
+    # Load only the rows we need
+    print(paste("Loading response matrix - first", max_responses_needed, "rows only..."))
+    response_mat <- odm_to_R(response_odm, num_rows = max_responses_needed)
+    print(paste("Response matrix loaded:", nrow(response_mat), "x", ncol(response_mat)))
     colnames(response_mat) <- cell_names
 
     # Load grna_target_data_frame once
@@ -121,9 +128,9 @@ make_data <- function(data_dir, output_base_dir,
     }
 
     # Clear response matrix from memory
-    # rm(response_mat)
-    # gc()
-    # print("Response matrix cleared from memory")
+    rm(response_mat)
+    gc()
+    print("Response matrix cleared from memory")
   }
   
   print("Data generation complete!")
