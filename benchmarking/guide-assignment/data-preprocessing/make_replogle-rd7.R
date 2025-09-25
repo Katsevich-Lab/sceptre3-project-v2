@@ -6,9 +6,9 @@ source("~/.Rprofile")
 
 
 make_data <- function(data_dir, output_base_dir,
-                     make_crispat=FALSE, make_pertpy=FALSE, 
+                     make_crispat=FALSE, make_pertpy=FALSE,
                      make_sceptre=FALSE, make_cleanser=FALSE,
-                     sizes = NULL) {
+                     sizes = NULL, use_real_responses = FALSE) {
   
   # Setup Python/reticulate if needed for h5ad
   if(make_crispat || make_pertpy) {
@@ -82,55 +82,91 @@ make_data <- function(data_dir, output_base_dir,
   gc()
   print("gRNA matrix cleared from memory")
   
-  # PHASE 2: If sceptre needed, load and process response matrix
+  # PHASE 2: If sceptre needed, process response matrix
   if(make_sceptre) {
-    # Load response ODM metadata (not the data itself)
-    response_odm <- ondisc::initialize_odm_from_backing_file(file.path(data_dir, "gene.odm"))
-
-    # Find the maximum number of responses we'll need across all sizes
-    max_responses_needed <- max(sizes$num_responses[!is.infinite(sizes$num_responses)])
-    if(length(max_responses_needed) == 0 || is.na(max_responses_needed)) {
-        # All are Inf, we need to load everything (but this shouldn't happen in practice)
-        max_responses_needed <- nrow(response_odm)
-        warning("All num_responses are Inf - loading entire response matrix!")
-    }
-
-    # Load only the rows we need
-    print(paste("Loading response matrix - first", max_responses_needed, "rows only..."))
-    response_mat <- odm_to_R(response_odm, num_rows = max_responses_needed)
-    print(paste("Response matrix loaded:", nrow(response_mat), "x", ncol(response_mat)))
-    colnames(response_mat) <- cell_names
-
-    # Load grna_target_data_frame once
+    # Load grna_target_data_frame once (needed for both real and fake responses)
     scep <- readRDS(file.path(data_dir, "sceptre_object.rds"))
     grna_target_df <- scep@grna_target_data_frame
 
-    # Loop through sizes for response outputs
-    for(i in 1:nrow(sizes)) {
-      name <- sizes[i, "name"]
-      num_grnas <- min(sizes[i, "num_grnas"], original_num_grnas)  # Using stored dimension
-      num_responses <- min(sizes[i, "num_responses"], nrow(response_mat))
-      num_cells <- min(sizes[i, "num_cells"], ncol(response_mat))
+    if(use_real_responses) {
+      print("Processing with real response matrix...")
+      # Load response ODM metadata (not the data itself)
+      response_odm <- ondisc::initialize_odm_from_backing_file(file.path(data_dir, "gene.odm"))
 
-      print(paste("Processing", name, "- responses:", num_responses, "cells:", num_cells))
+      # Find the maximum number of responses we'll need across all sizes
+      max_responses_needed <- max(sizes$num_responses[!is.infinite(sizes$num_responses)])
+      if(length(max_responses_needed) == 0 || is.na(max_responses_needed)) {
+          # All are Inf, we need to load everything (but this shouldn't happen in practice)
+          max_responses_needed <- nrow(response_odm)
+          warning("All num_responses are Inf - loading entire response matrix!")
+      }
 
-      # Subset response matrix
-      response_subset <- response_mat[1:num_responses, 1:num_cells]
+      # Load only the rows we need
+      print(paste("Loading response matrix - first", max_responses_needed, "rows only..."))
+      response_mat <- odm_to_R(response_odm, num_rows = max_responses_needed)
+      print(paste("Response matrix loaded:", nrow(response_mat), "x", ncol(response_mat)))
+      colnames(response_mat) <- cell_names
 
-      # Subset grna_target_data_frame to match the gRNAs
-      grna_target_subset <- grna_target_df[1:num_grnas, ]
+      # Loop through sizes for response outputs
+      for(i in 1:nrow(sizes)) {
+        name <- sizes[i, "name"]
+        num_grnas <- min(sizes[i, "num_grnas"], original_num_grnas)  # Using stored dimension
+        num_responses <- min(sizes[i, "num_responses"], nrow(response_mat))
+        num_cells <- min(sizes[i, "num_cells"], original_num_cells)
 
-      # Write to sceptre directory
-      sceptre_dir <- file.path(output_base_dir, name, "sceptre")
-      print(paste("  Writing sceptre response matrix to", sceptre_dir))
-      saveRDS(response_subset, file.path(sceptre_dir, "response_matrix.rds"))
-      write.csv(grna_target_subset, file.path(sceptre_dir, "grna_target_data_frame.csv"), row.names=FALSE)
+        print(paste("Processing", name, "- responses:", num_responses, "cells:", num_cells))
+
+        # Subset response matrix
+        response_subset <- response_mat[1:num_responses, 1:num_cells]
+
+        # Subset grna_target_data_frame to match the gRNAs
+        grna_target_subset <- grna_target_df[1:num_grnas, ]
+
+        # Write to sceptre directory
+        sceptre_dir <- file.path(output_base_dir, name, "sceptre")
+        print(paste("  Writing sceptre response matrix to", sceptre_dir))
+        saveRDS(response_subset, file.path(sceptre_dir, "response_matrix.rds"))
+        write.csv(grna_target_subset, file.path(sceptre_dir, "grna_target_data_frame.csv"), row.names=FALSE)
+      }
+
+      # Clear response matrix from memory
+      rm(response_mat)
+      gc()
+      print("Response matrix cleared from memory")
+
+    } else {
+      print("Creating minimal fake response matrix for guide assignment only...")
+
+      # Loop through sizes and create fake response matrices
+      for(i in 1:nrow(sizes)) {
+        name <- sizes[i, "name"]
+        num_grnas <- min(sizes[i, "num_grnas"], original_num_grnas)
+        num_cells <- min(sizes[i, "num_cells"], original_num_cells)
+
+        print(paste("Processing", name, "- fake responses: 1 gene x", num_cells, "cells"))
+
+        # Create minimal sparse matrix: 1 gene x num_cells, all zeros
+        fake_response_mat <- Matrix::sparseMatrix(
+            i = integer(0),  # No non-zero entries
+            j = integer(0),
+            x = numeric(0),
+            dims = c(1L, num_cells),
+            dimnames = list(
+                "FAKE_GENE_1",  # Single fake gene
+                cell_names[1:num_cells]  # Use same cell names as grna_matrix
+            )
+        )
+
+        # Subset grna_target_data_frame to match the gRNAs
+        grna_target_subset <- grna_target_df[1:num_grnas, ]
+
+        # Write to sceptre directory
+        sceptre_dir <- file.path(output_base_dir, name, "sceptre")
+        print(paste("  Writing fake sceptre response matrix to", sceptre_dir))
+        saveRDS(fake_response_mat, file.path(sceptre_dir, "response_matrix.rds"))
+        write.csv(grna_target_subset, file.path(sceptre_dir, "grna_target_data_frame.csv"), row.names=FALSE)
+      }
     }
-
-    # Clear response matrix from memory
-    rm(response_mat)
-    gc()
-    print("Response matrix cleared from memory")
   }
   
   print("Data generation complete!")
@@ -139,10 +175,10 @@ make_data <- function(data_dir, output_base_dir,
 
 
 sizes <- data.frame(
-  name = c("replogle-rd7_small", "replogle-rd7"),
-  num_grnas = c(500,  Inf),
-  num_cells = c(5000,  Inf),
-  num_responses = c(500,  Inf),
+  name = c("replogle-rd7_small", "replogle-rd7_medium", "replogle-rd7"),
+  num_grnas = c(500, 2500,  Inf),
+  num_cells = c(5000, 50000, Inf),
+  # num_responses = c(NA, NA,  Inf),  # not needed for fake data
   stringsAsFactors = FALSE
 )
 
@@ -159,5 +195,6 @@ make_data(
   make_pertpy = FALSE,
   make_cleanser = FALSE,
   make_sceptre = TRUE,
-  sizes = sizes
+  sizes = sizes,
+  use_real_responses = FALSE  
 )
