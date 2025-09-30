@@ -3,17 +3,21 @@ From: rocker/r-ver:4.4.3
 
 %labels
     Author Louis Deutsch
-    Description Sceptre guide assignment container with latest main branch
-    Version 1.0
+    Description Sceptre guide assignment container (with procps) from latest main
+    Version 1.1
 
 %post
-    # Update system packages
-    apt-get update && apt-get install -y \
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    # System deps (+ procps for `ps`)
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        procps \
         build-essential \
         cmake \
         curl \
         git \
-        procps \
         libcurl4-openssl-dev \
         libssl-dev \
         libxml2-dev \
@@ -25,21 +29,29 @@ From: rocker/r-ver:4.4.3
         libjpeg-dev \
         libpng-dev \
         libtiff5-dev \
-        && rm -rf /var/lib/apt/lists/*
+        pkg-config
+    rm -rf /var/lib/apt/lists/*
 
-    # Install R packages and sceptre directly
+    # R packages: remotes, then sceptre from GitHub (with dependencies)
     R --slave -e 'install.packages("remotes", repos="https://cran.r-project.org")'
-    R --slave -e 'remotes::install_github("Katsevich-Lab/sceptre")'
+    R --slave -e 'remotes::install_github("Katsevich-Lab/sceptre", dependencies=TRUE, upgrade="never")'
 
-    # Create working directory
+    # Working directory (optional)
     mkdir -p /opt/sceptre
 
-%files
-    # Copy the R script (will be done at runtime via bind mount)
-
 %runscript
-    exec Rscript "$@"
+    # Pass-through so `ps`, `bash`, `Rscript`, etc. all work with `apptainer run`
+    exec "$@"
 
 %environment
     export LC_ALL=C
     export PATH=/usr/local/bin:$PATH
+    # Avoid reading host user libraries when using --cleanenv
+    export R_LIBS_USER=
+
+%test
+    which ps
+    ps -o pid,comm | head -n 2
+    R --quiet -e 'suppressPackageStartupMessages(library(sceptre)); cat("sceptre ", as.character(packageVersion("sceptre")), " OK\n", sep="")'
+
+
