@@ -4,45 +4,47 @@ From: python:3.11-slim
 %labels
     Author Louis Deutsch
     Description Pertpy guide assignment container with fixed anndata
-    Version 1.0
+    Version 1.1
 
 %post
-    # Install system packages required to build scientific Python packages
-    apt-get update && apt-get install -y \
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    # System deps (+ procps for `ps`); ATLAS is not available on Debian trixie
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        procps \
         gcc \
         g++ \
         build-essential \
-        procps \
         libhdf5-dev \
         libblas-dev \
         liblapack-dev \
-        libatlas-base-dev \
         libffi-dev \
         libxml2-dev \
-        libxslt-dev \
+        libxslt1-dev \
         zlib1g-dev \
         libjpeg-dev \
-        git \
-        && rm -rf /var/lib/apt/lists/*
+        git
+    rm -rf /var/lib/apt/lists/*
 
     # Upgrade pip
-    pip install --no-cache-dir --upgrade pip
+    python -m pip install --no-cache-dir --upgrade pip
 
-    # Pin anndata to avoid missing 'anndata.io'
-    pip install --no-cache-dir "anndata==0.8.0"
+    # Your original Python stack
+    python -m pip install --no-cache-dir "anndata==0.8.0"
+    python -m pip install --no-cache-dir scanpy
+    python -m pip install --no-cache-dir pertpy
+    python -m pip install --no-cache-dir filelock
 
-    # Install scanpy (compatible with anndata 0.8.0)
-    pip install --no-cache-dir scanpy
-
-    # Install pertpy on top
-    pip install --no-cache-dir pertpy
-
-    # Optional: check install health
-    pip check
+    # Optional: check install health (fails build on inconsistencies)
+    python -m pip check
 
 %runscript
-    exec python "$@"
+    # Pass-through so `ps`, `bash`, `python`, etc. all work with `apptainer run`
+    exec "$@"
 
 %environment
     export LC_ALL=C
     export PATH=/usr/local/bin:$PATH
+
