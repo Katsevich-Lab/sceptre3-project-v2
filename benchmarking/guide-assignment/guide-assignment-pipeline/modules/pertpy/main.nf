@@ -3,7 +3,7 @@
 process PERTPY_ASSIGN {
   label 'pertpy'
   tag "${dataset_id}"
-  stageInMode 'copy'                 // copy inputs into task dir (no symlinks)
+  stageInMode 'symlink' 
 
   container "${moduleDir}/pertpy.sif"
 

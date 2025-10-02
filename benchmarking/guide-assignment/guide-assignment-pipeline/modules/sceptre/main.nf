@@ -7,8 +7,7 @@ process SCEPTRE_ASSIGN {
   cpus { resources.cpus }
   memory { resources.memory }
 
-  // optional: copy staged inputs into the task dir (avoids symlink issues under --containall)
-  stageInMode 'copy'
+  stageInMode 'symlink' 
 
   input:
   tuple val(dataset_id), path(dataset_dir), val(method), val(resources)

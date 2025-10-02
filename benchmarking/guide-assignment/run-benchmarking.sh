@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-RUN_ID="gasperini_small"
+RUN_ID="replogle-rd7_medium"
 
 OUT_BASE="${LOCAL_BENCHMARKING_DIR}/guide_assignment/outputs"
 OUT_DIR="${OUT_BASE}/${RUN_ID}"

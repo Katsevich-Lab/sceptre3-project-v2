@@ -15,6 +15,9 @@ library(Matrix)
 response_matrix <- readRDS(file.path(input_dir, "response_matrix.rds"))
 grna_matrix <- readRDS(file.path(input_dir, "grna_matrix.rds"))
 grna_target_df <- read.csv(file.path(input_dir, "grna_target_data_frame.csv"))
+if(!any("non_targeting" %in% grna_target_df$grna_target)) {
+	grna_target_id[1,"grna_target"] <- "non-targeting"
+
 
 cat("Data loaded:\n")
 cat("  Response matrix:", nrow(response_matrix), "genes x", ncol(response_matrix), "cells\n")
@@ -37,7 +40,7 @@ sceptre_object <- set_analysis_parameters(sceptre_object)
 # Assign gRNAs using thresholding method (more robust for dummy data)
 # TODO: Change back to mixture method once realistic data is available
 cat("Assigning gRNAs using maximum method...\n")
-sceptre_object <- assign_grnas(sceptre_object, method = "maximum")
+sceptre_object <- assign_grnas(sceptre_object, method = "mixture")
 
 # Extract guide assignments as sparse logical matrix
 assignment_matrix <- get_grna_assignments(sceptre_object)

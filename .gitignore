@@ -12,6 +12,10 @@ conda-cache/
 
 # Logs
 *.log
+benchmarking/guide-assignment/nf-logs
+benchmarking/guide-assignment/qsub-logs
+benchmarking/guide-assignment/guide-assignment-pipeline/.mpl
+benchmarking/guide-assignment/.tmp
 
 # vscode
 .vscode/*

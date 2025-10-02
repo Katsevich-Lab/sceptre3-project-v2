@@ -191,9 +191,9 @@ output_base_dir <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_
 make_data(
   data_dir = data_dir,
   output_base_dir = output_base_dir,
-  make_crispat = FALSE,
-  make_pertpy = FALSE,
-  make_cleanser = FALSE,
+  make_crispat = TRUE,
+  make_pertpy = TRUE,
+  make_cleanser = TRUE,
   make_sceptre = TRUE,
   sizes = sizes,
   use_real_responses = FALSE  

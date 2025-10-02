@@ -4,8 +4,8 @@
 #$ -cwd
 #$ -V
 #$ -pe openmp 1              # use the existing PE
-#$ -l m_mem_free=50G         # scheduler reservation (per slot)
-#$ -l h_vmem=55G             # hard per-slot cap; job is killed if exceeded
+#$ -l m_mem_free=100G         # scheduler reservation (per slot)
+#$ -l h_vmem=100G             # hard per-slot cap; job is killed if exceeded
 
 set -euo pipefail
 

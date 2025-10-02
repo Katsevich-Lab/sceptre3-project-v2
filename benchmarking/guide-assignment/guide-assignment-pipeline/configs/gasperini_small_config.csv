@@ -1,3 +1,2 @@
 method,dataset,cpus,memory
-sceptre,gasperini_small,1,6.GB
-
+pertpy,gasperini_small,1,10GB
