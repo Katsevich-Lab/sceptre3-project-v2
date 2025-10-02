@@ -16,8 +16,8 @@ response_matrix <- readRDS(file.path(input_dir, "response_matrix.rds"))
 grna_matrix <- readRDS(file.path(input_dir, "grna_matrix.rds"))
 grna_target_df <- read.csv(file.path(input_dir, "grna_target_data_frame.csv"))
 if(!any("non_targeting" %in% grna_target_df$grna_target)) {
-	grna_target_id[1,"grna_target"] <- "non-targeting"
-
+	grna_target_df[1,"grna_target"] <- "non-targeting"
+}
 
 cat("Data loaded:\n")
 cat("  Response matrix:", nrow(response_matrix), "genes x", ncol(response_matrix), "cells\n")
