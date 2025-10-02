@@ -5,12 +5,22 @@ import subprocess
 import os
 
 input_mtx = sys.argv[1]
+dataset_id = sys.argv[2]
 output_dir = "cleanser_output/"
 os.makedirs(output_dir, exist_ok=True)
 
+# Choose flag based on dataset
+# Replogle uses --dc (default cell), Gasperini uses --cs (cell-specific)
+if "replogle" in dataset_id.lower():
+    flag = "--dc"
+elif "gasperini" in dataset_id.lower():
+    flag = "--cs"
+else:
+    raise ValueError(f"Unknown dataset '{dataset_id}'. Expected 'replogle' or 'gasperini' in dataset name.")
+
 # Run CLEANSER guide assignment
 subprocess.run([
-    "cleanser", "-i", input_mtx, "-o", f"{output_dir}/posteriors.csv", "--dc"
+    "cleanser", "-i", input_mtx, "-o", f"{output_dir}/posteriors.csv", flag
 ], check=True)
 
 # Process CLEANSER output to standardized format

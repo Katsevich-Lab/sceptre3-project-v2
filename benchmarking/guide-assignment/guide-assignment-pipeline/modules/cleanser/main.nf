@@ -30,7 +30,7 @@ export PYTHONNOUSERSITE=1
 [ -n "\${PYTHONPATH:-}" ] && unset PYTHONPATH
 export XDG_CACHE_HOME="\$PWD/.cache";        mkdir -p "\$XDG_CACHE_HOME"
 
-python "${projectDir}/bin/run_cleanser.py" "${dataset_dir}/grna_matrix.mtx"
+python "${projectDir}/bin/run_cleanser.py" "${dataset_dir}/grna_matrix.mtx" "${dataset_id}"
 """
 
 }
