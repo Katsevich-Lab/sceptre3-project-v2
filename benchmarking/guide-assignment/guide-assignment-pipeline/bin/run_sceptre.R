@@ -17,6 +17,7 @@ grna_matrix <- readRDS(file.path(input_dir, "grna_matrix.rds"))
 grna_target_df <- read.csv(file.path(input_dir, "grna_target_data_frame.csv"))
 if(!any("non_targeting" %in% grna_target_df$grna_target)) {
 	grna_target_df[1,"grna_target"] <- "non-targeting"
+	warning("No NTs present. `grna_target_df` modified to have an NT")
 }
 
 cat("Data loaded:\n")
@@ -24,23 +25,29 @@ cat("  Response matrix:", nrow(response_matrix), "genes x", ncol(response_matrix
 cat("  gRNA matrix:", nrow(grna_matrix), "gRNAs x", ncol(grna_matrix), "cells\n")
 cat("  gRNA targets:", nrow(grna_target_df), "gRNAs mapped to targets\n")
 
+contains_gasp <- grepl(pattern = "gasperini", x = input_dir)
+contains_repl <- grepl(pattern = "replogle", x = input_dir)
+if(contains_gasp) moi <- "high" else if(contains_repl) moi <- "low" else stop("Error: MOI cannot be determined from `input_dir`")
+
+
 # Create sceptre object
 cat("Creating sceptre object...\n")
 sceptre_object <- import_data(
   response_matrix = response_matrix,
   grna_matrix = grna_matrix,
   grna_target_data_frame = grna_target_df,
-  moi = "low"  # Assume low MOI for now
+  moi = moi  # Assume low MOI for now
 )
 
 # Set analysis parameters - use defaults
 cat("Setting analysis parameters (using defaults)...\n")
-sceptre_object <- set_analysis_parameters(sceptre_object)
+# dummy formula since we're only doing assignment
+# TODO: update formula when we actually do assoc testing
+sceptre_object <- set_analysis_parameters(sceptre_object, formula = ~1) 
 
 # Assign gRNAs using thresholding method (more robust for dummy data)
-# TODO: Change back to mixture method once realistic data is available
 cat("Assigning gRNAs using maximum method...\n")
-sceptre_object <- assign_grnas(sceptre_object, method = "mixture")
+sceptre_object <- assign_grnas(sceptre_object, method = "mixture", formula_object = ~ grna_n_nonzero + grna_n_umis)
 
 # Extract guide assignments as sparse logical matrix
 assignment_matrix <- get_grna_assignments(sceptre_object)
