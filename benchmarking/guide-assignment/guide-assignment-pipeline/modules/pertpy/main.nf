@@ -25,15 +25,7 @@ process PERTPY_ASSIGN {
   """
   set -euo pipefail
 
-  # Writable caches for matplotlib/numba
-  export MPLCONFIGDIR="\$PWD/.mplconfig";      mkdir -p "\$MPLCONFIGDIR"
-  export NUMBA_CACHE_DIR="\$PWD/.numba_cache"; mkdir -p "\$NUMBA_CACHE_DIR"
-
-  # Run from the dataset subdir so the script writes output there
-  pushd ${dataset_dir} >/dev/null
-  python ${projectDir}/bin/run_pertpy.py "\$PWD/grna_matrix.h5ad"
-  # Move the output up to the task work dir with the expected name
-  mv assignments_pertpy.csv ..
-  popd >/dev/null
+  # Run pertpy guide assignment
+  python ${projectDir}/bin/run_pertpy.py "${dataset_dir}/grna_matrix.h5ad"
   """
 }
