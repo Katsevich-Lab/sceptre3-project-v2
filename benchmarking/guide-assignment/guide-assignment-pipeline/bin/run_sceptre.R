@@ -82,9 +82,6 @@ cat(debug_info)
 
 # Create standardized output using cell names from sceptre object
 cells_with_assignments <- assignment_matrix |> apply(2, which)
-if(any(sapply(cells_with_assignments, length) == 0)) {
-  stop("some cells did not get assigned to any gRNAs.")
-}
 output_df <- data.frame(
   cell_id = colnames(grna_matrix),
   grna_id = rownames(assignment_matrix)[cells_with_assignments],
