@@ -25,6 +25,7 @@ cat("  Response matrix:", nrow(response_matrix), "genes x", ncol(response_matrix
 cat("  gRNA matrix:", nrow(grna_matrix), "gRNAs x", ncol(grna_matrix), "cells\n")
 cat("  gRNA targets:", nrow(grna_target_df), "gRNAs mapped to targets\n")
 
+cat(input_dir)
 contains_gasp <- grepl(pattern = "gasperini", x = input_dir)
 contains_repl <- grepl(pattern = "replogle", x = input_dir)
 if(contains_gasp) moi <- "high" else if(contains_repl) moi <- "low" else stop("Error: MOI cannot be determined from `input_dir`")
