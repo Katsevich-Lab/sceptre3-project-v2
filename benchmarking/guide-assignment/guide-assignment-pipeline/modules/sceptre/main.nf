@@ -34,7 +34,7 @@ process SCEPTRE_ASSIGN {
   export R_LIBS_USER="\$PWD/.Rlibs";   mkdir -p "\$R_LIBS_USER"
 
   # Run sceptre; --vanilla avoids reading host/user profiles or writing history
-  Rscript --vanilla ${projectDir}/bin/run_sceptre.R ${dataset_dir}
+  Rscript --vanilla ${projectDir}/bin/run_sceptre.R ${dataset_dir} ${dataset_id}
 
   """
 }

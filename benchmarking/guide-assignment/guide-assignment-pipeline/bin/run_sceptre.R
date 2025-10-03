@@ -3,6 +3,7 @@
 # Get command line arguments
 args <- commandArgs(trailingOnly = TRUE)
 input_dir <- args[1]  # Directory containing sceptre-compatible data
+dataset_id <- args[2] # Dataset identifier
 
 # Load sceptre library (pre-installed in container)
 library(sceptre)
@@ -25,10 +26,23 @@ cat("  Response matrix:", nrow(response_matrix), "genes x", ncol(response_matrix
 cat("  gRNA matrix:", nrow(grna_matrix), "gRNAs x", ncol(grna_matrix), "cells\n")
 cat("  gRNA targets:", nrow(grna_target_df), "gRNAs mapped to targets\n")
 
-cat(input_dir)
-contains_gasp <- grepl(pattern = "gasperini", x = input_dir)
-contains_repl <- grepl(pattern = "replogle", x = input_dir)
-if(contains_gasp) moi <- "high" else if(contains_repl) moi <- "low" else stop("Error: MOI cannot be determined from `input_dir`")
+# MOI lookup table based on dataset
+moi_lookup <- list(
+  gasperini = "high",
+  replogle = "low"
+)
+
+# Determine MOI from dataset_id
+dataset_key <- if (grepl("gasperini", dataset_id, ignore.case = TRUE)) {
+  "gasperini"
+} else if (grepl("replogle", dataset_id, ignore.case = TRUE)) {
+  "replogle"
+} else {
+  stop("Unknown dataset '", dataset_id, "'. Expected 'replogle' or 'gasperini' in dataset name.")
+}
+
+moi <- moi_lookup[[dataset_key]]
+cat("Dataset:", dataset_id, "-> MOI:", moi, "\n")
 
 
 # Create sceptre object
