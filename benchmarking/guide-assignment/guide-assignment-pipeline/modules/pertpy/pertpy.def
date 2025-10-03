@@ -3,48 +3,90 @@ From: python:3.11-slim
 
 %labels
     Author Louis Deutsch
-    Description Pertpy guide assignment container with fixed anndata
-    Version 1.1
+    Description Pertpy guide assignment container (modern stack, NumPy 2, JAX 0.4.38) + ps
+    Version 2.1
 
 %post
     set -eux
     export DEBIAN_FRONTEND=noninteractive
 
-    # System deps (+ procps for `ps`); ATLAS is not available on Debian trixie
+    # System deps (+ procps for `ps`); Debian trixie uses libxslt1-dev
     apt-get update
     apt-get install -y --no-install-recommends \
         procps \
-        gcc \
-        g++ \
-        build-essential \
+        gcc g++ build-essential pkg-config \
         libhdf5-dev \
-        libblas-dev \
-        liblapack-dev \
+        libblas-dev liblapack-dev \
         libffi-dev \
-        libxml2-dev \
-        libxslt1-dev \
+        libxml2-dev libxslt1-dev \
         zlib1g-dev \
         libjpeg-dev \
         git
     rm -rf /var/lib/apt/lists/*
 
-    # Upgrade pip
-    python -m pip install --no-cache-dir --upgrade pip
+    # Python tooling
+    python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-    # Your original Python stack
-    python -m pip install --no-cache-dir "anndata==0.8.0"
-    python -m pip install --no-cache-dir scanpy
-    python -m pip install --no-cache-dir pertpy
-    python -m pip install --no-cache-dir filelock
+    # Modern scverse + JAX stack (NumPy 2)
+    python -m pip install --no-cache-dir \
+        "numpy>=2" \
+        "jax==0.4.38" "jaxlib==0.4.38" \
+        "numpyro[cpu]==0.15.2" \
+        scanpy \
+        pertpy \
+        filelock \
+	etils
 
-    # Optional: check install health (fails build on inconsistencies)
+    # Fail build on dependency conflicts
     python -m pip check
+
+%environment
+    export LC_ALL=C
+    # Keep Python isolated from host site-packages when using --cleanenv
+    export PYTHONNOUSERSITE=1
+    unset PYTHONPATH
+    unset VIRTUAL_ENV
+    unset CONDA_PREFIX
+    # Writable default for matplotlib if any code imports it
+    export MPLCONFIGDIR=/tmp/matplotlib
 
 %runscript
     # Pass-through so `ps`, `bash`, `python`, etc. all work with `apptainer run`
     exec "$@"
 
-%environment
-    export LC_ALL=C
-    export PATH=/usr/local/bin:$PATH
+%test
+    # ps present
+    which ps
+    ps -o pid,comm | head -n 2
+
+    # Avoid Numba/JAX compilation & caching during test
+    export NUMBA_DISABLE_JIT=1
+    export NUMBA_CACHE_DIR=/tmp/numba_cache
+    mkdir -p "$NUMBA_CACHE_DIR"
+
+    python - <<'PY'
+import importlib.metadata as im
+from packaging.version import Version
+
+# Version sanity
+assert Version(im.version("numpy")) >= Version("2.0")
+assert im.version("jax")    == "0.4.38"
+assert im.version("jaxlib") == "0.4.38"
+# presence checks (versions may float)
+for p in ("numpyro","scanpy","pertpy","anndata","filelock"):
+    im.version(p)
+
+# Light imports that won't trigger heavy Numba work
+from pertpy.preprocessing import GuideAssignment   # should import cleanly
+from jax import random as jrand
+_ = jrand.PRNGKey(0)  # catches NumPy/JAX mismatch issues
+
+print("OK:",
+      "numpy",   im.version("numpy"),
+      "jax",     im.version("jax"),
+      "jaxlib",  im.version("jaxlib"),
+      "numpyro", im.version("numpyro"),
+      "scanpy",  im.version("scanpy"),
+      "pertpy",  im.version("pertpy"))
+PY
 
