@@ -81,12 +81,28 @@ writeLines(debug_info, "debug_assignment_matrix.txt")
 cat(debug_info)
 
 # Create standardized output using cell names from sceptre object
+# apply(2, which) returns a list: each element contains row indices of assigned gRNAs for that cell
 cells_with_assignments <- assignment_matrix |> apply(2, which)
-output_df <- data.frame(
-  cell_id = colnames(grna_matrix),
-  grna_id = rownames(assignment_matrix)[cells_with_assignments],
-  stringsAsFactors = FALSE
-)
+
+# Convert list to data frame
+assignment_list <- lapply(seq_along(cells_with_assignments), function(i) {
+  cell_id <- colnames(assignment_matrix)[i]
+  grna_indices <- cells_with_assignments[[i]]
+
+  if(length(grna_indices) == 0) {
+    # No assignments for this cell
+    data.frame(cell_id = cell_id, grna_id = NA_character_, stringsAsFactors = FALSE)
+  } else {
+    # One or more assignments for this cell
+    data.frame(
+      cell_id = rep(cell_id, length(grna_indices)),
+      grna_id = rownames(assignment_matrix)[grna_indices],
+      stringsAsFactors = FALSE
+    )
+  }
+})
+
+output_df <- do.call(rbind, assignment_list)
 
 # Remove any unassigned cells (marked as NA)
 assigned_cells <- output_df[!is.na(output_df$grna_id), ]
