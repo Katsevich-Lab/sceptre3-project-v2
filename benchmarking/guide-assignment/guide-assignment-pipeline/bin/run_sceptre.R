@@ -80,42 +80,7 @@ debug_info <- paste(
 writeLines(debug_info, "debug_assignment_matrix.txt")
 cat(debug_info)
 
-# Create standardized output using cell names from sceptre object
-# apply(2, which) returns a list: each element contains row indices of assigned gRNAs for that cell
-cells_with_assignments <- assignment_matrix |> apply(2, which)
-
-# Convert list to data frame
-assignment_list <- lapply(seq_along(cells_with_assignments), function(i) {
-  cell_id <- colnames(assignment_matrix)[i]
-  grna_indices <- cells_with_assignments[[i]]
-
-  if(length(grna_indices) == 0) {
-    # No assignments for this cell
-    data.frame(cell_id = cell_id, grna_id = NA_character_, stringsAsFactors = FALSE)
-  } else {
-    # One or more assignments for this cell
-    data.frame(
-      cell_id = rep(cell_id, length(grna_indices)),
-      grna_id = rownames(assignment_matrix)[grna_indices],
-      stringsAsFactors = FALSE
-    )
-  }
-})
-
-output_df <- do.call(rbind, assignment_list)
-
-# Remove any unassigned cells (marked as NA)
-assigned_cells <- output_df[!is.na(output_df$grna_id), ]
-
-# Handle case where no assignments were made
-if(nrow(assigned_cells) == 0) {
-  cat("Warning: No cells were assigned to any gRNA with current threshold.\n")
-  assigned_cells <- data.frame(cell_id = character(0), grna_id = character(0))
-}
-
-output_df <- assigned_cells
-
-cat("Guide assignment complete:", nrow(output_df), "cells assigned\n")
-
-# Write standardized output
-write.csv(output_df, "assignments_sceptre.csv", row.names = FALSE)
+# Save assignment matrix as RDS (preserves sparse matrix structure with row/col names)
+saveRDS(assignment_matrix, "assignment_matrix_sceptre.rds")
+cat("Guide assignment complete. Assignment matrix saved:", nrow(assignment_matrix), "gRNAs x", ncol(assignment_matrix), "cells\n")
+cat("Total assignments:", sum(assignment_matrix), "\n")

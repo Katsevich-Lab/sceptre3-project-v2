@@ -14,11 +14,11 @@ process SCEPTRE_ASSIGN {
   val outdir
 
   output:
-  tuple val(dataset_id), val(method), path("assignments_sceptre.csv"), emit: assignments
+  tuple val(dataset_id), val(method), path("assignment_matrix_sceptre.rds"), emit: assignments
 
   publishDir "${outdir}",
              mode: 'copy',
-             saveAs: { "assignments_sceptre_${dataset_id}.csv" }
+             saveAs: { "assignment_matrix_sceptre_${dataset_id}.rds" }
 
   script:
   """
