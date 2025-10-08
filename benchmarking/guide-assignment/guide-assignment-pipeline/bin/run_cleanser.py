@@ -20,8 +20,7 @@ else:
 
 # Run CLEANSER guide assignment
 subprocess.run([
-    "cleanser", "-i", input_mtx, "-o", f"{output_dir}/posteriors.csv", flag,
-    "--lpf", "0", "-c", "2"
+    "cleanser", "-i", input_mtx, "-o", f"{output_dir}/posteriors.csv", flag
 ], check=True)
 
 # Process CLEANSER output to standardized format
