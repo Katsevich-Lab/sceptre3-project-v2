@@ -60,9 +60,24 @@ cat("Setting analysis parameters (using defaults)...\n")
 # TODO: update formula when we actually do assoc testing
 sceptre_object <- set_analysis_parameters(sceptre_object, formula = ~1) 
 
-# Assign gRNAs using thresholding method (more robust for dummy data)
-cat("Assigning gRNAs using maximum method...\n")
-sceptre_object <- assign_grnas(sceptre_object, method = "mixture", formula_object = ~ grna_n_nonzero + grna_n_umis)
+# Build formula dynamically with log transformations and conditional pseudocounts
+cat("Building mixture model formula...\n")
+has_zero_nonzero <- any(sceptre_object@covariate_data_frame$grna_n_nonzero == 0)
+has_zero_umis <- any(sceptre_object@covariate_data_frame$grna_n_umis == 0)
+
+nonzero_term <- if(has_zero_nonzero) "log(grna_n_nonzero + 1)" else "log(grna_n_nonzero)"
+umis_term <- if(has_zero_umis) "log(grna_n_umis + 1)" else "log(grna_n_umis)"
+
+formula_str <- paste0("~ ", nonzero_term, " + ", umis_term)
+assign_grnas_formula_object <- as.formula(formula_str)
+
+cat("Using formula:", formula_str, "\n")
+cat("  has_zero_nonzero:", has_zero_nonzero, "\n")
+cat("  has_zero_umis:", has_zero_umis, "\n")
+
+# Assign gRNAs using mixture method with log-transformed covariates
+cat("Assigning gRNAs using mixture method...\n")
+sceptre_object <- assign_grnas(sceptre_object, method = "mixture", formula_object = assign_grnas_formula_object)
 
 # Extract guide assignments as sparse logical matrix
 assignment_matrix <- get_grna_assignments(sceptre_object)
