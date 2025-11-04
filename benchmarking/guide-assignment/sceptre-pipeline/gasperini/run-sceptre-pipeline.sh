@@ -1,3 +1,7 @@
+#!/bin/bash
+#$ -N scep-pipe_assign-grnas_gasperini
+#$ -cwd
+#$ -j y
 #$ -pe openmp 2
 #$ -l m_mem_free=4G
 export NXF_OPTS="-Xms500M -Xmx4G"
@@ -27,11 +31,12 @@ nextflow run timothy-barry/sceptre-pipeline -r main \
  --sceptre_object_fp $sceptre_object_fp \
  --response_odm_fp $response_odm_fp \
  --grna_odm_fp $grna_odm_fp \
- --output_directory $project_directory \
+ --output_directory $output_fp \
  --grna_assignment_method mixture \
  --pipeline_stop assign_grnas \
- --assign_grnas_memory "2GB" \
-  -with-trace trace.tsv \
-  -with-report report.html \
-  -with-timeline timeline.html \
-  -with-dag flow.dot
+  --assign_grnas_memory "2GB" \
+  -with-trace "$output_fp/tracing/trace.tsv" \
+  -with-report "$output_fp/tracing/report.html" \
+  -with-timeline "$output_fp/tracing/timeline.html" \
+  -with-dag "$output_fp/tracing/flow.dot"
+

@@ -1,4 +1,4 @@
-
+source("~/.Rprofile")
 library(sceptre)
 dataset <- "gasperini"
 import_dir <- paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/", dataset, "/sceptre-pipeline/")
