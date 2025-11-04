@@ -26,6 +26,16 @@ process PERTPY_ASSIGN {
   """
   set -euo pipefail
 
+# --- GPU visibility (logs land in nf-logs/*.out) ---
+ nvidia-smi || true
+  python - <<'PY'
+import os, jax
+print("JAX version:", jax.__version__)
+print("CUDA_VISIBLE_DEVICES:", os.environ.get("CUDA_VISIBLE_DEVICES"))
+print("JAX devices:", jax.devices())
+PY
+
+
   # Run pertpy guide assignment
   python ${projectDir}/bin/run_pertpy.py "${dataset_dir}/grna_matrix.h5ad"
   """
