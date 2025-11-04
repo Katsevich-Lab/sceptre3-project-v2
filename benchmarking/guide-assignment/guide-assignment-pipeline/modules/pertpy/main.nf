@@ -1,11 +1,12 @@
 // Nextflow module for pertpy guide assignment (simple + strict)
 
 process PERTPY_ASSIGN {
-  label 'pertpy'
+  label 'pertpy','gpu' // so the process for gpu in nextflow.config also applies here
   tag "${dataset_id}"
   stageInMode 'symlink' 
 
-  container "${moduleDir}/pertpy.sif"
+  // container "${moduleDir}/pertpy.sif"
+  conda "${moduleDir}/environment.yml"
 
   cpus { resources.cpus }
   memory { resources.memory }
