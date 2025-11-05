@@ -1,5 +1,5 @@
 method,dataset,cpus,memory
-pertpy,replogle-rd7_medium,1,50GB
-crispat,replogle-rd7_medium,1,50GB
-cleanser,replogle-rd7_medium,1,50GB
-sceptre,replogle-rd7_medium,1,50GB
+# pertpy,replogle-rd7_medium,1,50GB
+# crispat,replogle-rd7_medium,1,50GB
+cleanser,replogle-rd7_medium,1,120GB
+# sceptre,replogle-rd7_medium,1,50GB

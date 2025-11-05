@@ -4,6 +4,17 @@ rd7_analysis/.nextflow*
 work/
 .nextflow*
 
+# benchmarking pipeline caches
+.jax_cache/
+.mplconfig/
+
+# ignore the many benchmarking configs by default
+benchmarking/guide-assignment/guide-assignment-pipeline/configs/*_config.csv
+
+# HPC qsub logs like <name>.o123456 (and array tasks like .o123456.1)
+*.o[0-9]*
+
+
 # Conda/Python environments
 conda-cache/
 **/venv/
