@@ -1,2 +1,2 @@
 method,dataset,cpus,memory
-cleanser,gasperini_small,1,10GB
+pertpy,gasperini_small,1,20GB

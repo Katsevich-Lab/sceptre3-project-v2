@@ -1,5 +1,11 @@
-name: pertpy
-channels:
-  - conda-forge
+name: pertpy-gpu
+channels: [conda-forge]
 dependencies:
-  - pertpy
+  - python=3.11
+  - pip
+  - pip:
+      - "jax[cuda12]"
+      - pertpy
+      - scanpy
+      - numpyro
+

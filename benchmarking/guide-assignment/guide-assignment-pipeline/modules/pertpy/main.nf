@@ -1,11 +1,12 @@
 // Nextflow module for pertpy guide assignment (simple + strict)
 
 process PERTPY_ASSIGN {
-  label 'pertpy'
+  label 'pertpy','gpu' // so the process for gpu in nextflow.config also applies here
   tag "${dataset_id}"
   stageInMode 'symlink' 
 
-  container "${moduleDir}/pertpy.sif"
+  // container "${moduleDir}/pertpy.sif"
+  conda "${moduleDir}/environment.yml"
 
   cpus { resources.cpus }
   memory { resources.memory }
@@ -24,6 +25,16 @@ process PERTPY_ASSIGN {
   script:
   """
   set -euo pipefail
+
+# --- GPU visibility (logs land in nf-logs/*.out) ---
+ nvidia-smi || true
+  python - <<'PY'
+import os, jax
+print("JAX version:", jax.__version__)
+print("CUDA_VISIBLE_DEVICES:", os.environ.get("CUDA_VISIBLE_DEVICES"))
+print("JAX devices:", jax.devices())
+PY
+
 
   # Run pertpy guide assignment
   python ${projectDir}/bin/run_pertpy.py "${dataset_dir}/grna_matrix.h5ad"

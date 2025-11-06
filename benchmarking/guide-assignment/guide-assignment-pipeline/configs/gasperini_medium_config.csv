@@ -1,2 +1,8 @@
 method,dataset,cpus,memory
-crispat,gasperini_medium,1,20.GB
+# crispat,gasperini_medium,1,40.GB
+# pertpy,gasperini_medium,1,40.GB
+sceptre,gasperini_medium,1,100.GB
+# cleanser,gasperini_medium,1,40.GB
+
+
+
