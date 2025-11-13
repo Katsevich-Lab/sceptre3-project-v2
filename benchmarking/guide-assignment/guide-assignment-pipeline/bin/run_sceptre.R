@@ -20,6 +20,15 @@ if(!any("non_targeting" %in% grna_target_df$grna_target)) {
 	grna_target_df[1,"grna_target"] <- "non-targeting"
 	warning("No NTs present. `grna_target_df` modified to have an NT")
 }
+extra_covariates <- data.frame()
+
+
+is_simulated_data <- grepl("simulated", input_dir)
+if(is_simulated_data) {
+	# there should be a covariate data frame then
+	extra_covariates <- read.csv(file.path(input_dir, "covariate_data_frame.csv"))
+}
+
 
 cat("Data loaded:\n")
 cat("  Response matrix:", nrow(response_matrix), "genes x", ncol(response_matrix), "cells\n")
@@ -51,7 +60,8 @@ sceptre_object <- import_data(
   response_matrix = response_matrix,
   grna_matrix = grna_matrix,
   grna_target_data_frame = grna_target_df,
-  moi = moi  # Assume low MOI for now
+  moi = moi,
+  extra_covariates = extra_covariates 
 )
 
 # Set analysis parameters - use defaults
@@ -68,12 +78,21 @@ has_zero_umis <- any(sceptre_object@covariate_data_frame$grna_n_umis == 0)
 nonzero_term <- if(has_zero_nonzero) "log(grna_n_nonzero + 1)" else "log(grna_n_nonzero)"
 umis_term <- if(has_zero_umis) "log(grna_n_umis + 1)" else "log(grna_n_umis)"
 
+# TODO batch is not here right now!
 formula_str <- paste0("~ ", nonzero_term, " + ", umis_term)
 assign_grnas_formula_object <- as.formula(formula_str)
 
 cat("Using formula:", formula_str, "\n")
 cat("  has_zero_nonzero:", has_zero_nonzero, "\n")
 cat("  has_zero_umis:", has_zero_umis, "\n")
+
+
+if(is_simulated_data) {
+   cat("Ignore all those other messages. This is simulated data.")
+   formula_str <- "~ batch + log(true_grna_n_nonzero + 1) + log(true_grna_n_umis + 1)"
+   cat("Actually we will use this formula:", formula_str)
+   assign_grnas_formula_object <- as.formula(formula_str)
+}
 
 # Assign gRNAs using mixture method with log-transformed covariates
 cat("Assigning gRNAs using mixture method...\n")
