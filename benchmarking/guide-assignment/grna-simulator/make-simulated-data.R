@@ -138,4 +138,6 @@ saveRDS(fake_response_mat, file.path(sceptre_dir, "response_matrix.rds"))
 
 
 # 3.4.3: covariate_data_frame
-write.csv(cell_covariates, file.path(sceptre_dir, "covariate_data_frame.csv"), row.names=TRUE)
+cell_covariates |>
+  dplyr::rename(true_grna_n_nonzero = grna_n_nonzero, true_grna_n_umis = grna_n_umis) |>
+  write.csv(file.path(sceptre_dir, "covariate_data_frame.csv"), row.names=TRUE)
