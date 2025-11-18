@@ -122,6 +122,9 @@ simulate_grna_matrix <- function(
   return(list(
     simulated_matrix = simulated_matrix,
     perturbation_indicators = perturbation_indicators,
-    model_info = model_info
+    model_info = model_info,
+    sim_params = list(formula = as.character(formula) |> paste(collapse=" "), 
+                      perturbation_effect_sizes = perturbation_effect_sizes,
+                      prob_perturbed = prob_perturbed)
   ))
 }
