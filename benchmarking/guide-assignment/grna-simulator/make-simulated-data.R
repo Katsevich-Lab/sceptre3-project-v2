@@ -1,5 +1,6 @@
 # makes simulated data based on Gasperini
 
+rm(list=ls())
 source("~/.Rprofile")
 library(tidyverse)
 library(sceptre)
@@ -9,14 +10,21 @@ source(file.path(
   .get_config_path("LOCAL_SCEPTRE3_REPO_DIR"),
   "benchmarking/guide-assignment/grna-simulator/grna-simulator.R"
 ))
+# source(file.path(
+#   .get_config_path("LOCAL_SCEPTRE3_REPO_DIR"),
+#   "benchmarking/guide-assignment/grna-simulator/grna-simulator-poisson.R"
+# ))
 
 # do_transfer <- FALSE  # actually ssh this over? doesn't work in R due to OpenSSL version mismatch
-run_name <- "gasperini_simulated_mid_rate_big_effects"
+source_data <- "replogle-rd7"
+run_name <- paste0(source_data, "_simulated")
+
+stopifnot(source_data %in% c("gasperini", "replogle-rd7"))
 
 # 1. loading the data and preparing everything ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 base_fp <- file.path(
   .get_config_path("LOCAL_BENCHMARKING_DIR"),
-  "guide_assignment/input_data/gasperini/sceptre-pipeline/"
+  "guide_assignment/input_data", source_data, "sceptre-pipeline/"
 )
 
 
@@ -25,27 +33,42 @@ scep <- read_ondisc_backed_sceptre_object(
   response_odm_file_fp = paste0(base_fp, "response.odm"),
   grna_odm_file_fp = paste0(base_fp, "grna.odm")
 )
-cell_covariates <- scep@covariate_data_frame |>
-  transmute(
-    grna_n_nonzero, grna_n_umis,
-    batch = ifelse(prep_batch == "prep_batch_2", 1, 0),
-  ) 
+if(source_data == "gasperini") {
+  cell_covariates <- scep@covariate_data_frame |>
+    transmute(
+      grna_n_nonzero, grna_n_umis,
+      batch = ifelse(prep_batch == "prep_batch_2", 1, 0)
+    ) 
+} else if(source_data == "replogle-rd7") {
+  cell_covariates <- scep@covariate_data_frame |>
+    transmute(
+      grna_n_nonzero, grna_n_umis
+    ) 
+}
+
 
 
 # determining which gRNAs to run this on [no need to run again]
 grna_odm <- ondisc::initialize_odm_from_backing_file(paste0(base_fp, "grna.odm"))
 
-# rowsums <- numeric(nrow(grna_odm))
-# for(i in 1:nrow(grna_odm)) {
-#   rowsums[i] <- sum(grna_odm[i,])
+## only need to run this once ~~~~~~~~~~~~~~~~~~~~~
+# get_active_grnas <- function(odm, row_summary_func, num_grnas = 5, seed = 12321) {
+#   grna_summary_stats <- numeric(nrow(odm))
+#   for(i in 1:nrow(odm)) {
+#     grna_summary_stats[i] <- row_summary_func(odm[i,])
+#   }
+#   set.seed(seed)
+#   highly_expressed <- (grna_summary_stats > quantile(grna_summary_stats, .9) &
+#                          grna_summary_stats < quantile(grna_summary_stats, .99)) |>
+#     which() |>
+#     sample(num_grnas, replace = FALSE) |>
+#     sort()
+#   highly_expressed
 # }
-# # getting a highly active but not maximally active gRNA
-# grnas_to_consider <- rowsums > quantile(rowsums, .9) & rowsums < quantile(rowsums, .99)
-# set.seed(12321)
-# grnas_to_use <- which(grnas_to_consider) |> sample(5, replace = FALSE) |> sort()
-# > grnas_to_use
-# [1]  5034  7971  9796 10437 12669
-grnas_to_use <- c(5034, 7971)#, 9796, 10437, 12669)
+# get_active_grnas(grna_odm, function(x) sum(x > 0))
+active_grnas = c(gasperini = 5034, `replogle-rd7` = 58)
+grnas_to_use <- active_grnas[source_data]
+
 grna_matrix_rows <- lapply(grnas_to_use, function(i) grna_odm[i,]) |>
   do.call(what = rbind) |>
   `dimnames<-`(list(
@@ -64,29 +87,14 @@ grna_matrix_rows <- lapply(grnas_to_use, function(i) grna_odm[i,]) |>
 # 2. simulating the data ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 sim_results <- simulate_grna_matrix(
   grna_matrix_rows = grna_matrix_rows,
-  # using pseudocount because there are 4 cells with exact 0 for each
-  formula = ~ batch + log(grna_n_nonzero+1) + log(grna_n_umis+1),
+  formula = ~ 1 + log(grna_n_nonzero+1) + log(grna_n_umis+1),
   cell_covariates = cell_covariates,
-  num_grnas_per_perturbation = 100,
-  perturbation_effect_sizes = c(0, 1,  2, 3, 4, 5, 6), # seq(from = 0, to = log(5), length.out = 5),
-  prob_perturbed = 0.008 #30 / 207324  # actual dataset had around 30 gRNAs per cell so this gives that
+  num_grnas_per_perturbation = 25,
+  perturbation_effect_sizes = data.frame(non_pert_effect = -4, pert_effect = 6, theta = 4.5),
+  prob_perturbed = c(.001) 
 )
 
-
-
-# do we get enough perturbed cells per perturbation?
-# is binomial best? what about like Unif[15,45] for choosing the perturbed cells?
-
-rr <- sim_results$perturbation_indicators |>
-  rowSums()
-# hist(rr, 50)
-if(min(rr) < 10) {
-  stop("Some gRNAs ended up with fewer than 10 cells expressing them.")
-}
-
-# ok i think this is good enough. 
-
-
+plot_umi_hist_by_pert(grna_matrix_rows = grna_matrix_rows, sim_results = sim_results, grna_idx = 1, sim_idx = 1)
 
 # 3. saving to the appropriate places ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -136,10 +144,13 @@ for(i in 1:nrow(real_grna_target_df)) {
   matches_this_grna <- grepl(pattern = real_grna_target_df$grna_id[i], x = sim_grna_target_df$grna_id)
   sim_grna_target_df$grna_target[matches_this_grna] <- real_grna_target_df$grna_target[i]
 }
-# TODO this is hacky -- make more bulletproof later
-string_for_nt <- "_effect_0.000_"  # this is used to represent exactly zero effect from the perturbation
-is_nt <- grepl(pattern = string_for_nt, x = sim_grna_target_df$grna_id)
-sim_grna_target_df$grna_target[is_nt] <- "non-targeting"
+
+# making NT gRNAs for sceptre
+if(!any(sim_grna_target_df$grna_target == "non-targeting")) {
+  sim_grna_target_df$grna_target[1:2] <- "non-targeting"
+  warning("no NTs detected in `sim_grna_target_df` so first 2 are set to `non-targeting`.")
+}
+
 write.csv(sim_grna_target_df, file.path(sceptre_dir, "grna_target_data_frame.csv"), row.names=FALSE)
 
 # 3.4.2: response_matrix
@@ -162,7 +173,8 @@ cell_covariates |>
   write.csv(file.path(sceptre_dir, "covariate_data_frame.csv"), row.names=TRUE)
 
 
-
+cat("Command to transfer to HPC:\n")
+cat(paste0("scp -r ", output_dir, " ", .get_config_path("REMOTE_BENCHMARKING_DIR"), "guide_assignment/input_data/", run_name, "\n"))
 # to move to HPC
 # if(do_transfer) {
 #   cmd <- paste0("scp -r ", output_dir, " ", .get_config_path("REMOTE_BENCHMARKING_DIR"), "guide_assignment/input_data/", run_name)
