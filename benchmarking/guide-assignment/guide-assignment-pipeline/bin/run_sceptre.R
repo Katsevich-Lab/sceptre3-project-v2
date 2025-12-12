@@ -1,60 +1,78 @@
 #!/usr/bin/env Rscript
 
+library(sceptre)
+
 # Get command line arguments
 args <- commandArgs(trailingOnly = TRUE)
 input_dir <- args[1]  # Directory containing sceptre-compatible data
 dataset_id <- args[2] # Dataset identifier
 
-# Load sceptre library (pre-installed in container)
-library(sceptre)
 
-# Load the sceptre-compatible data files
+# determine which dataset this is
+DATASET_NAMES = c("gasperini", "replogle")
+dataset_name <- DATASET_NAMES[sapply(DATASET_NAMES, function(name) grepl(name, dataset_id, ignore.case = TRUE))]
+if(length(dataset_name) != 1) {
+	stop("Could not determine dataset from the input path.")
+}
+
+# Load data ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 cat("Loading data from:", input_dir, "\n")
 
-# Load sparse matrices and data frames
-library(Matrix)
 response_matrix <- readRDS(file.path(input_dir, "response_matrix.rds"))
 grna_matrix <- readRDS(file.path(input_dir, "grna_matrix.rds"))
 grna_target_df <- read.csv(file.path(input_dir, "grna_target_data_frame.csv"))
-if(!any("non_targeting" %in% grna_target_df$grna_target)) {
+if(!any(grna_target_df$grna_target == "non-targeting")) {
 	grna_target_df[1,"grna_target"] <- "non-targeting"
 	warning("No NTs present. `grna_target_df` modified to have an NT")
 }
-extra_covariates <- data.frame()
-
-
-is_simulated_data <- grepl("simulated", input_dir)
-if(is_simulated_data) {
-	# there should be a covariate data frame then
-	extra_covariates <- read.csv(file.path(input_dir, "covariate_data_frame.csv"))
-}
-
 
 cat("Data loaded:\n")
 cat("  Response matrix:", nrow(response_matrix), "genes x", ncol(response_matrix), "cells\n")
 cat("  gRNA matrix:", nrow(grna_matrix), "gRNAs x", ncol(grna_matrix), "cells\n")
-cat("  gRNA targets:", nrow(grna_target_df), "gRNAs mapped to targets\n")
+cat("  gRNA targets:", sum(grna_target_df$grna_target != "non-targeting"),
+   "targeting and", sum(grna_target_df$grna_target == "non-targeting"),
+  "non-targeting.\n")
 
-# MOI lookup table based on dataset
+
+# load extra covariates if they exist; keep at sceptre default otherwise
+if(file.exists(covariates_fp <- file.path(input_dir, "covariate_data_frame.csv"))) {
+	extra_covariates <- read.csv(covariates_fp)
+	cat("  extra_covariates loaded from file.\n")
+} else {
+	extra_covariates <- data.frame()
+	cat("  no existing extra_covariates detected.\n")
+}
+
+
+# Load other sceptre params ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# load assign_grnas() formula if it exists else set it with pre-determined formula
+if(file.exists(assign_grnas_fmla_fp <- file.path(input_dir, "assign_grnas_formula.rds"))) {
+	assign_grnas_fmla <- readRDS(assign_grnas_fmla_fp) |> as.formula()
+} else {
+	# construct it
+	fmla_lookup <- list(
+		replogle = ~ 1 + log(grna_n_nonzero+1) + log(grna_n_umis+1),
+		gasperini = ~ batch + log(grna_n_nonzero+1) + log(grna_n_umis+1)
+			    )
+	assign_grnas_fmla <- fmla_lookup[[dataset_name]]
+
+}
+cat("  Using assign_grnas(..., formula_object =", as.character(assign_grnas_fmla), "\b).\n")
+
+
 moi_lookup <- list(
   gasperini = "high",
   replogle = "low"
 )
-
-# Determine MOI from dataset_id
-dataset_key <- if (grepl("gasperini", dataset_id, ignore.case = TRUE)) {
-  "gasperini"
-} else if (grepl("replogle", dataset_id, ignore.case = TRUE)) {
-  "replogle"
+if(dataset_name %in% names(moi_lookup)) {
+	moi <- moi_lookup[[dataset_name]]
 } else {
-  stop("Unknown dataset '", dataset_id, "'. Expected 'replogle' or 'gasperini' in dataset name.")
+	stop("MOI lookup missing ", dataset_name, ".")
 }
+cat("  MOI = ", moi, "\b.\n")
 
-moi <- moi_lookup[[dataset_key]]
-cat("Dataset:", dataset_id, "-> MOI:", moi, "\n")
-
-
-# Create sceptre object
+# Create sceptre object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 cat("Creating sceptre object...\n")
 sceptre_object <- import_data(
   response_matrix = response_matrix,
@@ -70,33 +88,9 @@ cat("Setting analysis parameters (using defaults)...\n")
 # TODO: update formula when we actually do assoc testing
 sceptre_object <- set_analysis_parameters(sceptre_object, formula = ~1) 
 
-# Build formula dynamically with log transformations and conditional pseudocounts
-cat("Building mixture model formula...\n")
-has_zero_nonzero <- any(sceptre_object@covariate_data_frame$grna_n_nonzero == 0)
-has_zero_umis <- any(sceptre_object@covariate_data_frame$grna_n_umis == 0)
-
-nonzero_term <- if(has_zero_nonzero) "log(grna_n_nonzero + 1)" else "log(grna_n_nonzero)"
-umis_term <- if(has_zero_umis) "log(grna_n_umis + 1)" else "log(grna_n_umis)"
-
-# TODO batch is not here right now!
-formula_str <- paste0("~ ", nonzero_term, " + ", umis_term)
-assign_grnas_formula_object <- as.formula(formula_str)
-
-cat("Using formula:", formula_str, "\n")
-cat("  has_zero_nonzero:", has_zero_nonzero, "\n")
-cat("  has_zero_umis:", has_zero_umis, "\n")
-
-
-if(is_simulated_data) {
-   cat("Ignore all those other messages. This is simulated data.")
-   formula_str <- "~ batch + log(true_grna_n_nonzero + 1) + log(true_grna_n_umis + 1)"
-   cat("Actually we will use this formula:", formula_str)
-   assign_grnas_formula_object <- as.formula(formula_str)
-}
-
 # Assign gRNAs using mixture method with log-transformed covariates
 cat("Assigning gRNAs using mixture method...\n")
-sceptre_object <- assign_grnas(sceptre_object, method = "mixture", formula_object = assign_grnas_formula_object)
+sceptre_object <- assign_grnas(sceptre_object, method = "mixture", formula_object = assign_grnas_fmla)
 
 # Extract guide assignments as sparse logical matrix
 assignment_matrix <- get_grna_assignments(sceptre_object)
