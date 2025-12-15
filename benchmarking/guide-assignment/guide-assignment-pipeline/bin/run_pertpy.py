@@ -3,8 +3,8 @@
 # <--- checking that everything seems right for the GPU ---> #
 import os
 # Friendlier VRAM behavior + compile logging (also set in nextflow.config)
-os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
-os.environ.setdefault("JAX_LOG_COMPILES", "1")
+# os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+# os.environ.setdefault("JAX_LOG_COMPILES", "1")
 
 # Initialize JAX persistent compilation cache
 try:
