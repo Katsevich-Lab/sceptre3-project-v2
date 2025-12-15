@@ -1,11 +1,15 @@
 name: pertpy-gpu
 channels: [conda-forge]
 dependencies:
-  - python=3.11
+  - python=3.12
   - pip
   - pip:
-      - "jax[cuda12]"
+      - pip          # upgrades pip inside env
+      - setuptools
+      - wheel
       - pertpy
       - scanpy
-      - numpyro
-
+      - anndata
+      - h5py
+      - filelock
+      - "jax[cuda12]"

@@ -1,14 +1,12 @@
 // Nextflow module for pertpy guide assignment (simple + strict)
 
-// NOTE: pertpy ignores the 'cpu' field of the run config files
-// nextflow.config is where its resou
+// NOTE: pertpy ignores the 'cpus' and 'memory' fields of the run config files.
+// The 'gpu' block of nextflow.config is where its resources are set
 
 process PERTPY_ASSIGN {
-  label 'pertpy','gpu' // so the process for gpu in nextflow.config also applies here
+  label 'pertpy' // you can also add 'gpu' if you like
   tag "${dataset_id}"
-  stageInMode 'symlink' 
-
-  // container "${moduleDir}/pertpy.sif"
+  stageInMode 'symlink'
   conda "${moduleDir}/environment.yml"
 
   input:
@@ -26,15 +24,21 @@ process PERTPY_ASSIGN {
   """
   set -euo pipefail
 
-# --- GPU visibility (logs land in nf-logs/*.out) ---
- nvidia-smi || true
-  python - <<'PY'
-import os, jax
-print("JAX version:", jax.__version__)
-print("CUDA_VISIBLE_DEVICES:", os.environ.get("CUDA_VISIBLE_DEVICES"))
-print("JAX devices:", jax.devices())
-PY
+  # --- GPU visibility (logs land in nf-logs/*.out) ---
+  #  export LD_LIBRARY_PATH="\$CONDA_PREFIX/lib:\${LD_LIBRARY_PATH:-}"  # just unsetting this is better??
+  
+  unset LD_LIBRARY_PATH
+  echo "LD_LIBRARY_PATH is unset"
+  nvidia-smi || true
 
+
+
+  ## confirming that GPU is present
+  python - <<'PY'
+  import os, jax
+  print("JAX backend:", jax.default_backend()) 
+  print("JAX devices:", jax.devices()) 
+  PY
 
   # Run pertpy guide assignment
   python ${projectDir}/bin/run_pertpy.py "${dataset_dir}/grna_matrix.h5ad"
