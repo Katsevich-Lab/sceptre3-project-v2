@@ -36,7 +36,7 @@ cat("  gRNA targets:", sum(grna_target_df$grna_target != "non-targeting"),
 
 # load extra covariates if they exist; keep at sceptre default otherwise
 if(file.exists(covariates_fp <- file.path(input_dir, "covariate_data_frame.csv"))) {
-	extra_covariates <- read.csv(covariates_fp)
+	extra_covariates <- read.csv(covariates_fp, row.names = 1)
 	cat("  extra_covariates loaded from file.\n")
 } else {
 	extra_covariates <- data.frame()
@@ -53,7 +53,7 @@ if(file.exists(assign_grnas_fmla_fp <- file.path(input_dir, "assign_grnas_formul
 	# construct it
 	fmla_lookup <- list(
 		replogle = ~ 1 + log(grna_n_nonzero+1) + log(grna_n_umis+1),
-		gasperini = ~ batch + log(grna_n_nonzero+1) + log(grna_n_umis+1)
+		gasperini = ~ prep_batch + log(grna_n_nonzero+1) + log(grna_n_umis+1)
 			    )
 	assign_grnas_fmla <- fmla_lookup[[dataset_name]]
 
