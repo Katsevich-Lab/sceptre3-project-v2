@@ -41,6 +41,6 @@ process PERTPY_ASSIGN {
   PY
 
   # Run pertpy guide assignment
-  python ${projectDir}/bin/run_pertpy.py "${dataset_dir}/grna_matrix.h5ad"
+  python ${projectDir}/bin/run_pertpy.py "${dataset_dir}/grna_matrix.h5ad" ${dataset_id}
   """
 }
