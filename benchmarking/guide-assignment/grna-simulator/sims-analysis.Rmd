@@ -293,10 +293,14 @@ input_data_base_dir <- file.path(
   "guide_assignment/input_data"
 )
 
-grna_gasp <- Matrix::readMM(file.path(input_data_base_dir, "gasperini/cleanser/grna_matrix.mtx")) 
+grna_odm <- ondisc::initialize_odm_from_backing_file(file.path(input_data_base_dir, "gasperini/sceptre-pipeline/grna.odm"))
+grna_gasp <- Matrix::readMM(file.path(input_data_base_dir, "gasperini/cleanser/grna_matrix.mtx")) |>
+  `rownames<-`(rownames(grna_odm))
+
 dim(grna_gasp)
 
-grna_sim <- Matrix::readMM(file.path(input_data_base_dir, run_name, "cleanser/grna_matrix.mtx")) 
+grna_sim <- Matrix::readMM(file.path(input_data_base_dir, run_name, "cleanser/grna_matrix.mtx")) |>
+  `rownames<-`(grna_names[[run_name]])
 dim(grna_sim)
 # let's look at row and col sums vs my simulated matrix
 
@@ -330,14 +334,128 @@ what's the real concern? that there is no relationship between effect size and a
 
 something else we can look at: the fraction of non-zero gRNAs for each cell --> column function.
 ```{r}
-cell_sparsity_gasp <- ...
+library(Matrix)
+
+## count >0 per column (works on sparse, no densification)
+grna_gasp_C <- as(grna_gasp, "dgCMatrix")            # cheap, O(nnz), also collapses duplicates
+# pos_per_col <- Matrix::colSums(grna_gasp_C > 0) / ncol(grna_gasp)
+
+## if you really mean “nonzero (≠0)” counts per column:
+cell_sparsity_gasp <- diff(grna_gasp_C@p) / ncol(grna_gasp)
+
+
 cell_sparsity_sim <- apply(grna_sim, 2, function(v) mean(v > 0))
 
-block_size <- 1000
-num_blocks <- ncol(grna_gasp) %/% block_size
-lapply(seq(from = 1, to = ncol(), by = ))
 
-hist(cell_sparsity_sim)
+plot(cell_sparsity_gasp ~ cell_sparsity_sim)
+abline(0,1,col="red")
+
+```
+
+so our cells are much sparser on average than those in Gasperini. 
+
+so we need to increase the rate of 1s in each column. ?
+well, no... we need to increase the rate of 0 in the data. 
+
+how do we look marginally...? what about plotting a histogram of the quantiles of each simulated grna vs the real one?
+
+```{r}
+unique_grnas <- strsplit(rownames(grna_sim), "_") |> sapply(`[`, 2) |> unique()
+# TODO
+# how does the distribution of our realized Y compare to actual?
+
+hist(grna_sim["sim_CGTCTGCTCCATAGGCAGCG_effect_2.000_grna_1", ] |> asinh(), 50)
+hist(grna_gasp["CGTCTGCTCCATAGGCAGCG", ] |> asinh(), 50)
+mean(grna_gasp["CGTCTGCTCCATAGGCAGCG", ] > 0)
+mean(grna_sim["sim_CGTCTGCTCCATAGGCAGCG_effect_2.000_grna_1", ] > 0)
+
+
+hist(grna_sim["sim_GTATTGCTGCCTCCTCGCCG_effect_2.000_grna_1", ] |> asinh(), 50)
+hist(grna_gasp["GTATTGCTGCCTCCTCGCCG", ] |> asinh(), 50)
+mean(grna_gasp["GTATTGCTGCCTCCTCGCCG", ] > 0)
+mean(grna_sim["sim_GTATTGCTGCCTCCTCGCCG_effect_2.000_grna_1", ] > 0)
+
+
+```
+
+
+what's P(Y=0) vs P(not perturbed)? 
+
+any chance theta is being used wrong? should 1/theta be used? is that tiny theta a problem? does our model fit poorly?
+
+
+```{r}
+grna_sparsity_true <- apply(ground_truth_mat, 1, function(v) sum(v > 0))
+plot(grna_sparsity_true ~ grna_sparsity_sim)
+abline(0,1,col=2)
+
+mod <- lm(grna_sparsity_true ~ grna_sparsity_sim)
+summary(mod)
+abline(mod, col=4)
+
+```
+
+so in general we have decently more non-zero Y_i than X_i, but no correlation. Makes sense. 
+
+Is P(Y=0) simple to relate to X? 
+
+rnegbin(
+          n = num_cells,
+          mu = exp(log_mu + effect_size * is_perturbed),
+          theta = mod$theta
+        )
+
+so we should have $\mu = r(1-p)/p$ and $\theta=r$ for wikipedia parameterization. Then
+
+$$
+P(Y = 0) = p^r = \left(\frac{\theta}{\mu+\theta}\right)^\theta
+$$
+so tiny $\theta$ will mean we get very concentrated on zero... that is intended behavior. I guess this is how the negbin handles zero inflation!
+
+```{r}
+hist(grna_sim["sim_GTATTGCTGCCTCCTCGCCG_effect_6.000_grna_1", ] |> asinh(), 50)
+# due to covariates, we can't LLN this probability right now
+
+mod <- readRDS(
+  paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"), "/guide_assignment/input_data/", run_name, "/model_info.rds")
+)
+
+means <- cell_covs |> mutate(log_mu = mod$sim_GTATTGCTGCCTCCTCGCCG$coefficients["(Intercept)","Estimate"] + mod$sim_GTATTGCTGCCTCCTCGCCG$coefficients["batch","Estimate"] * batch + 
+ mod$sim_GTATTGCTGCCTCCTCGCCG$coefficients["log(grna_n_nonzero + 1)","Estimate"] * log(true_grna_n_nonzero + 1)+ 
+   mod$sim_GTATTGCTGCCTCCTCGCCG$coefficients["log(grna_n_umis + 1)","Estimate"] *  log(true_grna_n_umis + 1) + 
+   2 * ground_truth_mat["sim_GTATTGCTGCCTCCTCGCCG_effect_6.000_grna_1", ]) |>
+  pull(log_mu) |>
+  exp()
+
+plot(x = log(1 + grna_sim["sim_GTATTGCTGCCTCCTCGCCG_effect_6.000_grna_1", ]), y = log(means))
+
+```
+
+
+
+
+let's get the model we used to make this:
+```{r}
+grna_odm <- ondisc::initialize_odm_from_backing_file(paste0(base_fp, "grna.odm"))
+
+grnas_to_use <- c(5034, 7971)#, 9796, 10437, 12669)
+
+rownames(grna_odm)[grnas_to_use]
+stopifnot(rownames(grna_odm)[grnas_to_use[1]] == "GTATTGCTGCCTCCTCGCCG")
+
+grna_matrix_rows <- lapply(grnas_to_use, function(i) grna_odm[i,]) |>
+  do.call(what = rbind) |>
+  `dimnames<-`(list(
+    rownames(grna_odm)[grnas_to_use],
+    rownames(cell_covs)
+  ))
+
+mod_df <- cell_covs |>
+  mutate(y = grna_matrix_rows["GTATTGCTGCCTCCTCGCCG", ])
+mod1 <- MASS::glm.nb(y ~ batch + log(true_grna_n_nonzero + 1) + log(true_grna_n_umis + 1), data = mod_df)
+summary(mod1)
+# so tiny theta --> very overdispersed
+
 ```
 
 

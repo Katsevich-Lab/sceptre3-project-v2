@@ -16,8 +16,9 @@ source(file.path(
 # ))
 
 # do_transfer <- FALSE  # actually ssh this over? doesn't work in R due to OpenSSL version mismatch
+num_cells <- 100000 # Inf to take all
 source_data <- "replogle-rd7"
-run_name <- paste0(source_data, "_simulated")
+run_name <- paste0(source_data, "_simulated_medium")
 
 stopifnot(source_data %in% c("gasperini", "replogle-rd7"))
 
@@ -85,6 +86,11 @@ grna_matrix_rows <- lapply(grnas_to_use, function(i) grna_odm[i,]) |>
 
 
 # 2. simulating the data ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+num_cells <- min(num_cells, nrow(cell_covariates))
+grna_matrix_rows <- grna_matrix_rows[,1:num_cells, drop=FALSE]
+cell_covariates <- cell_covariates[1:num_cells, ] 
+
+
 sim_results <- simulate_grna_matrix(
   grna_matrix_rows = grna_matrix_rows,
   formula = ~ 1 + log(grna_n_nonzero+1) + log(grna_n_umis+1),
@@ -94,7 +100,11 @@ sim_results <- simulate_grna_matrix(
   prob_perturbed = c(.001) 
 )
 
-plot_umi_hist_by_pert(grna_matrix_rows = grna_matrix_rows, sim_results = sim_results, grna_idx = 1, sim_idx = 1)
+plot_umi_hist_by_pert(
+  grna_matrix_rows = grna_matrix_rows,
+  sim_results = sim_results,
+  grna_idx = 1, sim_idx = 1
+)
 
 # 3. saving to the appropriate places ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -126,6 +136,9 @@ cleanser_dir <- file.path(output_dir, "cleanser")
 dir.create(cleanser_dir, recursive=TRUE, showWarnings=FALSE)
 print(paste("  Writing cleanser to", cleanser_dir))
 Matrix::writeMM(sim_results$simulated_matrix, file.path(cleanser_dir, "grna_matrix.mtx"))
+
+# making smaller one just for CLEANSER
+Matrix::writeMM(sim_results$simulated_matrix[,1:1e5], file.path(cleanser_dir, "grna_matrix.mtx"))
 
 # 3.4: sceptre
 sceptre_dir <- file.path(output_dir, "sceptre")
@@ -172,6 +185,10 @@ cell_covariates |>
   dplyr::rename(true_grna_n_nonzero = grna_n_nonzero, true_grna_n_umis = grna_n_umis) |>
   write.csv(file.path(sceptre_dir, "covariate_data_frame.csv"), row.names=TRUE)
 
+# 3.4.4 saving formula object for assign_grnas()
+
+fmla <- readRDS(file.path(output_dir, "sim_params.rds"))$formula
+saveRDS(fmla, file.path(sceptre_dir, "assign_grnas_formula.rds"))
 
 cat("Command to transfer to HPC:\n")
 cat(paste0("scp -r ", output_dir, " ", .get_config_path("REMOTE_BENCHMARKING_DIR"), "guide_assignment/input_data/", run_name, "\n"))
