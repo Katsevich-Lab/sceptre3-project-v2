@@ -42,12 +42,16 @@ process PERTPY_ASSIGN {
   export XLA_PYTHON_CLIENT_PREALLOCATE=false
   export XLA_PYTHON_CLIENT_MEM_FRACTION=0.85
 
-  # JAX persistent compilation cache
+  # JAX persistent compilation cache - conservative settings for faster first run
   export JAX_COMPILATION_CACHE_DIR=${projectDir}/.jax_cache
-  export JAX_COMPILATION_CACHE_MAX_SIZE=${25L * 1024 * 1024 * 1024}
-  export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0
-  export JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES=-1
-  export JAX_PERSISTENT_CACHE_ENABLE_XLA_CACHES=all
+  export JAX_COMPILATION_CACHE_MAX_SIZE=${5L * 1024 * 1024 * 1024}
+  export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=1
+
+  # Aggressive caching (commented out - causes excessive I/O on first run)
+  # export JAX_COMPILATION_CACHE_MAX_SIZE=${25L * 1024 * 1024 * 1024}
+  # export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0
+  # export JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES=-1
+  # export JAX_PERSISTENT_CACHE_ENABLE_XLA_CACHES=all
 
   # Other caches and settings
   export NUMBA_CACHE_DIR=${projectDir}/.numba_cache
