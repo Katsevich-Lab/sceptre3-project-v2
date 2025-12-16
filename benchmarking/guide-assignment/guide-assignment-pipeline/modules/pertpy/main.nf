@@ -1,13 +1,16 @@
 // Nextflow module for pertpy guide assignment (simple + strict)
 
-// NOTE: pertpy ignores the 'cpus' and 'memory' fields of the run config files.
-// The 'gpu' block of nextflow.config is where its resources are set
+// NOTE: pertpy ignores the 'cpus' field of the run config files.
+// The 'memory' field is used from the config CSV (like other methods).
+// The GPU queue and time are set in nextflow.config
 
 process PERTPY_ASSIGN {
-  label 'pertpy' // you can also add 'gpu' if you like
+  label 'pertpy' 
   tag "${dataset_id}"
   stageInMode 'symlink'
   conda "${moduleDir}/environment.yml"
+
+  memory { resources.memory }
 
   input:
   tuple val(dataset_id), path(dataset_dir), val(method), val(resources)
