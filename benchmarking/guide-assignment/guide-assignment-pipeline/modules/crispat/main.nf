@@ -29,9 +29,13 @@ echo "NF projectDir: ${projectDir}"
 echo "dataset_dir: ${dataset_dir}"
 ls -l "${dataset_dir}" || true
 
+# Python isolation - prevent interference from user site-packages
 export PYTHONNOUSERSITE=1
 [ -n "\${PYTHONPATH:-}" ] && unset PYTHONPATH
-export XDG_CACHE_HOME="\$PWD/.cache";        mkdir -p "\$XDG_CACHE_HOME"
+
+# Cache directory for Python packages
+export XDG_CACHE_HOME="\$PWD/.cache"
+mkdir -p "\$XDG_CACHE_HOME"
 
 python "${projectDir}/bin/run_crispat.py" "${dataset_dir}/grna_matrix.h5ad"
 """

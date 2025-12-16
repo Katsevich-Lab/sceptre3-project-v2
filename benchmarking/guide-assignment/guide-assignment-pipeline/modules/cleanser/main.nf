@@ -33,9 +33,14 @@ echo "NF projectDir: ${projectDir}"
 echo "dataset_dir: ${dataset_dir}"
 ls -l "${dataset_dir}" || true
 
+# Python isolation - prevent interference from user site-packages
 export PYTHONNOUSERSITE=1
 [ -n "\${PYTHONPATH:-}" ] && unset PYTHONPATH
-export XDG_CACHE_HOME="\$PWD/.cache";        mkdir -p "\$XDG_CACHE_HOME"
+
+# Cache directories
+export XDG_CACHE_HOME="\$PWD/.cache"
+export CMDSTANPY_CACHE_DIR="\$PWD/.cmdstanpy_cache"
+mkdir -p "\$XDG_CACHE_HOME" "\$CMDSTANPY_CACHE_DIR"
 
 # Measure peak memory & elapsed time for cleanser
 /usr/bin/time -v -o cleanser_${dataset_id}.time.txt \\
