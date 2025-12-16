@@ -14,22 +14,28 @@ dataset_id = sys.argv[2]
 # Load data
 adata = ad.read_h5ad(input_h5ad)
 
-# Determine max_assignments_per_cell based on dataset_id
-if 'simulated' in dataset_id:
-    # For simulated data, gRNAs are iid so a cell could be assigned to all of them
-    max_assignments_per_cell = adata.n_vars
-elif 'replogle-rd7' in dataset_id:
-    max_assignments_per_cell = 10
-elif 'gasperini' in dataset_id:
-    max_assignments_per_cell = 50
-else:
-    raise ValueError(f"Unrecognized dataset_id: {dataset_id}")
+# this doesn't need to be set intelligently. We want to see every gRNA for each cell
+max_assignments_per_cell = 1000  
 
-print(f"max_assignments_per_cell set to {max_assignments_per_cell} for dataset {dataset_id}", flush=True)
+# setting priors and MCMC params
+mixture_params = {
+    'gaussian_mean_prior': (8,3),
+    # 'poisson_rate_prior': 1,  # default ok
+    'fraction_positive_expected': 0.05,
+    'num_warmup': 100,
+    'num_samples': 200
+}
+print("Mixture params:", ', '.join([f'{k}={v}' for k,v in mixture_params.items()]), flush=True)
+
 
 # Run pertpy guide assignment
 pertpy_obj = pt.pp.GuideAssignment()
-pertpy_obj.assign_mixture_model(adata, assigned_guides_key="assigned_guide", max_assignments_per_cell=max_assignments_per_cell)
+pertpy_obj.assign_mixture_model(
+    adata,
+    assigned_guides_key="assigned_guide",
+    max_assignments_per_cell=max_assignments_per_cell,
+    **mixture_params
+)
 
 # Convert to standardized format and write output
 standardized_df = pd.DataFrame({
