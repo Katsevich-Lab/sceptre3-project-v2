@@ -1,0 +1,73 @@
+Bootstrap: docker
+From: rocker/r-ver:4.4.3
+
+%labels
+    Description Mixscale association testing container
+    Version 1.0
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    # System dependencies
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        procps \
+        build-essential \
+        cmake \
+        curl \
+        git \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libxml2-dev \
+        libgit2-dev \
+        zlib1g-dev \
+        libfontconfig1-dev \
+        libfreetype6-dev \
+        libfribidi-dev \
+        libharfbuzz-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libtiff5-dev \
+        libhdf5-dev \
+        pkg-config
+    rm -rf /var/lib/apt/lists/*
+
+    # Install R package managers
+    R --slave -e 'install.packages("remotes", repos="https://cloud.r-project.org")'
+    R --slave -e 'install.packages("BiocManager", repos="https://cloud.r-project.org")'
+
+    # Install core dependencies from CRAN
+    R --slave -e 'install.packages(c("Matrix", "data.table", "PMA", "protoclust"), repos="https://cloud.r-project.org")'
+
+    # Install Seurat 5.3.1 (5.4.0+ makes slot argument defunct; 5.3.1 still allows it as deprecated)
+    # Mixscale uses the old slot argument, so we need a version that accepts it
+    R --slave -e 'remotes::install_version("Seurat", version = "5.3.1", repos = "https://cloud.r-project.org")'
+
+    # Install Bioconductor dependencies
+    R --slave -e 'BiocManager::install("glmGamPoi")'
+
+    # Install presto from GitHub (for faster Wilcoxon tests in Mixscale)
+    R --slave -e 'remotes::install_github("immunogenomics/presto")'
+
+    # Install Mixscale from GitHub
+    R --slave -e 'remotes::install_github("longmanz/Mixscale")'
+
+    # Working directory
+    mkdir -p /opt/mixscale
+
+%runscript
+    # Pass-through so `ps`, `bash`, `Rscript`, etc. all work with `apptainer run`
+    exec "$@"
+
+%environment
+    export LC_ALL=C
+    export PATH=/usr/local/bin:$PATH
+    # Avoid reading host user libraries when using --cleanenv
+    export R_LIBS_USER=
+
+%test
+    which ps
+    ps -o pid,comm | head -n 2
+    R --quiet -e 'suppressPackageStartupMessages(library(Mixscale)); cat("Mixscale OK\n")'
+    R --quiet -e 'suppressPackageStartupMessages(library(Seurat)); cat("Seurat ", as.character(packageVersion("Seurat")), " OK\n", sep="")'
