@@ -125,11 +125,13 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
                           grna_id = rep(names(cells_per_grna), num_cells_per_grna)
   ) |>
     dplyr::left_join(grna_target_df, by = "grna_id")
-  cell_info <- cbind(
-    cell_info,
-    cell_covariates[all_cell_idx, ] |>
-      setNames(paste0(names(cell_covariates), "_full"))
-  )
+  # cell_info <- cbind(
+  #   cell_info,
+  #   cell_covariates[all_cell_idx, ] |>
+  #     setNames(paste0(names(cell_covariates), "_full"))
+  # )
+  cell_covariates <- cell_covariates[all_cell_idx, ] |>
+    setNames(paste0(names(cell_covariates), "_full"))
   
   ## 4. getting the final data and writing
   response_mat <- lapply(genes_kept,
@@ -137,13 +139,35 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
     do.call(what = rbind) |> 
     `rownames<-`(genes_kept)
   
-  # did we get any cells that have no non-zero expressions?
-  # TODO implement this later if it matters. 
-  # total_cell_expressions <- Matrix::colSums(response_mat)
-  # cells_without_expression <- total_cell_expressions == 0
-  # if(any(cells_without_expression)) {
-  #   ...
-  # }
+  # remove any cells that didn't have any non-zero gene UMIs
+  total_cell_expressions <- Matrix::colSums(response_mat)
+  cells_without_expression <- total_cell_expressions == 0
+  if(any(cells_without_expression)) {
+    num_removed <- sum(cells_without_expression)
+    # cat("  Removing", num_removed, "cells with zero expression across all genes\n")
+
+    # Keep only cells with expression
+    cells_to_keep <- !cells_without_expression
+
+    # Update response_mat: remove columns
+    response_mat <- response_mat[, cells_to_keep, drop = FALSE]
+
+    # Update cell_info and cell_covariates: remove rows
+    cell_info <- cell_info[cells_to_keep, ]
+    cell_covariates <- cell_covariates[cells_to_keep, ]
+
+    # Update all_cell_idx: remove elements
+    removed_cell_indices <- all_cell_idx[cells_without_expression]
+    all_cell_idx <- all_cell_idx[cells_to_keep]
+
+    # Update cells_per_grna: remove filtered cell indices from each gRNA's list
+    cells_per_grna <- lapply(cells_per_grna, function(cells) {
+      setdiff(cells, removed_cell_indices)
+    })
+
+    # Recalculate num_cells_per_grna after filtering
+    num_cells_per_grna <- sapply(cells_per_grna, length)
+  }
   
   cat("Getting ready to write", dataset_name, "\b...\n")
   
@@ -155,19 +179,50 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
   write.csv(cell_info, file.path(write_fp, "cell_info.csv"), row.names = FALSE)
   cat("   `cell_info.csv` written.\n")
   
+  write.csv(cell_covariates, file.path(write_fp, "cell_covariates.csv"), row.names = FALSE)
+  cat("   `cell_covariates.csv` written.\n")
+  
   ## 4a. sceptre
   write_sceptre_fp <- file.path(write_fp, "sceptre")
   dir.create(write_sceptre_fp, showWarnings = FALSE, recursive = TRUE)
-  
+
   grna_target_df_kept <- grna_target_df |>
     dplyr::filter(grna_id %in% names(cells_per_grna))
-  grna_matrix <- lapply(names(cells_per_grna),
-                        function(grna) make_sparse_row(grna_odm[grna, ][all_cell_idx])) |>
+
+  # Create binary assignment indicator matrix (not UMI counts)
+  # grna_matrix[grna, cell] = 1 if cell is assigned to grna, 0 otherwise
+  grna_matrix <- lapply(names(cells_per_grna), function(grna) {
+    assigned_cells <- cells_per_grna[[grna]]
+    binary_vec <- rep(0, length(all_cell_idx))
+    binary_vec[match(assigned_cells, all_cell_idx)] <- 1
+    make_sparse_row(binary_vec)
+  }) |>
     do.call(what = rbind) |>
     `rownames<-`(names(cells_per_grna))
-  
+
+  # Compute sceptre-specific covariates from the subsetted gRNA UMI data
+  # Extract actual UMI counts from grna_odm for this subset of gRNAs and cells
+  grna_umi_subset <- lapply(names(cells_per_grna),
+                             function(grna) make_sparse_row(grna_odm[grna, ][all_cell_idx])) |>
+    do.call(what = rbind) |>
+    `rownames<-`(names(cells_per_grna))
+
+  # Compute covariates from the UMI subset (not from binary grna_matrix)
+  grna_n_nonzero_subset <- Matrix::colSums(grna_umi_subset != 0)
+  grna_n_umis_subset <- Matrix::colSums(grna_umi_subset)
+
+  # Create sceptre-specific cell covariates with subset-based gRNA metrics
+  cell_covariates_sceptre <- cbind(
+    cell_covariates,
+    data.frame(
+      grna_n_nonzero_subset = grna_n_nonzero_subset,
+      grna_n_umis_subset = grna_n_umis_subset
+    )
+  )
+
   saveRDS(response_mat, file.path(write_sceptre_fp, "response_matrix.rds"))
   saveRDS(grna_matrix, file.path(write_sceptre_fp, "grna_matrix.rds"))
+  write.csv(cell_covariates_sceptre, file.path(write_sceptre_fp, "cell_covariates.csv"), row.names = FALSE)
   write.csv(grna_target_df_kept, file.path(write_sceptre_fp, "grna_target_data_frame.csv"), row.names = FALSE)
   cat("   sceptre written.\n")
   

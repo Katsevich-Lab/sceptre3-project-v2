@@ -40,9 +40,13 @@ From: rocker/r-ver:4.4.3
     # Install core dependencies from CRAN
     R --slave -e 'install.packages(c("Matrix", "data.table", "PMA", "protoclust"), repos="https://cloud.r-project.org")'
 
-    # Install Seurat 5.3.1 (5.4.0+ makes slot argument defunct; 5.3.1 still allows it as deprecated)
-    # Mixscale uses the old slot argument, so we need a version that accepts it
+    # Install Seurat 5.3.1 first (will pull in SeuratObject 5.3.0 as dependency)
     R --slave -e 'remotes::install_version("Seurat", version = "5.3.1", repos = "https://cloud.r-project.org")'
+
+    # Downgrade SeuratObject to 5.2.0 AFTER Seurat installation (overwrites 5.3.0)
+    # This is the critical fix - Mixscale uses the old slot argument which is deprecated in 5.2.0 but defunct in 5.3.0
+    # We know this combo works (Seurat 5.3.1 + SeuratObject 5.2.0) from RStudio testing
+    R --slave -e 'remotes::install_version("SeuratObject", version = "5.2.0", repos = "https://cloud.r-project.org")'
 
     # Install Bioconductor dependencies
     R --slave -e 'BiocManager::install("glmGamPoi")'
@@ -71,3 +75,4 @@ From: rocker/r-ver:4.4.3
     ps -o pid,comm | head -n 2
     R --quiet -e 'suppressPackageStartupMessages(library(Mixscale)); cat("Mixscale OK\n")'
     R --quiet -e 'suppressPackageStartupMessages(library(Seurat)); cat("Seurat ", as.character(packageVersion("Seurat")), " OK\n", sep="")'
+    R --quiet -e 'suppressPackageStartupMessages(library(SeuratObject)); cat("SeuratObject ", as.character(packageVersion("SeuratObject")), " OK\n", sep="")'

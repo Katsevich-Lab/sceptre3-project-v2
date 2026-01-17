@@ -5,12 +5,16 @@
 // The GPU queue and time are set in nextflow.config
 
 process PERTPY_ASSIGN {
-  label 'pertpy' 
+  label 'pertpy'
   tag "${dataset_id}"
   stageInMode 'symlink'
   conda "${moduleDir}/environment.yml"
 
   memory { resources.memory }
+
+  // Store gpu settings in task.ext for access in nextflow.config
+  ext.gpu_queue = { resources.gpu_queue }
+  ext.gpu_time = { resources.gpu_time }
 
   input:
   tuple val(dataset_id), path(dataset_dir), val(method), val(resources)

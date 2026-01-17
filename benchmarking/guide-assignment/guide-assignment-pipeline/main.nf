@@ -33,8 +33,13 @@ workflow {
             def dataset_id = resource_row.dataset
             def method = resource_row.method
             def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${method}")
-            def resources = [cpus: resource_row.cpus, memory: resource_row.memory]
-            
+            def resources = [
+                cpus: resource_row.cpus,
+                memory: resource_row.memory,
+                gpu_queue: resource_row.gpu_queue ?: '',
+                gpu_time: resource_row.gpu_time ?: ''
+            ]
+
             [dataset_id, dataset_dir, method, resources]
         }
     
