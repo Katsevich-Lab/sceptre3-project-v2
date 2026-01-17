@@ -18,14 +18,15 @@ adata = ad.read_h5ad(input_h5ad)
 max_assignments_per_cell = 1000  
 
 # setting priors and MCMC params
-mixture_params = {
-    'gaussian_mean_prior': (8,3),
-    # 'poisson_rate_prior': 1,  # default ok
-    'fraction_positive_expected': 0.05,
-    'num_warmup': 100,
-    'num_samples': 200
-}
-print("Mixture params:", ', '.join([f'{k}={v}' for k,v in mixture_params.items()]), flush=True)
+# actually for the paper we are just using all-defaults right now
+#mixture_params = {
+#    'gaussian_mean_prior': (8,3),
+#    # 'poisson_rate_prior': 1,  # default ok
+#    'fraction_positive_expected': 0.05,
+#    'num_warmup': 100,
+#    'num_samples': 200
+#}
+#print("Mixture params:", ', '.join([f'{k}={v}' for k,v in mixture_params.items()]), flush=True)
 
 
 # Run pertpy guide assignment
@@ -33,8 +34,8 @@ pertpy_obj = pt.pp.GuideAssignment()
 pertpy_obj.assign_mixture_model(
     adata,
     assigned_guides_key="assigned_guide",
-    max_assignments_per_cell=max_assignments_per_cell,
-    **mixture_params
+    max_assignments_per_cell=max_assignments_per_cell
+    # **mixture_params
 )
 
 # Convert to standardized format and write output
