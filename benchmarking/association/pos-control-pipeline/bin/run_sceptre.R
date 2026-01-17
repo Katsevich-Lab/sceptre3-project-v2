@@ -48,8 +48,7 @@ scep <- import_data(
   grna_matrix = grna_matrix,
   grna_target_data_frame = grna_target_df,
   moi = "low",
-  extra_covariates = cell_covariates |>
-                        select(grna_n_umis_subset, grna_n_nonzero_subset)
+  extra_covariates = cell_covariates[,c("grna_n_umis_subset", "grna_n_nonzero_subset")]
 )
 
 # Construct positive control pairs (all gRNA -> target gene pairs)
