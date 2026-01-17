@@ -27,11 +27,13 @@ subprocess.run([
 df = pd.read_csv(f"{output_dir}/posteriors.csv", skiprows=1, sep='\t', 
                  names=['grna_id', 'cell_id', 'posterior'])
 
-# Assign each cell to gRNA with highest posterior probability
-assignments = df.loc[df.groupby('cell_id')['posterior'].idxmax()]
+df.to_csv("assignments_cleanser.csv", index=False)
 
-# Write standardized output
-pd.DataFrame({
-    'cell_id': assignments['cell_id'],
-    'grna_id': assignments['grna_id']
-}).to_csv("assignments_cleanser.csv", index=False)
+# # Assign each cell to gRNA with highest posterior probability
+# assignments = df.loc[df.groupby('cell_id')['posterior'].idxmax()]
+
+# # Write standardized output
+# pd.DataFrame({
+#     'cell_id': assignments['cell_id'],
+#     'grna_id': assignments['grna_id']
+# }).to_csv("assignments_cleanser.csv", index=False)
