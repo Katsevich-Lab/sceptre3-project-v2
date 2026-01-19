@@ -47,7 +47,7 @@ echo "SGE stdout/err logs: $(pwd)/nf-logs/"
 if [ -n "${JOB_ID:-}" ]; then
   CLUSTER_LOG="grna-assignment.o${JOB_ID}"
   if [ -f "${CLUSTER_LOG}" ]; then
-    mv "${CLUSTER_LOG}" "${OUT_DIR}/"
+    cp "${CLUSTER_LOG}" "${OUT_DIR}/"
     echo "Cluster log moved to: ${OUT_DIR}/${CLUSTER_LOG}"
   fi
 fi
