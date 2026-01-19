@@ -43,10 +43,17 @@ process PERTPY_ASSIGN {
   print("JAX devices:", jax.devices())
   PY
 
-  # === Option 1: Fastest first run (ACTIVE) - no caching, no logging ===
+  # === First-run optimized: in-memory caching only, no persistent disk cache (ACTIVE) ===
   export JAX_PLATFORMS=cuda
-  export XLA_PYTHON_CLIENT_PREALLOCATE=false
+  export XLA_PYTHON_CLIENT_PREALLOCATE=true  # Enable GPU memory preallocation
   export XLA_PYTHON_CLIENT_MEM_FRACTION=0.85
+
+  # Enable compilation logging for diagnostics (no persistent cache to disk)
+  export JAX_LOG_COMPILES=1
+
+  # NOTE: JAX_COMPILATION_CACHE_DIR is NOT set - this disables persistent disk caching
+  # JAX will still cache compiled functions IN MEMORY within the same run,
+  # which helps MCMC iterations reuse compiled kernels without disk persistence.
 
   # === Option 2: Conservative caching (balanced first run speed + some caching benefit) ===
   # export JAX_LOG_COMPILES=1

@@ -4,6 +4,7 @@ import jax
 print("JAX devices (inside run_pertpy.py):", jax.devices(), flush=True)
 
 import sys
+import time
 import pandas as pd
 import anndata as ad
 import pertpy as pt
@@ -30,13 +31,22 @@ max_assignments_per_cell = 1000
 
 
 # Run pertpy guide assignment
+print("Running pertpy guide assignment...", flush=True)
+print("Note: JAX will compile on first iterations (watch for 'Compiling...' messages)", flush=True)
+
 pertpy_obj = pt.pp.GuideAssignment()
+
+# Time the assignment
+start_time = time.time()
 pertpy_obj.assign_mixture_model(
     adata,
     assigned_guides_key="assigned_guide",
     max_assignments_per_cell=max_assignments_per_cell
     # **mixture_params
 )
+elapsed_time = time.time() - start_time
+
+print(f"Assignment completed in {elapsed_time/60:.2f} minutes ({elapsed_time:.1f} seconds)", flush=True)
 
 # Convert to standardized format and write output
 standardized_df = pd.DataFrame({
