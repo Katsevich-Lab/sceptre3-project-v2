@@ -1,0 +1,1061 @@
+---
+title: "grna assignment results"
+output:
+  pdf_document: default
+  html_document: default
+date: "2026-01-10"
+---
+
+```{r, echo=FALSE, include=FALSE}
+library(sceptre)
+library(tidyverse)
+source("~/.Rprofile")
+
+logp1_trans <- function(base = 10) {
+  trans <- function(x) log(x + 1, base)
+  inv   <- function(x) base^x - 1  # correct inverse
+  
+  # Major breaks: at base^k - 1
+  brks <- function(limits) {
+    rng <- limits + 1
+    scales::log_breaks(base = base)(rng) - 0
+  }
+  
+  scales::trans_new(
+    name = paste0("logp1-", base),
+    transform = trans,
+    inverse   = inv,
+    breaks    = brks,
+    domain = c(0, Inf)
+  )
+}
+```
+
+
+outline
+
+- methods
+
+- datasets (real and simulated)
+
+- results: simulation ground truth analysis and real data
+
+    
+    
+# 1. Methods and datasets
+
+For this part of the project, we are assessing five methods (two of which are versions of sceptre) on two real datasets and one simulated dataset. 
+
+The methods:
+
+1. pertpy's `assign_mixture_model()`: Bayesian Poisson-Gaussian mixture model fit via MCMC with CUDA+JAX support
+
+2. crispat's `ga_poisson_gauss()`: a Poisson-Gaussian mixture fit where the MAP estimates are obtained from a variational procedure
+
+3. cleanser: Bayesian NB-NB mixture fit via MCMC with stan (their `direct-capture` version)
+
+4. sceptre's mixture model: latent variable Poisson GLM fit via EM variant
+
+5. new sceptre-pipeline
+
+
+
+The datasets:
+
+a. Gasperini 2019 (high moi)
+
+b. Replogle 2022 (low moi)
+
+c. simulations
+
+
+## 1a. Simulated data
+
+We obtained a simulated low MOI dataset in the following way:
+
+Inputs:
+
+- a gRNA expression vector from Replogle, denoted $Y$
+
+- cell covariates $z_i$: in this case, the actual `grna_n_nonzero` and `grna_n_umis` from the sceptre covariate dataframe
+
+- the probability a simulated cell is perturbed, denoted $\varphi$
+
+- intercept adjustments $\gamma_0$ and $\gamma_1$ for unperturbed and perturbed cells, respectively, and a new NB dispersion parameter $\theta_0$
+
+Model and simulate:
+
+- do a NB regression of $Y$ on the covariates $Z$ to get their effects.
+
+- draw a new $Y^\star$ from a NB mixture, with each cell's mean being determined by the linear predictor from the NB regression, except also with the intercept adjustments. The overdispersion is $\theta_0$ no matter the perturbation status
+
+
+
+More precisely, let $Y = (Y_1, \dots, Y_n) \in \mathbb N^{n}$ represent the observed UMI counts for our chosen actual gRNA. For each cell $i$, let $z_i$ give our cell covariates, and collect these into a matrix $Z \in \mathbb R^{n\times p}$. Do a NB regression of $Y$ on $Z$ to get $\hat\beta$. If we just wanted to simulate from this model, we could do $Y^\star_i\mid z \stackrel{\perp \!\!\perp}\sim \text{NB}(e^{z^T\hat\beta}, \hat\theta)$.
+
+But for our case we need to have some cells be perturbed, so we are sampling from a 2-component NB mixture. Let $X_1,\dots, X_n \stackrel{\text{iid}}\sim \text{Ber}(\varphi)$ be our perturbation indicators, so $X_i = 1$ means cell $i$ is perturbed. 
+
+Let 
+$$
+\log \mu_i^\star = z_i^T\hat\beta + \gamma_0 (1-X_i) + \gamma_1 X_i
+$$
+so the effects for each covariate are the same, but the intercept is adjusted to be either $\hat\beta_0 + \gamma_0$ or $\hat\beta_0 + \gamma_1$, depending on which component we are in. We then simulate
+
+$$
+Y_i^\star \mid z_i, X_i\stackrel{\perp \!\!\perp}\sim \text{NB}(\mu_i^\star, \theta_{0})
+$$
+where $\theta_0$ is our externally provided overdispersion.
+
+We can't use $\hat\theta$ here, the overdispersion as estimated by the NB regression, because that is marginal over the perturbation indicators. There is much less overdispersion when we know which component each cell is from. The larger $\gamma_1-\gamma_0$ is, the bigger the perturbation effect size.
+
+For this paper, we use row `58` of the Replogle-rd7 gRNA matrix, which has gRNA id `304_ANAPC15_P1P2_ENSG00000110200`. We regress the resulting UMI counts on `~ 1 + log(grna_n_nonzero+1) + log(grna_n_umis+1)`.
+
+Below is a comparison of the actual UMI counts and a simulated dataset: 
+```{r, echo=FALSE, fig.width=10, fig.height=7, out.width="\\linewidth", fig.align="center"}
+y_row_idx <- 58
+
+# get actual UMI counts
+actual_data_fp <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data/replogle-rd7/sceptre-pipeline/"
+)
+grna_odm <- ondisc::initialize_odm_from_backing_file(paste0(actual_data_fp, "grna.odm"))
+y <- grna_odm[y_row_idx, ]
+
+# getting simulated data
+sim_data_fp <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data/replogle-rd7_simulated"
+)
+X <- readRDS(file.path(sim_data_fp, "true_perturbation_status.rds"))[1,]
+y_sim <- readRDS(file.path(sim_data_fp, "sceptre/grna_matrix.rds"))[1,]
+
+
+plt1 <- data.frame(
+  umi = c(y, y_sim),
+  group = rep(c("Real", "Sim"), each = length(y))
+) |>
+  ggplot(aes(x = umi, fill = group)) +
+  geom_histogram(bins=30) +
+  facet_wrap(~group) +
+  theme_bw()  +
+  scale_y_continuous(trans = logp1_trans(10)) +
+  scale_x_continuous(trans = logp1_trans(10)) +
+  ggtitle(bquote("Real vs Sim:" ~ gamma[0] ~ "= -4;" ~ gamma[1] ~ "= 6;" ~ theta[0] ~ "= 4.5;" ~ phi ~ "= 0.001")) +
+  labs(x = "UMI", fill = "Type")
+
+plt2 <- data.frame(
+  umi = y_sim,
+  pert_status = ifelse(X == 1, "Pert.", "Not pert.")
+) |>
+  ggplot(aes(x = umi, fill = pert_status)) +
+  geom_histogram(bins=30) +
+  facet_wrap(~pert_status) +
+  theme_bw()  +
+  scale_y_continuous(trans = logp1_trans(10)) +
+  scale_x_continuous(trans = logp1_trans(10)) +
+  ggtitle("Simulated UMI counts by perturbation status") +
+  labs(x = "Simulated UMI", fill = "Pert. status")
+
+cowplot::plot_grid(plt1, plt2, nrow = 2)
+```
+
+
+
+
+
+# 2. Results
+
+## a. simulated data: comparison to ground truth
+
+```{r, echo=FALSE, include=FALSE}
+dataset_name <- "replogle-rd7_simulated_medium"
+run_name <- "run_all_sims_medium"
+
+input_base_fp <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data",
+  dataset_name
+)
+
+output_base_fp <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/outputs",
+  run_name
+)
+
+ground_truth <- readRDS(file.path(input_base_fp, "true_perturbation_status.rds"))
+sims <- readRDS(file.path(input_base_fp, "sceptre/grna_matrix.rds"))
+y_sim <- sims[1,]
+
+assn_list <- vector("list", length = nrow(ground_truth)) |>
+    setNames(rownames(ground_truth))
+
+# getting a list form for the ground truth
+true_assign <- assn_list
+for(grna_name in names(true_assign)) {
+  true_assign[[grna_name]] <- which(ground_truth[grna_name, ] == 1)
+}
+
+process_sceptre <- function(scep_output_fp, assn_list) {
+  scep_assign_raw <- readRDS(scep_output_fp)
+  
+  scep_assign <- assn_list
+  # for(i in seq_along(scep_assign)) {
+  for(grna_name in names(scep_assign)) {
+    scep_assign[[grna_name]] <- which(scep_assign_raw[grna_name,])
+  }
+  scep_assign
+}
+
+process_crispat <- function(crisp_output_fp, assn_list) {
+  crisp_assign_raw <- read.csv(crisp_output_fp)
+  unordered_cell_list <- split(crisp_assign_raw$cell_id, crisp_assign_raw$grna_id)
+  crisp_assign <- assn_list
+  for(grna_name in names(unordered_cell_list)) {
+    crisp_assign[[grna_name]] <- unordered_cell_list[[grna_name]]
+  }
+  crisp_assign
+}
+
+process_pert <- function(pert_output_fp, assn_list) {
+  pert_assign_raw <- read.csv(pert_output_fp)
+  
+  pert_assign <- assn_list
+
+  for(grna_name in names(pert_assign)) {
+    pert_assign[[grna_name]] <- pert_assign_raw$cell_id[grepl(pattern = grna_name, x = pert_assign_raw$grna_id)]
+  }
+  pert_assign
+}
+
+process_clns <- function(clns_output_fp, assn_list) {
+  clns_assign_raw <- read.csv(clns_output_fp)
+  unordered_cell_list <- split(clns_assign_raw$cell_id, clns_assign_raw$grna_id)
+  clns_assign <- assn_list
+  for(i in names(unordered_cell_list)) {
+    grna_name <- rownames(ground_truth)[[as.integer(i)]]
+    clns_assign[[grna_name]] <- unordered_cell_list[[i]]
+  }
+  clns_assign
+}
+
+scep_assign <- process_sceptre(paste0(output_base_fp, "/assignment_matrix_sceptre_", dataset_name, ".rds"), assn_list = assn_list)
+crisp_assign <- process_crispat(paste0(output_base_fp, "/assignments_crispat_", dataset_name, ".csv"), assn_list = assn_list)
+pert_assign <- process_pert(paste0(output_base_fp, "/assignments_pertpy_", dataset_name, ".csv"), assn_list = assn_list)
+clns_assign <- process_clns(paste0(output_base_fp, "/assignments_cleanser_", dataset_name, ".csv"), assn_list = assn_list)
+
+# warning("!!! hard-coding 'medium' for cleanser !!!")
+all_assns <- list(scep = scep_assign, crisp = crisp_assign, pert = pert_assign, clns = clns_assign)
+
+jaccard <- function(set1, set2) {
+  intersection <- length(intersect(set1, set2))
+  union <- length(union(set1, set2))
+  if (union == 0) return(NA_real_)
+  return(intersection / union)
+}
+
+all_sims <- lapply(
+  all_assns,
+  function(assn) Map(jaccard, assn, true_assign) |> as.numeric()
+)
+```
+
+We ran on the `medium` dataset due to cleanser's memory usage.
+
+```{r, fig.cap="For each of the 25 iid simulated datasets, we get the similarity between the true perturbation status indicators and the estimated perturbation status. Cleanser totally fails; pertpy recovers some (if more MCMC samples are taken, pertpy does better); and sceptre and crispat nearly perfectly recover the ground truth.", echo=FALSE}
+method_renamer <- c(clns="cleanser", crisp="crispat", scep="sceptre", pert="pertpy")
+data.frame(
+  sims = unlist(all_sims),
+  method = rep(names(all_sims), each = nrow(ground_truth))
+) |>
+  mutate(method = method_renamer[method]) |>
+  ggplot(aes(x = sims, fill = method)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~method) +
+  theme_bw() +
+  labs(x = "Jaccard Similarity", title = paste0("Similarities by method for ", dataset_name))
+
+```
+
+
+
+```{r, echo=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# Function to parse Nextflow time format (e.g., "1h 43m 2s", "10m 38s", "5s")
+parse_nextflow_time <- function(time_str) {
+  if (is.na(time_str) || time_str == "-") {
+    return(NA_real_)
+  }
+  
+  # Extract hours, minutes, seconds
+  hours <- stringr::str_extract(time_str, "\\d+(?=h)") |> as.numeric()
+  minutes <- stringr::str_extract(time_str, "\\d+(?=m)") |> as.numeric()
+  seconds <- stringr::str_extract(time_str, "[\\d.]+(?=s)") |> as.numeric()
+  
+  # Convert to total minutes
+  total_minutes <- 0
+  if (!is.na(hours)) total_minutes <- total_minutes + hours * 60
+  if (!is.na(minutes)) total_minutes <- total_minutes + minutes
+  if (!is.na(seconds)) total_minutes <- total_minutes + seconds / 60
+  
+  return(total_minutes)
+}
+
+# Function to parse memory (e.g., "293.2 MB", "1.4 GB", "50.1 GB")
+parse_memory <- function(mem_str) {
+  if (is.na(mem_str) || mem_str == "-") {
+    return(NA_real_)
+  }
+  
+  # Extract number and unit
+  num <- stringr::str_extract(mem_str, "[\\d.]+") |> as.numeric()
+  unit <- stringr::str_extract(mem_str, "[A-Z]+")
+  
+  # Convert to GB
+  if (unit == "MB") {
+    return(num / 1024)
+  } else if (unit == "GB") {
+    return(num)
+  } else if (unit == "KB") {
+    return(num / (1024^2))
+  } else {
+    return(NA_real_)
+  }
+}
+
+# Function to read and combine trace files from multiple parts
+read_trace_multipart <- function(output_base_fp, parts) {
+  all_traces <- list()
+  
+  for (part in parts) {
+    trace_file <- file.path(output_base_fp, part, "trace.tsv")
+    
+    if (file.exists(trace_file)) {
+      # cat("Reading trace from:", part, "\n")
+      
+      trace_df <- read.table(
+        trace_file,
+        header = TRUE,
+        sep = "\t",
+        stringsAsFactors = FALSE,
+        comment.char = "",
+        quote = "",
+        check.names = FALSE
+      )
+      
+      trace_df$part <- part
+      all_traces[[part]] <- trace_df
+    } else {
+      warning("Trace file not found in part: ", part)
+    }
+  }
+  
+  # Combine all traces
+  combined <- bind_rows(all_traces)
+  
+  # Process the combined data
+  combined_processed <- combined |>
+    mutate(
+      method = tolower(gsub("_ASSIGN", "", process)),
+      dataset = tag,
+      runtime_minutes = sapply(realtime, parse_nextflow_time),
+      peak_memory_gb = sapply(peak_rss, parse_memory)
+    ) |>
+    # Remove failed runs (where both metrics are NA)
+    filter(!is.na(runtime_minutes) | !is.na(peak_memory_gb)) |>
+    # If there are duplicates (same method+dataset), keep the one with data
+    arrange(method, dataset, desc(runtime_minutes)) |>
+    group_by(method, dataset) |>
+    slice(1) |>
+    ungroup() |>
+    select(part, method, dataset, runtime_minutes, peak_memory_gb,
+           realtime, peak_rss, `%cpu`, `%mem`) |>
+    arrange(method, dataset)
+  
+  return(combined_processed)
+}
+
+output_base_fp <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/outputs",
+  "run_all_sims_medium"
+)
+
+# trace_data <- read_trace_multipart(output_base_fp, parts = c("part1", "part2"))
+trace_data <- read_trace_multipart(output_base_fp, parts = c(""))
+
+# View the data
+# print(trace_data)
+
+# Create runtime plot
+runtime_plot <- trace_data |>
+  filter(!is.na(runtime_minutes)) |>
+  ggplot(aes(x = method, y = runtime_minutes, fill = dataset)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  theme_bw() +
+  labs(
+    title = "Runtime by Method and Dataset",
+    x = "Method",
+    y = "Runtime (minutes)",
+    fill = "Dataset"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# print(runtime_plot)
+
+# Create memory plot
+memory_plot <- trace_data |>
+  filter(!is.na(peak_memory_gb)) |>
+  ggplot(aes(x = method, y = peak_memory_gb, fill = dataset)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  theme_bw() +
+  labs(
+    title = "Peak Memory Usage by Method and Dataset",
+    x = "Method",
+    y = "Peak Memory (GB)",
+    fill = "Dataset"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# print(memory_plot)
+
+# Create combined faceted plot
+trace_data_long <- trace_data |>
+  filter(!is.na(runtime_minutes) | !is.na(peak_memory_gb)) |>
+  pivot_longer(
+    cols = c(runtime_minutes, peak_memory_gb),
+    names_to = "metric",
+    values_to = "value"
+  ) |>
+  filter(!is.na(value)) |>
+  mutate(
+    metric = recode(metric,
+                    "runtime_minutes" = "Runtime (minutes)",
+                    "peak_memory_gb" = "Peak Memory (GB)")
+  )
+
+combined_plot <- ggplot(trace_data_long,
+                        aes(x = method, y = value, fill = dataset)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  facet_wrap(~metric, scales = "free_y", ncol = 1) +
+  theme_bw() +
+  labs(
+    title = "Computational Performance by Method and Dataset",
+    x = "Method",
+    y = "Value",
+    fill = "Dataset"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(combined_plot)
+
+# Summary table
+trace_summary <- trace_data |>
+  select(method, dataset, runtime_minutes, peak_memory_gb) |>
+  arrange(method, dataset)
+
+```
+
+
+
+
+
+# 2. real data 
+  
+
+```{r, echo=FALSE, include=FALSE}
+# rm(list=ls())
+find_file_in_parts <- function(base_dir, parts, filename) {
+  for (part in parts) {
+    filepath <- file.path(base_dir, part, filename)
+    if (file.exists(filepath)) {
+      return(filepath)
+    }
+  }
+  return(NULL)  # Not found in any part
+}
+
+# Modified version that works with multi-part runs
+make_assn_lists_multipart <- function(dataset_name, output_base_fp, parts = NULL) {
+  
+  # If parts is NULL, assume single directory (backward compatible)
+  if (is.null(parts)) {
+    parts <- c("")  # Empty string means output_base_fp itself
+  }
+  
+  process_crispat <- function(assn_list_template) {
+    crisp_output_fp <- find_file_in_parts(
+      output_base_fp, parts,
+      paste0("assignments_crispat_", dataset_name, ".csv")
+    )
+    
+    if (is.null(crisp_output_fp)) {
+      warning("No crispat assignments detected. Returning all-empty list.")
+      return(assn_list_template)
+    }
+    
+    cat("   crispat found in:", dirname(crisp_output_fp), "\n")
+    crisp_assign_raw <- read.csv(crisp_output_fp) |>
+      mutate(cell_id = gsub("CELL_", "", cell_id) |> as.integer())
+    unordered_cell_list <- split(crisp_assign_raw$cell_id, crisp_assign_raw$grna_id)
+    crisp_assign <- assn_list_template
+    crisp_assign[names(unordered_cell_list)] <- unordered_cell_list
+    crisp_assign
+  }
+  
+  process_pert <- function(assn_list_template) {
+    pert_output_fp <- find_file_in_parts(
+      output_base_fp, parts,
+      paste0("assignments_pertpy_", dataset_name, ".csv")
+    )
+    
+    if (is.null(pert_output_fp)) {
+      warning("No pertpy assignments detected. Returning all-empty list.")
+      return(assn_list_template)
+    }
+    
+    cat("   pertpy found in:", dirname(pert_output_fp), "\n")
+    pert_assign_raw <- read.csv(pert_output_fp) |>
+      filter(grna_id != "negative") |>
+      mutate(cell_id = gsub("CELL_", "", cell_id) |> as.integer())
+    pert_assign <- assn_list_template
+    
+    dt <- as.data.table(pert_assign_raw)
+    
+    # 1) Split each cell's "g1+g2+g3" into multiple columns
+    spl <- dt[, tstrsplit(grna_id, "\\+", fixed = FALSE)]
+    
+    # 2) Go long: one row per (cell_id, grna)
+    long <- melt(
+      cbind(dt[, .(cell_id)], spl),
+      id.vars = "cell_id",
+      value.name = "grna",
+      na.rm = TRUE
+    )[, .(cell_id, grna)]
+    
+    # (optional) drop duplicates if the same guide appears twice for a cell
+    setkey(long, grna, cell_id)
+    long <- unique(long)
+    
+    # 3) Aggregate: list of cells per gRNA
+    grna_cells_list <- long[, .(cells = list(cell_id)), by = grna]
+    grna_cells_list <- setNames(grna_cells_list$cells, grna_cells_list$grna)
+    pert_assign[names(grna_cells_list)] <- grna_cells_list
+    
+    pert_assign
+  }
+  
+  process_clns <- function(assn_list_template, posterior_thresh = 0.8) {
+    clns_output_fp <- find_file_in_parts(
+      output_base_fp, parts,
+      paste0("assignments_cleanser_", dataset_name, ".csv")
+    )
+    
+    if (is.null(clns_output_fp)) {
+      warning("No cleanser assignments detected. Returning all-empty list.")
+      return(assn_list_template)
+    }
+    
+    cat("   cleanser found in:", dirname(clns_output_fp), "\n")
+    clns_assign_raw <- read.csv(clns_output_fp) |>
+      filter(posterior >= posterior_thresh) |>
+      mutate(grna_id = names(assn_list_template)[grna_id])
+    unordered_cell_list <- split(clns_assign_raw$cell_id, clns_assign_raw$grna_id)
+    clns_assign <- assn_list_template
+    clns_assign[names(unordered_cell_list)] <- unordered_cell_list
+    clns_assign
+  }
+  
+  # 0. load sceptre assignment matrix
+  scep_output_fp <- find_file_in_parts(
+    output_base_fp, parts,
+    paste0("assignment_matrix_sceptre_", dataset_name, ".rds")
+  )
+  
+  if (is.null(scep_output_fp)) {
+    stop("Sceptre assignment matrix not found in any part!")
+  }
+  
+  cat("   sceptre found in:", dirname(scep_output_fp), "\n")
+  scep_assn_mat <- readRDS(scep_output_fp)
+  
+  # this list is used to keep all methods in the same order
+  grna_names <- rownames(scep_assn_mat)
+  assn_list_template <- vector("list", length = length(grna_names)) |>
+    setNames(grna_names)
+  
+  # 1. process scep
+  scep_assn <- lapply(grna_names, function(grna) which(scep_assn_mat[grna,])) |>
+    setNames(grna_names)
+  cat("   sceptre processed.\n")
+  
+  # 2. process other methods
+  crisp_assn <- process_crispat(assn_list_template)
+  cat("   crispat processed.\n")
+  
+  pertpy_assn <- process_pert(assn_list_template)
+  cat("   pertpy processed.\n")
+  
+  cleanser_assn <- process_clns(assn_list_template)
+  cat("   cleanser processed.\n")
+  
+  all_assns <- list(
+    scep = scep_assn,
+    crisp = crisp_assn,
+    pert = pertpy_assn,
+    cleanser = cleanser_assn
+  )
+  
+  return(all_assns)
+}
+
+
+
+source("~/.Rprofile")
+library(data.table)
+
+output_base_fp <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/outputs",
+  "run_all_medium_parts"
+)
+repl_assns <- make_assn_lists_multipart(
+  "replogle-rd7_medium",
+  output_base_fp,
+  parts = c("part1", "part2")
+)
+gasp_assns <- make_assn_lists_multipart(
+  "gasperini_medium",
+  output_base_fp,
+  parts = c("part1", "part2")
+)
+```
+
+
+```{r, echo=FALSE}
+# make_sim_plots <- function(results) {
+#   methods <- names(results)
+#   
+#   # gRNAs (align by name, don't assume order)
+#   grnas <- Reduce(intersect, lapply(results, names))
+#   
+#   # helper for NULL coalesce (base R)
+#   `%||%` <- function(x, y) if (is.null(x)) y else x
+#   
+#   # Pre-unique cell vectors once (helps correctness + a bit of speed)
+#   results_u <- lapply(results, function(L) lapply(L[grnas], function(x) unique(x %||% integer(0))))
+#   
+#   
+#   
+#   jaccard <- function(a, b) {
+#     a <- unique(a %||% character(0))
+#     b <- unique(b %||% character(0))
+#     denom <- length(union(a, b))
+#     if (denom == 0L) return(NA_real_)
+#     length(intersect(a, b)) / denom
+#   }
+#   
+#   # Build a long data.frame with one "value" vector per panel
+#   panel_df <- do.call(rbind, lapply(methods, function(mi) {
+#     do.call(rbind, lapply(methods, function(mj) {
+#       if (mi == mj) {
+#         vals <- vapply(grnas, function(g) length(results_u[[mi]][[g]]), integer(1))
+#         data.frame(row = mi, col = mj, value = vals, type = "count")
+#       } else {
+#         vals <- vapply(grnas, function(g) jaccard(results_u[[mi]][[g]], results_u[[mj]][[g]]), numeric(1))
+#         data.frame(row = mi, col = mj, value = vals, type = "jaccard")
+#       }
+#     }))
+#   }))
+#   
+#   panel_df$row <- factor(panel_df$row, levels = methods)
+#   panel_df$col <- factor(panel_df$col, levels = methods)
+#   
+#   ggplot(panel_df, aes(x = value)) +
+#     geom_histogram(bins = 50) +
+#     facet_wrap(row ~ col, scales = "free") +
+#     theme_bw(base_size = 11) +
+#     labs(x = NULL, y = "Number of gRNAs")
+# }
+
+
+
+`%||%` <- function(x, y) if (is.null(x)) y else x
+jaccard <- function(a, b) {
+  a <- unique(a %||% character(0))
+  b <- unique(b %||% character(0))
+  denom <- length(union(a, b))
+  if (denom == 0L) return(NA_real_)
+  length(intersect(a, b)) / denom
+}
+  
+
+make_pairwise_sims <- function(results) {
+  k <- 1
+  sim_names <- c()
+  sims <- matrix(0, length(results[[1]]), choose(length(results), 2))
+  for(i in 1:(length(results)-1)) {
+    for(j in (i+1):length(results)) {
+      sims[,k] <- Map(jaccard, results[[i]], results[[j]]) |> as.numeric()
+      k <- k + 1
+      sim_names <- c(sim_names, paste0(names(results)[i], " vs ", names(results)[j]))
+    }
+  }
+  sims <- as.data.frame(sims) |> setNames(sim_names)
+  sims
+}
+
+
+lapply(repl_assns, function(l) sapply(l, length)) |>
+  do.call(what = cbind) |>
+  GGally::ggpairs(title = "num cells assigned per grna for replogle-rd7_medium")
+
+lapply(gasp_assns, function(l) sapply(l, length)) |>
+  do.call(what = cbind) |>
+  GGally::ggpairs(title = "num cells assigned per grna for gasperini_medium")
+
+make_pairwise_sims(repl_assns) |> 
+  pivot_longer(cols = everything(), names_to = "methods", values_to = "jaccard") |>
+  ggplot(aes(x = jaccard)) +
+  geom_histogram(bins=30) +
+  facet_wrap(~methods) +
+  theme_bw() +
+  labs(title = "grna assignment similarities for replogle-rd7_medium")
+
+
+
+
+
+make_pairwise_sims(gasp_assns) |> 
+  pivot_longer(cols = everything(), names_to = "methods", values_to = "jaccard") |>
+  ggplot(aes(x = jaccard)) +
+  geom_histogram(bins=30) +
+  facet_wrap(~methods) +
+  theme_bw() +
+  labs(title = "grna assignment similarities for gasperini_medium")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- ```{r} -->
+<!-- results <- repl_assns#[c("scep", "crisp", "cleanser")] # no cleanser for this one -->
+
+<!-- methods <- names(results) -->
+
+<!-- # gRNAs (align by name, don't assume order) -->
+<!-- grnas <- Reduce(intersect, lapply(results, names)) -->
+
+<!-- # helper for NULL coalesce (base R) -->
+<!-- `%||%` <- function(x, y) if (is.null(x)) y else x -->
+
+<!-- # Pre-unique cell vectors once (helps correctness + a bit of speed) -->
+<!-- results_u <- lapply(results, function(L) lapply(L[grnas], function(x) unique(x %||% integer(0)))) -->
+
+
+
+<!-- jaccard <- function(a, b) { -->
+<!--   a <- unique(a %||% character(0)) -->
+<!--   b <- unique(b %||% character(0)) -->
+<!--   denom <- length(union(a, b)) -->
+<!--   if (denom == 0L) return(NA_real_) -->
+<!--   length(intersect(a, b)) / denom -->
+<!-- } -->
+
+<!-- # Build a long data.frame with one "value" vector per panel -->
+<!-- panel_df <- do.call(rbind, lapply(methods, function(mi) { -->
+<!--   do.call(rbind, lapply(methods, function(mj) { -->
+<!--     if (mi == mj) { -->
+<!--       vals <- vapply(grnas, function(g) length(results_u[[mi]][[g]]), integer(1)) -->
+<!--       data.frame(row = mi, col = mj, value = vals, type = "count") -->
+<!--     } else { -->
+<!--       vals <- vapply(grnas, function(g) jaccard(results_u[[mi]][[g]], results_u[[mj]][[g]]), numeric(1)) -->
+<!--       data.frame(row = mi, col = mj, value = vals, type = "jaccard") -->
+<!--     } -->
+<!--   })) -->
+<!-- })) -->
+
+<!-- panel_df$row <- factor(panel_df$row, levels = methods) -->
+<!-- panel_df$col <- factor(panel_df$col, levels = methods) -->
+
+<!-- ggplot(panel_df, aes(x = value)) + -->
+<!--   geom_histogram(bins = 50) + -->
+<!--   facet_wrap(row ~ col, scales = "free") + -->
+<!--   theme_bw(base_size = 11) + -->
+<!--   labs(x = NULL, y = "Number of gRNAs") -->
+
+<!-- ``` -->
+
+
+
+
+
+```{r, echo=FALSE}
+
+# Usage:
+output_base_fp <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/outputs",
+  "run_all_medium_parts"
+)
+
+trace_data <- read_trace_multipart(output_base_fp, parts = c("part1", "part2"))
+# trace_data <- read_trace_multipart(output_base_fp, parts = c(""))
+
+# View the data
+# print(trace_data)
+
+# Create runtime plot
+runtime_plot <- trace_data |>
+  filter(!is.na(runtime_minutes)) |>
+  ggplot(aes(x = method, y = runtime_minutes, fill = dataset)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  theme_bw() +
+  labs(
+    title = "Runtime by Method and Dataset",
+    x = "Method",
+    y = "Runtime (minutes)",
+    fill = "Dataset"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# print(runtime_plot)
+
+# Create memory plot
+memory_plot <- trace_data |>
+  filter(!is.na(peak_memory_gb)) |>
+  ggplot(aes(x = method, y = peak_memory_gb, fill = dataset)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  theme_bw() +
+  labs(
+    title = "Peak Memory Usage by Method and Dataset",
+    x = "Method",
+    y = "Peak Memory (GB)",
+    fill = "Dataset"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# print(memory_plot)
+
+# Create combined faceted plot
+trace_data_long <- trace_data |>
+  filter(!is.na(runtime_minutes) | !is.na(peak_memory_gb)) |>
+  pivot_longer(
+    cols = c(runtime_minutes, peak_memory_gb),
+    names_to = "metric",
+    values_to = "value"
+  ) |>
+  filter(!is.na(value)) |>
+  mutate(
+    metric = recode(metric,
+                    "runtime_minutes" = "Runtime (minutes)",
+                    "peak_memory_gb" = "Peak Memory (GB)")
+  )
+
+combined_plot <- ggplot(trace_data_long,
+                        aes(x = method, y = value, fill = dataset)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  facet_wrap(~metric, scales = "free_y", ncol = 1) +
+  theme_bw() +
+  labs(
+    title = "Computational Performance by Method and Dataset",
+    x = "Method",
+    y = "Value",
+    fill = "Dataset"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(combined_plot)
+
+# Summary table
+trace_summary <- trace_data |>
+  select(method, dataset, runtime_minutes, peak_memory_gb) |>
+  arrange(method, dataset)
+
+# print(trace_summary)
+```
+
+
+
+```{r, echo=FALSE}
+  read_sceptre_pipeline_trace <- function(dataset_name, base_dir = "~/data/projects/sceptre3/benchmarking/guide_assignment/outputs") {
+    trace_file <- file.path(base_dir, dataset_name, "sceptre-pipeline/tracing/trace.tsv")
+
+    if (!file.exists(trace_file)) {
+      warning("Sceptre-pipeline trace not found for ", dataset_name)
+      return(NULL)
+    }
+
+    # cat("Reading sceptre-pipeline trace from:", dataset_name, "\n")
+
+    trace_df <- read.table(
+      trace_file,
+      header = TRUE,
+      sep = "\t",
+      stringsAsFactors = FALSE,
+      comment.char = "",
+      quote = "",
+      check.names = FALSE
+    )
+
+    # Aggregate assign_grnas tasks (run in parallel)
+    assign_grnas_tasks <- trace_df %>%
+      filter(process == "assign_grnas")
+
+    # Get combine task (runs after all assign_grnas)
+    combine_task <- trace_df %>%
+      filter(process == "combine_assign_grnas")
+
+    # Calculate overall metrics
+    # Runtime: from first assign_grnas start to combine completion
+    first_start <- min(as.POSIXct(assign_grnas_tasks$start, format = "%Y-%m-%d %H:%M:%S"))
+    combine_complete <- if(nrow(combine_task) > 0) {
+      as.POSIXct(combine_task$complete[1], format = "%Y-%m-%d %H:%M:%S")
+    } else {
+      max(as.POSIXct(assign_grnas_tasks$complete, format = "%Y-%m-%d %H:%M:%S"))
+    }
+
+    total_runtime_sec <- as.numeric(difftime(combine_complete, first_start, units = "secs"))
+    total_runtime_min <- total_runtime_sec / 60
+
+    # Memory parsing helper
+    parse_memory_gb <- function(mem_str) {
+      if (is.na(mem_str) || mem_str == "-") return(NA_real_)
+
+      # Extract number and unit
+      num <- as.numeric(gsub("\\s*[A-Za-z]+$", "", mem_str))
+      unit <- gsub("^[0-9.]+\\s*", "", mem_str)
+
+      # Convert to GB
+      if (unit == "GB") return(num)
+      if (unit == "MB") return(num / 1024)
+      if (unit == "KB") return(num / (1024^2))
+      return(NA_real_)
+    }
+
+    # Memory metrics
+    all_peak_memory <- sapply(c(assign_grnas_tasks$peak_rss, combine_task$peak_rss), parse_memory_gb)
+
+    # Max single-node memory
+    max_single_node_memory_gb <- max(all_peak_memory, na.rm = TRUE)
+
+    # Total memory across all nodes
+    total_memory_gb <- sum(all_peak_memory, na.rm = TRUE)
+
+    # Number of nodes
+    n_nodes <- nrow(assign_grnas_tasks) + nrow(combine_task)
+
+    # Return summary row
+    data.frame(
+      method = "sceptre-pipeline",
+      dataset = dataset_name,
+      runtime_minutes = total_runtime_min,
+      max_single_node_memory_gb = max_single_node_memory_gb,
+      total_memory_gb = total_memory_gb,
+      n_nodes = n_nodes,
+      stringsAsFactors = FALSE
+    )
+  }
+
+  # Read sceptre-pipeline data for both datasets
+  sceptre_pipeline_data <- bind_rows(
+    read_sceptre_pipeline_trace("gasperini"),
+    read_sceptre_pipeline_trace("replogle-rd7")
+  )
+
+  # View the data
+  # print(sceptre_pipeline_data)
+
+  # Runtime plot
+  runtime_plot <- sceptre_pipeline_data %>%
+    ggplot(aes(x = dataset, y = runtime_minutes, fill = dataset)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = paste0(n_nodes, " nodes")),
+              vjust = -0.5, size = 3.5) +
+    theme_bw() +
+    labs(
+      title = "Sceptre-Pipeline Runtime by Dataset",
+      x = "Dataset",
+      y = "Wall-clock Runtime (minutes)",
+      fill = "Dataset"
+    ) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  # print(runtime_plot)
+
+  # Memory comparison plot - both metrics side by side
+  memory_comparison <- sceptre_pipeline_data %>%
+    pivot_longer(
+      cols = c(max_single_node_memory_gb, total_memory_gb),
+      names_to = "memory_metric",
+      values_to = "memory_gb"
+    ) %>%
+    mutate(
+      memory_metric = recode(memory_metric,
+                            "max_single_node_memory_gb" = "Max Single-Node",
+                            "total_memory_gb" = "Total (Sum)")
+    )
+
+  memory_plot <- ggplot(memory_comparison,
+                        aes(x = dataset, y = memory_gb, fill = memory_metric)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+    theme_bw() +
+    labs(
+      title = "Sceptre-Pipeline Memory Usage by Dataset",
+      x = "Dataset",
+      y = "Peak Memory (GB)",
+      fill = "Memory Metric"
+    ) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  # print(memory_plot)
+
+  # Combined faceted plot with all metrics
+  sceptre_pipeline_long <- sceptre_pipeline_data %>%
+    pivot_longer(
+      cols = c(runtime_minutes, max_single_node_memory_gb, total_memory_gb),
+      names_to = "metric",
+      values_to = "value"
+    ) %>%
+    mutate(
+      metric = recode(metric,
+                     "runtime_minutes" = "Runtime (minutes)",
+                     "max_single_node_memory_gb" = "Max Single-Node Memory (GB)",
+                     "total_memory_gb" = "Total Memory (GB)") |>
+        factor(levels = c("Runtime (minutes)", "Max Single-Node Memory (GB)", "Total Memory (GB)") )
+    )
+
+  combined_plot <- ggplot(sceptre_pipeline_long,
+                          aes(x = dataset, y = value, fill = dataset)) +
+    geom_bar(stat = "identity") +
+    facet_wrap(~metric, scales = "free_y", ncol = 1) +
+    theme_bw() +
+    labs(
+      title = "Sceptre-Pipeline Performance by Dataset",
+      x = "Dataset",
+      y = "Value",
+      fill = "Dataset"
+    ) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  print(combined_plot)
+```
+
