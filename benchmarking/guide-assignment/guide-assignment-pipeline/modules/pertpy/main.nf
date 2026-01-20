@@ -45,12 +45,13 @@ process PERTPY_ASSIGN {
 
   # === First-run optimized: in-memory caching only, no persistent disk cache (ACTIVE) ===
   export JAX_PLATFORMS=cuda
+  export JAX_ENABLE_X64=0
   export XLA_PYTHON_CLIENT_PREALLOCATE=true  # Enable GPU memory preallocation
   export XLA_PYTHON_CLIENT_MEM_FRACTION=0.60  # Reduced from 0.85 to prevent CPU OOM
                                                # With 50GB allocation: 30GB preallocated, 20GB headroom
 
   # Enable compilation logging for diagnostics (no persistent cache to disk)
-  export JAX_LOG_COMPILES=1
+  export JAX_LOG_COMPILES=0
 
   # NOTE: JAX_COMPILATION_CACHE_DIR is NOT set - this disables persistent disk caching
   # JAX will still cache compiled functions IN MEMORY within the same run,
