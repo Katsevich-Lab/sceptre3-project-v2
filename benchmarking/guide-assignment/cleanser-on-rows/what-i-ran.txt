@@ -1,0 +1,4 @@
+# this is because it seems like they are all competing for the same stan compilation
+jid=$(qsub compile_cleanser_stan.sh | awk '/Your job/{print $3; exit}')
+echo "$jid"
+qsub -hold_jid "$jid" cleanser-sim-on-rows.sh
