@@ -17,9 +17,13 @@ benchmarking/guide-assignment/guide-assignment-pipeline/configs/*_config.csv
 
 # Conda/Python environments
 conda-cache/
+.conda-cache/
 **/venv/
 **/__pycache__/
 *.pyc
+
+# Cloned external repositories
+benchmarking/association/external/
 
 # Logs
 *.log

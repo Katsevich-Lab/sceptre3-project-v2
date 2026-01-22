@@ -33,16 +33,33 @@ scep <- sceptre::read_ondisc_backed_sceptre_object(
 
 
 # inputs
-num_pc_cells = 5000
-num_nt_cells = 1000
+num_pc_cells = 200000
+num_nt_cells = 10000
 response_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "response.odm"))
 grna_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "grna.odm"))
 grna_assign_mat = readRDS(file.path(output_fp, "grna_assignment_matrix.rds"))
 grna_target_df = scep@grna_target_data_frame
 cell_covariates = scep@covariate_data_frame
 NT_name = "non-targeting"
-# dataset_name = paste0(source_data, "_", new_dataset_label) 
+dataset_name = paste0(source_data, "_", "large")
+min_num_cells_per_target = 20
 
+
+odm_to_sparse_matrix <- function(odm, genes, cell_idx) {
+  ilist <- jlist <- xlist <- vector("list", length(genes))
+  for(i in seq_along(genes)) {
+    curr_umis <- odm[genes[i], ][cell_idx]
+    is_positive <- curr_umis > 0
+    num_entries <- sum(is_positive)
+    if(num_entries > 0) {
+      ilist[[i]] <- rep(i, num_entries)
+      jlist[[i]] <- which(is_positive)
+      xlist[[i]] <- curr_umis[is_positive]
+    }
+  }
+  sparseMatrix(i = unlist(ilist), j = unlist(jlist), x = unlist(xlist),
+              dims = c(length(genes), length(cell_idx)))
+}
 
 # NOTE
 # this has low MOI pretty hard-coded in, sicne we only take the 
@@ -70,6 +87,7 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
   cells_per_grna <- list()
   genes_kept <- c()
   for(gene in all_response_gene_names) {
+
     # a. get the corresponding guide rnas
     curr_grna_ids <- target_to_grna_ids[[gene]]
     if(is.null(curr_grna_ids)) {
@@ -104,6 +122,7 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
     }
   }
   
+  
   ## 2. adding in the NT cells
   nt_grna_ids <- target_to_grna_ids[[NT_name]]
   num_nt_so_far <- 0
@@ -125,19 +144,18 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
                           grna_id = rep(names(cells_per_grna), num_cells_per_grna)
   ) |>
     dplyr::left_join(grna_target_df, by = "grna_id")
-  # cell_info <- cbind(
-  #   cell_info,
-  #   cell_covariates[all_cell_idx, ] |>
-  #     setNames(paste0(names(cell_covariates), "_full"))
-  # )
+
   cell_covariates <- cell_covariates[all_cell_idx, ] |>
     setNames(paste0(names(cell_covariates), "_full"))
   
   ## 4. getting the final data and writing
-  response_mat <- lapply(genes_kept,
-                         function(gene) make_sparse_row(response_odm[gene, ][all_cell_idx])) |>
-    do.call(what = rbind) |> 
+  cat("Starting to read `response_odm`...")
+  t0 <- Sys.time()
+  response_mat <- odm_to_sparse_matrix(response_odm, genes_kept, all_cell_idx) |>
     `rownames<-`(genes_kept)
+  t1 <- Sys.time()
+  cat(" read in", round(t1-t0, 2), units(t1-t0), "\n")
+  
   
   # remove any cells that didn't have any non-zero gene UMIs
   total_cell_expressions <- Matrix::colSums(response_mat)
@@ -167,8 +185,17 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
 
     # Recalculate num_cells_per_grna after filtering
     num_cells_per_grna <- sapply(cells_per_grna, length)
+
+    # Remove gRNAs with no cells after filtering
+    empty_grnas <- num_cells_per_grna == 0
+    if(any(empty_grnas)) {
+      num_empty <- sum(empty_grnas)
+      cat("  Removing", num_empty, "gRNAs with no cells after expression filtering\n")
+      cells_per_grna <- cells_per_grna[!empty_grnas]
+      num_cells_per_grna <- num_cells_per_grna[!empty_grnas]
+    }
   }
-  
+
   cat("Getting ready to write", dataset_name, "\b...\n")
   
   write_fp <- file.path(
@@ -190,26 +217,32 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
     dplyr::filter(grna_id %in% names(cells_per_grna))
 
   # Create binary assignment indicator matrix (not UMI counts)
-  # grna_matrix[grna, cell] = 1 if cell is assigned to grna, 0 otherwise
-  grna_matrix <- lapply(names(cells_per_grna), function(grna) {
+  # grna_indicator_matrix[grna, cell] = 1 if cell is assigned to grna, 0 otherwise
+  locs <- lapply(seq_along(cells_per_grna), function(i) {
+    grna <- names(cells_per_grna)[i]
     assigned_cells <- cells_per_grna[[grna]]
-    binary_vec <- rep(0, length(all_cell_idx))
-    binary_vec[match(assigned_cells, all_cell_idx)] <- 1
-    make_sparse_row(binary_vec)
-  }) |>
-    do.call(what = rbind) |>
+    list(
+      i = rep(i, length(assigned_cells)),
+      j = match(assigned_cells, all_cell_idx),
+      x = rep(1, length(assigned_cells))
+    )
+  })
+  grna_indicator_matrix <- sparseMatrix(
+    i = lapply(locs, `[[`, "i") |> unlist(),
+    j = lapply(locs, `[[`, "j") |> unlist(),
+    x = lapply(locs, `[[`, "x") |> unlist(),
+    dims = c(length(cells_per_grna), length(all_cell_idx))
+  )|>
     `rownames<-`(names(cells_per_grna))
 
   # Compute sceptre-specific covariates from the subsetted gRNA UMI data
   # Extract actual UMI counts from grna_odm for this subset of gRNAs and cells
-  grna_umi_subset <- lapply(names(cells_per_grna),
-                             function(grna) make_sparse_row(grna_odm[grna, ][all_cell_idx])) |>
-    do.call(what = rbind) |>
-    `rownames<-`(names(cells_per_grna))
+  grna_matrix_subset <- odm_to_sparse_matrix(grna_odm, names(cells_per_grna), all_cell_idx)
+  
 
-  # Compute covariates from the UMI subset (not from binary grna_matrix)
-  grna_n_nonzero_subset <- Matrix::colSums(grna_umi_subset != 0)
-  grna_n_umis_subset <- Matrix::colSums(grna_umi_subset)
+  # Compute covariates from the UMI subset (not from binary grna_indicator_matrix)
+  grna_n_nonzero_subset <- Matrix::colSums(grna_matrix_subset != 0)
+  grna_n_umis_subset <- Matrix::colSums(grna_matrix_subset)
 
   # Create sceptre-specific cell covariates with subset-based gRNA metrics
   cell_covariates_sceptre <- cbind(
@@ -221,7 +254,7 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
   )
 
   saveRDS(response_mat, file.path(write_sceptre_fp, "response_matrix.rds"))
-  saveRDS(grna_matrix, file.path(write_sceptre_fp, "grna_matrix.rds"))
+  saveRDS(grna_indicator_matrix, file.path(write_sceptre_fp, "grna_matrix.rds"))
   write.csv(cell_covariates_sceptre, file.path(write_sceptre_fp, "cell_covariates.csv"), row.names = FALSE)
   write.csv(grna_target_df_kept, file.path(write_sceptre_fp, "grna_target_data_frame.csv"), row.names = FALSE)
   cat("   sceptre written.\n")
@@ -259,7 +292,6 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
   # using Option 2 from here
   # this is low MOI so the perturbation column is simple
   response_mat_frpert <- response_mat |> `colnames<-`(cell_names)
-  # grna_matrix_frpert <- grna_matrix |> `colnames<-`(cell_names) |> t()
   
   # these get added to .obs of the anndata object
   cell_covs_frpert <- dplyr::select(cell_covariates_sceptre,
@@ -284,14 +316,14 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
 }
 
 
-make_replogle_rd7(
-  num_pc_cells = 5000, num_nt_cells = 1000, min_num_cells_per_target = 100,
-  dataset_name = paste0(source_data, "_", "small"),
-  response_odm = response_odm, grna_odm = grna_odm,
-  grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
-  cell_covariates = cell_covariates, NT_name = NT_name
-)
-
+# make_replogle_rd7(
+#   num_pc_cells = 5000, num_nt_cells = 1000, min_num_cells_per_target = 100,
+#   dataset_name = paste0(source_data, "_", "small"),
+#   response_odm = response_odm, grna_odm = grna_odm,
+#   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
+#   cell_covariates = cell_covariates, NT_name = NT_name
+# )
+# 
 make_replogle_rd7(
   num_pc_cells = 50000, num_nt_cells = 5000, min_num_cells_per_target = 300,
   dataset_name = paste0(source_data, "_", "medium"),
@@ -299,3 +331,48 @@ make_replogle_rd7(
   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
   cell_covariates = cell_covariates, NT_name = NT_name
 )
+
+# make_replogle_rd7(
+#   num_pc_cells = 50000, num_nt_cells = 5000, min_num_cells_per_target = 300,
+#   dataset_name = paste0(source_data, "_", "medium_v2"),
+#   response_odm = response_odm, grna_odm = grna_odm,
+#   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
+#   cell_covariates = cell_covariates, NT_name = NT_name
+# )
+
+
+
+# make_replogle_rd7(
+#   num_pc_cells = 200000, num_nt_cells = 10000, min_num_cells_per_target = 20,
+#   dataset_name = paste0(source_data, "_", "large"),
+#   response_odm = response_odm, grna_odm = grna_odm,
+#   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
+#   cell_covariates = cell_covariates, NT_name = NT_name
+# )
+
+
+
+
+
+## some testing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# fp1 <- "~/data/projects/sceptre3/benchmarking/association/input_data/replogle-rd7_medium/"
+# fp2 <- "~/data/projects/sceptre3/benchmarking/association/input_data/replogle-rd7_medium_v2/"
+# fps <- c(fp1, fp2)
+# 
+# cc <- lapply(fps, function(fp) read.csv(file.path(fp, "cell_info.csv")))
+# stopifnot(identical(cc[[1]], cc[[2]]))
+# 
+# cc <- lapply(fps, function(fp) read.csv(file.path(fp, "cell_covariates.csv")))
+# stopifnot(identical(cc[[1]], cc[[2]]))
+# 
+# cc <- lapply(fps, function(fp) read.csv(file.path(fp, "cell_covariates.csv")))
+# stopifnot(identical(cc[[1]], cc[[2]]))
+# 
+# cc <- lapply(fps, function(fp) readRDS(file.path(fp, "/sceptre/grna_matrix.rds")))
+# stopifnot(identical(cc[[1]], cc[[2]]))
+# 
+# cc <- lapply(fps, function(fp) readRDS(file.path(fp, "/sceptre/response_matrix.rds")))
+# stopifnot(identical(cc[[1]], cc[[2]]))
+# 
+# cc <- lapply(fps, function(fp) read.csv(file.path(fp, "/sceptre/grna_target_data_frame.csv")))
+# stopifnot(identical(cc[[1]], cc[[2]]))
