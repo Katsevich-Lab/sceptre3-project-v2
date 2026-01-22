@@ -33,8 +33,8 @@ scep <- sceptre::read_ondisc_backed_sceptre_object(
 
 
 # inputs
-num_pc_cells = 35000
-num_nt_cells = 15000
+num_pc_cells = 5000
+num_nt_cells = 1000
 response_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "response.odm"))
 grna_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "grna.odm"))
 grna_assign_mat = readRDS(file.path(output_fp, "grna_assignment_matrix.rds"))
@@ -182,7 +182,7 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
   write.csv(cell_covariates, file.path(write_fp, "cell_covariates.csv"), row.names = FALSE)
   cat("   `cell_covariates.csv` written.\n")
   
-  ## 4a. sceptre
+  ## 4a. sceptre -----------------------------------------------------
   write_sceptre_fp <- file.path(write_fp, "sceptre")
   dir.create(write_sceptre_fp, showWarnings = FALSE, recursive = TRUE)
 
@@ -226,7 +226,7 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
   write.csv(grna_target_df_kept, file.path(write_sceptre_fp, "grna_target_data_frame.csv"), row.names = FALSE)
   cat("   sceptre written.\n")
   
-  ## 4b. Mixscale
+  ## 4b. Mixscale -----------------------------------------------------
   write_mixscale_fp <- file.path(write_fp, "mixscale")
   dir.create(write_mixscale_fp, showWarnings = FALSE, recursive = TRUE)
   cell_names <- paste0("CELL_", cell_info$cell_idx)
@@ -236,19 +236,61 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
   saveRDS(setNames(cell_info$grna_target, cell_names),
           file.path(write_mixscale_fp, "assignments.rds"))
   cat("   mixscale written.\n")
-  ## 4c. FR-Perturb ??
+  
+  ## 4c. FR-Perturb -----------------------------------------------------
+  write_frperturb_fp <- file.path(write_fp, "frperturb")
+  dir.create(write_frperturb_fp, showWarnings = FALSE, recursive = TRUE)
+  
+  library(reticulate)
+  library(SingleCellExperiment)
+  library(zellkonverter)
+  env_name <- "r-anndata"
+  curr_envs <- conda_list()$name
+  if(!env_name %in% curr_envs) {
+    conda_create("r-anndata", packages = c("python=3.12"))
+    py_install(c("numpy", "scipy", "h5py", "anndata"),
+               envname = "r-anndata", pip = TRUE)
+  }
+  use_condaenv("r-anndata", required = TRUE)
+  py_config()
+  
+  # actually writing
+  # see here for input specifications: https://github.com/douglasyao/FR-Perturb 
+  # using Option 2 from here
+  # this is low MOI so the perturbation column is simple
+  response_mat_frpert <- response_mat |> `colnames<-`(cell_names)
+  # grna_matrix_frpert <- grna_matrix |> `colnames<-`(cell_names) |> t()
+  
+  # these get added to .obs of the anndata object
+  cell_covs_frpert <- dplyr::select(cell_covariates_sceptre,
+                                    grna_n_nonzero_subset, grna_n_umis_subset, response_p_mito_full) |>
+    mutate(perturbation = cell_info$grna_target)
+  
+  sce <- SingleCellExperiment(
+    assays  = list(counts = response_mat_frpert),
+    colData = cell_covs_frpert   # -> AnnData .obs
+  )
+  
+  writeH5AD(
+    sce,
+    file = file.path(write_frperturb_fp, "response_matrix.h5ad"),
+    X_name = "counts" # the name of the actual data in my `sce`
+  )
+  cat("   FR-perturb written.\n")
+
+
   
   cat(dataset_name, "finished.\n\n")
 }
 
 
-# make_replogle_rd7(
-#   num_pc_cells = 100000, num_nt_cells = 10000, min_num_cells_per_target = 300,
-#   dataset_name = paste0(source_data, "_", "medium"),
-#   response_odm = response_odm, grna_odm = grna_odm,
-#   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
-#   cell_covariates = cell_covariates, NT_name = NT_name
-# )
+make_replogle_rd7(
+  num_pc_cells = 5000, num_nt_cells = 1000, min_num_cells_per_target = 100,
+  dataset_name = paste0(source_data, "_", "small"),
+  response_odm = response_odm, grna_odm = grna_odm,
+  grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
+  cell_covariates = cell_covariates, NT_name = NT_name
+)
 
 make_replogle_rd7(
   num_pc_cells = 50000, num_nt_cells = 5000, min_num_cells_per_target = 300,
