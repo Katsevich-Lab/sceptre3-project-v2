@@ -1,0 +1,601 @@
+---
+title: "smaller_n_sims"
+output: html_document
+date: "2026-01-25"
+---
+
+
+My current simulations use Replogle's sample size of ~600k. But that puts a computational burden that we don't need. Let's try doing a smaller n.
+
+
+idea:
+- still based on replogle, but now we downsample cell covariates
+- should we use a gRNA that sceptre assigns a lot of cells to?
+
+
+
+```{r}
+rm(list=ls())
+source("~/.Rprofile")
+library(tidyverse)
+library(sceptre)
+library(ondisc)
+
+source(file.path(
+  .get_config_path("LOCAL_SCEPTRE3_REPO_DIR"),
+  "benchmarking/guide-assignment/grna-simulator/grna-simulator.R"
+))
+
+plot_results <- function(grna_real, grna_sim, is_pert, sim_name) {
+  
+  logp1_trans <- function(base = 10) {
+    trans <- function(x) log(x + 1, base)
+    inv   <- function(x) base^x - 1  # correct inverse
+    
+    # Major breaks: at base^k - 1
+    brks <- function(limits) {
+      rng <- limits + 1
+      scales::log_breaks(base = base)(rng) - 0
+    }
+    
+    scales::trans_new(
+      name = paste0("logp1-", base),
+      transform = trans,
+      inverse   = inv,
+      breaks    = brks,
+      domain = c(0, Inf)
+    )
+  }
+  
+  # parse sim name
+  # sim_name_pieces <- strsplit(sim_name, "_")[[1]]
+  # keep <- sim_name_pieces[which(sim_name_pieces == "probpert"):(which(sim_name_pieces == "grna")-1)]
+  # sim_name_plot <- paste0(keep[c(1,3,5,7)], "=", keep[c(2,4,6,8)], collapse=" ") 
+  
+  plt1 <- data.frame(
+    umi = c(grna_real, grna_sim),
+    group = rep(c("real", "sim"), each = length(grna_real))
+  ) |>
+    ggplot(aes(x = umi, fill = group)) +
+    geom_histogram(bins=50) +
+    facet_wrap(~group) +
+    theme_bw()  +
+    scale_y_continuous(trans = logp1_trans(10)) +
+    scale_x_continuous(trans = logp1_trans(10)) +
+    ggtitle(sim_name)
+  
+  plt2 <- data.frame(
+    umi = grna_sim,
+    pert_status = ifelse(is_pert == 1, "pert", "not pert")
+  ) |>
+    ggplot(aes(x = umi, fill = pert_status)) +
+    geom_histogram(bins=50) +
+    facet_wrap(~pert_status) +
+    theme_bw()  +
+    scale_y_continuous(trans = logp1_trans(10)) +
+    scale_x_continuous(trans = logp1_trans(10)) +
+    ggtitle("Simulated UMI counts by pert status")
+  
+  # printing some numeric comparisons
+  comparison_df <- data.frame(
+    real = c(max(grna_real),   mean(grna_real == 0),    var(grna_real),    mean(grna_real)),
+    sim = c(max(grna_sim),     mean(grna_sim==0),      var(grna_sim),      mean(grna_sim))
+  ) |>
+    `rownames<-`(c("max", "frac_0", "var", "mean"))
+  print(comparison_df)
+  
+  cowplot::plot_grid(plt1, plt2, nrow = 2)
+}
+
+source_data <- "replogle-rd7"
+
+stopifnot(source_data %in% c("gasperini", "replogle-rd7"))
+
+# 1. loading the data and preparing everything ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+base_fp <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data", source_data, "sceptre-pipeline/"
+)
+
+
+scep <- read_ondisc_backed_sceptre_object(
+  sceptre_object_fp = paste0(base_fp, "sceptre_object.rds"),
+  response_odm_file_fp = paste0(base_fp, "response.odm"),
+  grna_odm_file_fp = paste0(base_fp, "grna.odm")
+)
+if(source_data == "gasperini") {
+  cell_covariates <- scep@covariate_data_frame |>
+    transmute(
+      grna_n_nonzero, grna_n_umis,
+      batch = ifelse(prep_batch == "prep_batch_2", 1, 0)
+    ) 
+} else if(source_data == "replogle-rd7") {
+  cell_covariates <- scep@covariate_data_frame |>
+    transmute(
+      grna_n_nonzero, grna_n_umis
+    ) 
+}
+
+# determining which gRNAs to run this on [no need to run again]
+grna_odm <- ondisc::initialize_odm_from_backing_file(paste0(base_fp, "grna.odm"))
+
+assignments_fp <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/outputs", source_data, "sceptre-pipeline/"
+)
+assn_mat <- readRDS(file.path(assignments_fp,  "grna_assignment_matrix.rds" ))
+dim(assn_mat)
+
+setequal(rownames(assn_mat), rownames(grna_odm)) |>
+  stopifnot()
+```
+
+
+
+i want to get target gRNAs that are both highly expressed but also have lots of cells assigned from sceptre. So let's get a data.frame with the gRNA covariates, plus the number of cells sceptre assigns.
+
+
+hmmm lol ok so that's the transpose. I want to look at guide-level summaries. 
+
+# 1. determining which guide to use [can be skipped now that a guide is chosen]
+
+```{r}
+
+
+guide_covs <- data.frame(
+  num_nonzero_umi = numeric(nrow(grna_odm)),
+  tot_umi = 0,
+  num_assigned_cells = 0
+)
+rownames(guide_covs) <- rownames(grna_odm)
+for(i in 1:nrow(grna_odm)) {
+  guide_covs[i,"num_nonzero_umi"] <- sum(grna_odm[i,] > 0)
+  guide_covs[i,"tot_umi"] <- sum(grna_odm[i,])
+}
+
+for(guide in rownames(assn_mat)) {
+  guide_covs[guide, "num_assigned_cells"] <- sum(assn_mat[guide, ])
+}
+
+head(guide_covs)
+```
+
+ok now how do we pick which ones to use?
+
+i want one with a lot of expression so that when i do a 1/6th sample, i still get a lot of perturbed cells.
+
+```{r}
+guide_covs |>
+  transmute(
+    log_num_nonzero_umi = log(num_nonzero_umi),
+    log_tot_umi = log(tot_umi),
+    log_num_assigned_cells = log(num_assigned_cells)
+  ) |>
+  GGally::ggpairs()
+```
+
+ok so these three are pretty strongly jointly correlated.
+
+To that end, then, I'm going to sample from among the guides that sceptre determined to have the most expressed cells.
+
+```{r}
+guide_covs |>
+  dplyr::filter(num_assigned_cells > quantile(num_assigned_cells, .95),
+                num_assigned_cells < quantile(num_assigned_cells, .99)) |>
+  arrange(desc(num_nonzero_umi))
+
+# from this sort, 8645_TACC3_P1_ENSG00000013810 is the top
+```
+
+
+ok we're going to roll with this one for now: `8645_TACC3_P1_ENSG00000013810`
+
+# 2. simulating using my chosen guide
+
+```{r}
+guide = "8645_TACC3_P1_ENSG00000013810"
+# guide_covs[guide, ]
+
+```
+
+this is still only 0.2\% expressed, but that's more than before. 
+
+now for fitting the model: do i want to change this at all?
+
+
+
+```{r}
+
+# num_cells <- 100000
+# expressed_cells <- which(assn_mat[guide,])
+# non_expressed_cells <-  which(!assn_mat[guide,])
+# 
+# set.seed(5675)
+# cell_idx <- c(
+#   expressed_cells,
+#   sample(non_expressed_cells, num_cells - length(expressed_cells))
+# ) |> sort()
+# 
+# y <- grna_odm[guide, ][cell_idx]
+# model_covs <- cell_covariates[cell_idx, ]
+
+y_all <- grna_odm[guide, ]
+
+mod <- glm.nb(y ~ 1 + log(grna_n_nonzero+1) + log(grna_n_umis+1), 
+              data = cbind(y = y_all, cell_covariates))
+summary(mod)
+log_mu_all <- predict(mod, newdata = cell_covariates)
+```
+
+ok now i've got my model fit on this subsample.
+
+Do i actually want my covariates to be fit on this sample ... ? i learned a different relationship! 
+
+So, two options:
+- fit the model on everything to learn the relationship on the whole dataset. In this case, the relationship i'm learning is basically just for the non-perturbed cells as that's by FAR the majority of the dataset
+- if instead i fit the model on this downsample, then the perturbed cells are a much bigger fraction. And we get this reversal.
+
+I am leaning towards fitting the model on everything.
+
+ok, let's do that and proceed with downsampled AFTER.
+```{r}
+num_cells <- 100000
+expressed_cells <- which(assn_mat[guide,])
+non_expressed_cells <-  which(!assn_mat[guide,])
+
+set.seed(5675)
+cell_idx <- c(
+  expressed_cells,
+  sample(non_expressed_cells, num_cells - length(expressed_cells))
+) |> sort()
+
+y <- y_all[cell_idx]
+log_mu <- log_mu_all[cell_idx]
+```
+
+
+does it make sense to simulate `is_perturbed` independently from the covariates / `log_mu` ... ? probably not... 
+
+what about a logistic regression to model perturbation instead ... ?
+
+why am  i doing a negbin regression? That's because i want to understand the effects of these covariates on the actual UMI counts. So that when i simulate new UMI counts, the simulated data makes sense with the covariates that i provide, and to give some heterogeny.
+
+Does simulating with no regard to the covariates make sense? No, there definitely is a relationship there. So i should ALSO understand how these covariates relate to P(perturbed)
+
+i don't actually know that, but let's use the estimated ones. Do i want this on my subset, or in general? Let's do in general first.
+
+```{r}
+data_is_pert <- cell_covariates |> mutate(y = assn_mat[guide, ])
+mod_is_pert <- glm(y ~ 1 + log(grna_n_nonzero+1) + log(grna_n_umis+1), 
+                   data = data_is_pert, family = binomial())
+cell_pert_probs_all_logit <- fitted(mod_is_pert) |> qlogis()
+summary(mod_is_pert)
+```
+
+interesting -- only `log(grna_n_umis + 1)` is significant. So, in light of this, how do i want to sample perturbation indicators? From this model? well, that won't give me control over the perturbation rate. Can i do that with an intercept adjustment?
+
+```{r}
+# cell_pert_probs_logit <- cell_pert_probs_all_logit[cell_idx]
+# head(cell_pert_probs_logit)
+# 
+# is_perturbed <- rbinom(length(cell_pert_probs_logit), size = 1, plogis(cell_pert_probs_logit)) |>
+#   as.logical()
+# table(is_perturbed)
+# mean(assn_mat[guide,])
+# mean(is_perturbed)
+# 
+# mutate(cell_covariates[cell_idx, ], cell_pert_probs_logit = cell_pert_probs_logit, is_perturbed = is_perturbed) |>
+#   dplyr::filter(is_perturbed) |>
+#   sample_n(10)
+```
+
+
+ok so this gives me perturbation indicators that match the observed rate. If i want to simply bump up the number of expressed cells, that would be an intercept adjustment, which i can do by adding a constant to `cell_pert_probs`
+
+```{r}
+set.seed(43858)
+cell_pert_probs_logit <- cell_pert_probs_all_logit[cell_idx]
+head(cell_pert_probs_logit)
+
+bump_rate <- 2
+is_perturbed <- rbinom(length(cell_pert_probs_logit), size = 1, plogis(cell_pert_probs_logit + bump_rate)) |>
+  as.logical()
+table(is_perturbed)
+mean(assn_mat[guide,])
+mean(is_perturbed)
+
+mutate(cell_covariates[cell_idx, ], cell_pert_probs_logit = cell_pert_probs_logit  +bump_rate, is_perturbed = is_perturbed, log_mu) |> 
+  dplyr::filter(is_perturbed) |>
+  sample_n(10)
+```
+
+ok now i want to simulate from a negative binomial using all of these pieces.
+
+```{r}
+set.seed(194)
+
+non_pert_effect <- -5
+pert_effect <- 5.5
+theta_pert <- 10
+theta_non_pert <- .1
+
+
+table(is_perturbed)
+# Simulate counts: add effect to perturbed and non-perturbed cells
+# log_mu_pert <- log_mu + pert_effect * is_perturbed + non_pert_effect * (1 - is_perturbed)
+
+
+simulated_counts <- numeric(num_cells)
+simulated_counts[is_perturbed] <- rnegbin(
+  n = sum(is_perturbed),
+  mu = exp( log_mu[is_perturbed] + pert_effect),
+  theta = theta_pert
+)
+
+simulated_counts[!is_perturbed] <- rnegbin(
+  n = sum(!is_perturbed),
+  mu = exp(log_mu[!is_perturbed] + non_pert_effect),
+  theta = theta_non_pert
+)
+
+
+
+plot_results(
+  grna_real = y,
+  grna_sim = simulated_counts,
+  is_pert = is_perturbed,
+  sim_name = bquote(gamma[0] ~ "=" ~ .(non_pert_effect) * ";" 
+                    ~ gamma[1] ~ "=" ~ .(pert_effect) * ";"
+                    ~ theta[0] ~ "=" ~ .(theta_non_pert)* ";"
+                    ~ theta[1] ~ "=" ~ .(theta_pert))
+)
+
+ysim <- simulated_counts
+data.frame(
+  real = c(max(y),   mean(y==0),    var(y),    mean(y)),
+  sim = c(max(ysim), mean(ysim==0), var(ysim), mean(ysim))
+) |>
+  `rownames<-`(c("max", "frac_0", "var", "mean"))
+```
+
+
+
+let's try to make a simple function for doing this so i can test it
+
+```{r}
+
+make_simulated_umi_counts <- function(umi_counts, num_guides_to_simulate, cell_covariates, sceptre_assignments, formula, num_cells, sim_params, guide_name, clip_to_real_max = TRUE, seed=NULL) {
+  
+  if(!is.null(seed)) {
+    set.seed(seed)
+  }
+  
+  mod_data <- cell_covariates |> mutate(umi_counts, sceptre_assignments)
+  max_real_umi <- max(umi_counts)
+  # 1. determine which cells we are using
+  expressed_cells <- which(sceptre_assignments)
+  non_expressed_cells <- setdiff(1:length(sceptre_assignments), expressed_cells)
+  
+  cell_idx_subsampled <- c(
+    expressed_cells,
+    sample(non_expressed_cells, num_cells - length(expressed_cells))
+  ) |> sort()
+  
+  cat("Beginning to fit models: ")
+  
+  # 2. get the effect of the covariates on the mean of the UMI counts
+  fmla_umi <- as.formula(paste("umi_counts ~", as.character(formula)[2]))
+  mod_umi <- glm.nb(fmla_umi, data = mod_data)
+  log_mean_umi <- fitted(mod_umi)[cell_idx_subsampled] |> log()
+  
+  # 3. get the effect of the covariates on the perturbation probability
+  fmla_pert <- as.formula(paste("sceptre_assignments ~", as.character(formula)[2]))
+  mod_pert <- glm(fmla_pert, data = mod_data, family = binomial())
+  logit_prob_pert <- fitted(mod_pert)[cell_idx_subsampled] |> qlogis()
+  
+  cat("done.\n")
+  
+  # 4. for each guide we simulate, do the following:
+  #   4a. simulate perturbation indicators for each cell
+  #   4b. simulate UMI counts for each cell using those
+
+  perturbation_indicators <- simulated_umi_counts <- matrix(0, num_guides_to_simulate, num_cells)
+  
+  cat("Beginning to simulate data: ")
+  
+  for(sim_idx in 1:num_guides_to_simulate) {
+    # 4a. simulate perturbation indicators for our subsampled cells, using `mod_pert`
+    is_perturbed <- rbinom(
+      num_cells, size = 1,
+      plogis(logit_prob_pert + sim_params$logit_prob_pert_increase)
+    ) |>
+      as.logical()
+    # if(sim_idx == 1) {
+    #   cat("The first simulated guide has", sum(is_perturbed), "perturbed cells.\n")
+    # }
+    perturbation_indicators[sim_idx,] <- is_perturbed
+    
+    
+    # 4b. simulate UMI counts, sampling from a 2 component NB mixture with means
+    # coming from `mod_umi` 
+    log_mean_umi_with_pert <- log_mean_umi + sim_params$pert_effect * is_perturbed +
+      sim_params$non_pert_effect * (1 - is_perturbed)
+    thetas <- ifelse(is_perturbed, sim_params$theta_pert, sim_params$theta_non_pert)
+    simulated_counts <- rnegbin(
+      num_cells,
+      mu = exp(log_mean_umi_with_pert),
+      theta = thetas
+    )
+    if(clip_to_real_max) simulated_counts <- pmin(simulated_counts, max_real_umi)
+    simulated_umi_counts[sim_idx,] <- simulated_counts
+  }
+  cat("done.\n")
+  # 5. collect and return results
+  dimnames_ <- list(
+    paste0(guide_name, "_sim_", 1:num_guides_to_simulate),
+    paste0("cell_idx_", cell_idx_subsampled)
+  )
+
+  sim_results <- list(
+    umi_counts = umi_counts,
+    sceptre_assignments = sceptre_assignments,
+    mod_umi = mod_umi,
+    mod_pert = mod_pert,
+    cell_idx_subsampled = cell_idx_subsampled,
+    sim_params = sim_params,
+    clip_to_real_max = clip_to_real_max,
+    formula = formula,
+    perturbation_indicators = perturbation_indicators |> Matrix::Matrix(sparse=TRUE) |> `dimnames<-`(dimnames_),
+    simulated_umi_counts = simulated_umi_counts |> Matrix::Matrix(sparse=TRUE) |> `dimnames<-`(dimnames_)
+  )
+  return(sim_results)
+}
+
+
+guide <- "8645_TACC3_P1_ENSG00000013810"
+
+# umi_counts <- grna_odm[guide,]
+# sceptre_assignments = assn_mat[guide,]
+# formula = ~ 1 + log(grna_n_nonzero+1) + log(grna_n_umis+1)
+# 
+# 
+# sim_params = list(
+#   logit_prob_pert_increase = 2,
+#   non_pert_effect = -5,
+#   pert_effect = 5.5,
+#   theta_pert = 10,
+#   theta_non_pert = .1
+# )
+
+# umi_counts, cell_covariates, sceptre_assignments, formula, num_cells, sim_params, seed=NULL
+
+sim_results <- make_simulated_umi_counts(
+  umi_counts = grna_odm[guide,],
+  num_guides_to_simulate = 25,
+  cell_covariates = cell_covariates,
+  sceptre_assignments = assn_mat[guide,],
+  formula = ~ 1 + log(grna_n_nonzero+1) + log(grna_n_umis+1),
+  num_cells = 100000,
+  sim_params = list(
+    logit_prob_pert_increase = 2,
+    non_pert_effect = -5,
+    pert_effect = 5.25,
+    theta_pert = 10,
+    theta_non_pert = .1
+  ),
+  guide_name = guide,
+  seed = 123
+)
+
+
+idx <- 1
+plot_results(
+  grna_real = sim_results$umi_counts[sim_results$cell_idx_subsampled],
+  grna_sim = sim_results$simulated_umi_counts[idx,],
+  is_pert = sim_results$perturbation_indicators[idx,],
+  sim_name = "test"
+)
+```
+
+ok now i gotta save this
+
+```{r}
+library(reticulate)
+library(SingleCellExperiment)
+library(zellkonverter)
+
+
+write_to_h5ad <- function(mat, path_to_write) {
+  env_name <- "r-anndata"
+  curr_envs <- conda_list()$name
+  if(!env_name %in% curr_envs) {
+    conda_create("r-anndata", packages = c("python=3.12"))
+    py_install(c("numpy", "scipy", "h5py", "anndata"),
+               envname = "r-anndata", pip = TRUE)
+  }
+  use_condaenv("r-anndata", required = TRUE)
+  py_config()
+  
+  sce <- SingleCellExperiment(assays = list(counts = mat))
+  writeH5AD(sce, path_to_write)
+}
+
+run_name <- "replogle-rd7_simulated_100k_0.015-pert"
+
+output_dir <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  paste0("guide_assignment/input_data/", run_name)
+)
+dir.create(output_dir, recursive=TRUE, showWarnings=FALSE)
+
+# 3.0: saving model info and true perturbation status
+saveRDS(sim_results$perturbation_indicators, file = file.path(output_dir, "true_perturbation_status.rds"))
+saveRDS(sim_results, file = file.path(output_dir, "all_sim_results.rds"))
+
+
+# 3.1: crispat
+crispat_dir <- file.path(output_dir, "crispat")
+dir.create(crispat_dir, recursive=TRUE, showWarnings=FALSE)
+print(paste("  Writing crispat to", crispat_dir))
+write_to_h5ad(sim_results$simulated_umi_counts, file.path(crispat_dir, "grna_matrix.h5ad"))
+
+# 3.2: pertpy
+pertpy_dir <- file.path(output_dir, "pertpy")
+dir.create(pertpy_dir, recursive=TRUE, showWarnings=FALSE)
+print(paste("  Writing pertpy to", pertpy_dir))
+write_to_h5ad(sim_results$simulated_umi_counts, file.path(pertpy_dir, "grna_matrix.h5ad"))
+
+# 3.3: cleanser
+cleanser_dir <- file.path(output_dir, "cleanser")
+dir.create(cleanser_dir, recursive=TRUE, showWarnings=FALSE)
+print(paste("  Writing cleanser to", cleanser_dir))
+Matrix::writeMM(sim_results$simulated_umi_counts, file.path(cleanser_dir, "grna_matrix.mtx"))
+
+# 3.4: sceptre
+sceptre_dir <- file.path(output_dir, "sceptre")
+dir.create(sceptre_dir, recursive=TRUE, showWarnings=FALSE)
+print(paste("  Writing sceptre gRNA matrix and other files to", sceptre_dir))
+saveRDS(sim_results$simulated_umi_counts, file.path(sceptre_dir, "grna_matrix.rds"))
+
+# 3.4.1: grna_target_data_frame
+guide_target <- scep@grna_target_data_frame |>
+  dplyr::filter(grna_id == guide) |> pull(grna_target)
+sim_grna_target_df <- data.frame(
+  grna_id = rownames(sim_results$simulated_umi_counts),
+  grna_target = guide_target
+)
+
+# making NT gRNAs for sceptre
+if(!any(sim_grna_target_df$grna_target == "non-targeting")) {
+  sim_grna_target_df$grna_target[1:2] <- "non-targeting"
+  warning("no NTs detected in `sim_grna_target_df` so first 2 are set to `non-targeting`.")
+}
+
+write.csv(sim_grna_target_df, file.path(sceptre_dir, "grna_target_data_frame.csv"), row.names=FALSE)
+
+# 3.4.2: response_matrix
+fake_response_mat <- Matrix::sparseMatrix(
+  i = integer(0),  # No non-zero entries
+  j = integer(0),
+  x = numeric(0),
+  dims = c(1L, ncol(sim_results$simulated_umi_counts)),
+  dimnames = list(
+    "FAKE_GENE_1",  # Single fake gene
+    colnames(sim_results$simulated_umi_counts)  # Use same cell names as grna_matrix
+  )
+)
+saveRDS(fake_response_mat, file.path(sceptre_dir, "response_matrix.rds"))
+
+
+# 3.4.3: covariate_data_frame
+cell_covariates[sim_results$cell_idx_subsampled, ] |>
+  dplyr::rename(true_grna_n_nonzero = grna_n_nonzero, true_grna_n_umis = grna_n_umis) |>
+  write.csv(file.path(sceptre_dir, "covariate_data_frame.csv"), row.names=TRUE)
+
+# 3.4.4 saving formula object for assign_grnas()
+saveRDS(sim_results$formula, file.path(sceptre_dir, "assign_grnas_formula.rds"))
+
+cat("Command to transfer to HPC:\n")
+cat(paste0("scp -r ", output_dir, " ", .get_config_path("REMOTE_BENCHMARKING_DIR"), "guide_assignment/input_data/", run_name, "\n"))
+```
+
