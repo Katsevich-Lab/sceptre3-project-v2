@@ -14,11 +14,11 @@ process MIXSCALE_POSCTRL {
   val outdir
 
   output:
-  tuple val(dataset_id), val(method), path("results_mixscale.rds"), emit: results
+  tuple val(dataset_id), val(method), path("association_on_target_mixscale.csv"), emit: results
 
   publishDir "${outdir}",
              mode: 'copy',
-             saveAs: { "results_mixscale_${dataset_id}.rds" }
+             saveAs: { "association_on_target_mixscale_${dataset_id}.csv" }
 
   script:
   """

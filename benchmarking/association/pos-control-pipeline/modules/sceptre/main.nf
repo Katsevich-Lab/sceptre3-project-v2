@@ -14,11 +14,11 @@ process SCEPTRE_POSCTRL {
   val outdir
 
   output:
-  tuple val(dataset_id), val(method), path("results_sceptre.rds"), emit: results
+  tuple val(dataset_id), val(method), path("association_on_target_sceptre.csv"), emit: results
 
   publishDir "${outdir}",
              mode: 'copy',
-             saveAs: { "results_sceptre_${dataset_id}.rds" }
+             saveAs: { "association_on_target_sceptre_${dataset_id}.csv" }
 
   script:
   """

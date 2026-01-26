@@ -43,7 +43,8 @@ subprocess.run([
     "--control-perturbation-name", "non-targeting",
     "--covariates", "grna_n_nonzero_subset,grna_n_umis_subset",
     "--compute-pval",
-    "--num-perms", 100000,
+    "--fit-zero-pval",
+    # "--num-perms", 100000,
     "--out", "frperturb_results"  # Creates frperturb_results.log, etc.
 ], check=True)
 

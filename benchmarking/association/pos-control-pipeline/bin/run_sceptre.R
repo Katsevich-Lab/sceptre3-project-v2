@@ -83,7 +83,7 @@ cat("Running power check...\n")
 scep <- run_power_check(sceptre_object = scep)
 
 results <- get_result(scep, "run_power_check")
-saveRDS(results, "results_sceptre.rds")
+write.csv(results, "association_on_target_sceptre.csv", row.names = FALSE)
 
-cat("Sceptre positive control power analysis complete!\n")
-cat("Results saved to: results_sceptre.rds\n")
+cat("Sceptre on-target association testing complete!\n")
+cat("Results saved to: association_on_target_sceptre.csv\n")
