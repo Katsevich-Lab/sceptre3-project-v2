@@ -3,9 +3,9 @@ set -euo pipefail
 
 # RUN_ID="test_sceptre"
 # RUN_ID="test_frperturb"
-RUN_ID="run_all_medium"
+RUN_ID="run_all_small"
 
-OUT_BASE="$HOME/data/projects/sceptre3/benchmarking/association/outputs"
+OUT_BASE="$HOME/data/projects/sceptre3/benchmarking/association/pos-control/outputs"
 OUT_DIR="${OUT_BASE}/${RUN_ID}"
 mkdir -p "$OUT_DIR"
 

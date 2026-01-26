@@ -11,7 +11,7 @@ set -euo pipefail
 # RUN_ID="test_mixscale"
 RUN_ID="test_sceptre"
 
-OUT_BASE="${LOCAL_BENCHMARKING_DIR}association/outputs"
+OUT_BASE="${LOCAL_BENCHMARKING_DIR}/association/pos-control/outputs"
 OUT_DIR="${OUT_BASE}/${RUN_ID}"
 mkdir -p "$OUT_DIR" nf-logs
 

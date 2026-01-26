@@ -62,9 +62,9 @@ odm_to_sparse_matrix <- function(odm, genes, cell_idx) {
 }
 
 # NOTE
-# this has low MOI pretty hard-coded in, sicne we only take the 
+# this has low MOI pretty hard-coded in, since we only take the 
 # cells expressing exactly one gRNA
-make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_target,
+make_pos_control_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_target,
                               dataset_name, response_odm,
                               grna_odm, grna_assign_mat, grna_target_df,
                               cell_covariates, NT_name) {
@@ -200,7 +200,7 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
   
   write_fp <- file.path(
     .get_config_path("LOCAL_BENCHMARKING_DIR"),
-    "association/input_data", dataset_name
+    "association/pos-control/input_data", dataset_name
   )
   dir.create(write_fp, showWarnings = FALSE, recursive = TRUE)
   write.csv(cell_info, file.path(write_fp, "cell_info.csv"), row.names = FALSE)
@@ -310,21 +310,19 @@ make_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_targ
   )
   cat("   FR-perturb written.\n")
 
-
-  
   cat(dataset_name, "finished.\n\n")
 }
 
 
-# make_replogle_rd7(
-#   num_pc_cells = 5000, num_nt_cells = 1000, min_num_cells_per_target = 100,
-#   dataset_name = paste0(source_data, "_", "small"),
-#   response_odm = response_odm, grna_odm = grna_odm,
-#   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
-#   cell_covariates = cell_covariates, NT_name = NT_name
-# )
-# 
-make_replogle_rd7(
+make_pos_control_replogle_rd7(
+  num_pc_cells = 10000, num_nt_cells = 2000, min_num_cells_per_target = 100,
+  dataset_name = paste0(source_data, "_", "small"),
+  response_odm = response_odm, grna_odm = grna_odm,
+  grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
+  cell_covariates = cell_covariates, NT_name = NT_name
+)
+
+make_pos_control_replogle_rd7(
   num_pc_cells = 50000, num_nt_cells = 5000, min_num_cells_per_target = 300,
   dataset_name = paste0(source_data, "_", "medium"),
   response_odm = response_odm, grna_odm = grna_odm,
@@ -332,7 +330,7 @@ make_replogle_rd7(
   cell_covariates = cell_covariates, NT_name = NT_name
 )
 
-# make_replogle_rd7(
+# make_pos_control_replogle_rd7(
 #   num_pc_cells = 50000, num_nt_cells = 5000, min_num_cells_per_target = 300,
 #   dataset_name = paste0(source_data, "_", "medium_v2"),
 #   response_odm = response_odm, grna_odm = grna_odm,
@@ -342,7 +340,7 @@ make_replogle_rd7(
 
 
 
-# make_replogle_rd7(
+# make_pos_control_replogle_rd7(
 #   num_pc_cells = 200000, num_nt_cells = 10000, min_num_cells_per_target = 20,
 #   dataset_name = paste0(source_data, "_", "large"),
 #   response_odm = response_odm, grna_odm = grna_odm,
@@ -355,8 +353,8 @@ make_replogle_rd7(
 
 
 ## some testing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# fp1 <- "~/data/projects/sceptre3/benchmarking/association/input_data/replogle-rd7_medium/"
-# fp2 <- "~/data/projects/sceptre3/benchmarking/association/input_data/replogle-rd7_medium_v2/"
+# fp1 <- "~/data/projects/sceptre3/benchmarking/association/pos-control/input_data/replogle-rd7_medium/"
+# fp2 <- "~/data/projects/sceptre3/benchmarking/association/pos-control/input_data/replogle-rd7_medium_v2/"
 # fps <- c(fp1, fp2)
 # 
 # cc <- lapply(fps, function(fp) read.csv(file.path(fp, "cell_info.csv")))
