@@ -76,3 +76,4 @@ From: rocker/r-ver:4.4.3
     R --quiet -e 'suppressPackageStartupMessages(library(Mixscale)); cat("Mixscale OK\n")'
     R --quiet -e 'suppressPackageStartupMessages(library(Seurat)); cat("Seurat ", as.character(packageVersion("Seurat")), " OK\n", sep="")'
     R --quiet -e 'suppressPackageStartupMessages(library(SeuratObject)); cat("SeuratObject ", as.character(packageVersion("SeuratObject")), " OK\n", sep="")'
+

@@ -45,3 +45,4 @@ $CONTAINER_CMD run "$SIF_FILE" R --quiet -e 'library(Mixscale); library(Seurat);
 
 echo ""
 echo "Done! You can now use this container in your Nextflow pipeline."
+
