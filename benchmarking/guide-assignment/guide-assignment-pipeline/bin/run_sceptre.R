@@ -60,15 +60,19 @@ if(file.exists(assign_grnas_fmla_fp <- file.path(input_dir, "assign_grnas_formul
 }
 cat("  Using assign_grnas(..., formula_object =", as.character(assign_grnas_fmla), "\b).\n")
 
-
+use_simulation_moi <- grepl("simulat", dataset_id, ignore.case = TRUE)
+if(use_simulation_moi) {
+	moi <- "high"
+} else {
 moi_lookup <- list(
   gasperini = "high",
   replogle = "low"
 )
 if(dataset_name %in% names(moi_lookup)) {
-	moi <- moi_lookup[[dataset_name]]
+        moi <- moi_lookup[[dataset_name]]
 } else {
-	stop("MOI lookup missing ", dataset_name, ".")
+        stop("MOI lookup missing ", dataset_name, ".")
+}
 }
 cat("  MOI = ", moi, "\b.\n")
 
