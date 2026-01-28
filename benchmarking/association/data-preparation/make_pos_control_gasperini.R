@@ -183,7 +183,7 @@ make_pos_control_gasperini <- function(dataset_name, response_odm, grna_odm, cel
   
   # these get added to .obs of the anndata object
   cell_covs_frpert <- dplyr::select(cell_covariates_sceptre,
-                                    grna_n_nonzero_subset, grna_n_umis_subset, response_p_mito_full = response_p_mito) 
+                                    grna_n_nonzero_subset, grna_n_umis_subset, response_p_mito_full = response_p_mito, prep_batch) 
   # getting perturbation indicator
   
   stopifnot(!any(grepl(":", on_targets)))  # ensure NO targets contain ":", making it safe as delimiter
