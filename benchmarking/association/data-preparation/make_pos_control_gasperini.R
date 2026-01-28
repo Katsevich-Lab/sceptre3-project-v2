@@ -10,23 +10,16 @@ path_to_data <- file.path(
   "guide_assignment/input_data/gasperini/sceptre-pipeline"  
 )
 
-# response_odm <- ondisc::initialize_odm_from_backing_file(file.path(path_to_data, "response.odm"))
-# grna_odm <- ondisc::initialize_odm_from_backing_file(file.path(path_to_data, "grna.odm"))
-
 scep <- sceptre::read_ondisc_backed_sceptre_object(
   sceptre_object_fp = file.path(path_to_data, "sceptre_object.rds"),
   response_odm_file_fp = file.path(path_to_data, "response.odm"),
   grna_odm_file_fp = file.path(path_to_data, "grna.odm")
 )
-# grna_target_df <- scep@grna_target_data_frame
-# cell_covariates <- scep@covariate_data_frame
 
 path_to_assigns <- file.path(
   .get_config_path("LOCAL_BENCHMARKING_DIR"),
   "guide_assignment/outputs/gasperini/sceptre-pipeline"  
 )
-# scep_assn_mat <- read_rds(file.path(path_to_assigns, "grna_assignment_matrix.rds"))
-
 
 odm_to_sparse_matrix <- function(odm, genes, cell_idx) {
   ilist <- jlist <- xlist <- vector("list", length(genes))
@@ -96,7 +89,8 @@ make_pos_control_gasperini <- function(dataset_name, response_odm, grna_odm, cel
   stopifnot(setequal(on_targets, setdiff(unique(cell_info$grna_target), "non-targeting")))
   
   
-  response_subset <- odm_to_sparse_matrix(odm = response_odm, genes = on_targets, cell_idx = all_cell_idx)
+  response_subset <- odm_to_sparse_matrix(odm = response_odm, genes = on_targets, cell_idx = all_cell_idx) |>
+    `rownames<-`(on_targets)
   cat("response matrix subset made with", nrow(response_subset), "genes and", ncol(response_subset), "cells.\n")
   
   # 4. now i need to save this for sceptre and FR-Perturb
@@ -213,6 +207,12 @@ make_pos_control_gasperini <- function(dataset_name, response_odm, grna_odm, cel
   )
   cat("   FR-perturb written.\n")
 }
+
+# response_odm = ondisc::initialize_odm_from_backing_file(file.path(path_to_data, "response.odm"))
+# grna_odm = ondisc::initialize_odm_from_backing_file(file.path(path_to_data, "grna.odm"))
+# cell_covariates = scep@covariate_data_frame
+# scep_assn_mat = read_rds(file.path(path_to_assigns, "grna_assignment_matrix.rds"))
+# grna_target_df = scep@grna_target_data_frame
 
 make_pos_control_gasperini(
   dataset_name,
