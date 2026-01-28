@@ -44,6 +44,7 @@ subprocess.run([
     "--covariates", "grna_n_nonzero_subset,grna_n_umis_subset",
     "--compute-pval",
     "--fit-zero-pval",
+    "--perturbation-delimiter", ":",
     # "--num-perms", 100000,
     "--out", "frperturb_results"  # Creates frperturb_results.log, etc.
 ], check=True)
