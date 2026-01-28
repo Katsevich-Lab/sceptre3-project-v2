@@ -32,6 +32,8 @@ benchmarking/guide-assignment/qsub-logs
 benchmarking/guide-assignment/guide-assignment-pipeline/.mpl
 benchmarking/guide-assignment/.tmp
 
+benchmarking/association/nf-logs
+
 # vscode
 .vscode/*
 
