@@ -33,13 +33,40 @@ cat("  gRNA matrix:", nrow(grna_matrix), "gRNAs x", ncol(grna_matrix), "cells\n"
 cat("  gRNA targets:", nrow(grna_target_df), "mappings\n")
 cat("  Cell covariates:", nrow(cell_covariates), "cells x", ncol(cell_covariates), "covariates\n")
 
-# Define association formula
-# TODO this will throw an error if any of these covariates have exact 0s
-assoc_fmla <- ~ log(response_n_nonzero) + log(response_n_umis) +
-          log(grna_n_umis_subset) + log(grna_n_nonzero_subset)
+# Determine which dataset this is
+DATASET_NAMES <- c("gasperini", "replogle")
+dataset_name <- DATASET_NAMES[sapply(DATASET_NAMES, function(name) grepl(name, dataset_id, ignore.case = TRUE))]
+if(length(dataset_name) != 1) {
+  stop("Could not determine dataset from dataset_id: ", dataset_id)
+}
+cat("Detected dataset:", dataset_name, "\n")
 
+# Define association formula based on dataset
+# TODO this will throw an error if any of these covariates have exact 0s
+assoc_fmla_lookup <- list(
+  replogle = ~ log(response_n_nonzero) + log(response_n_umis) +
+               log(grna_n_umis_subset) + log(grna_n_nonzero_subset),
+  gasperini = ~ log(response_n_nonzero) + log(response_n_umis) +
+                log(grna_n_umis_subset) + log(grna_n_nonzero_subset) + prep_batch
+)
+assoc_fmla <- assoc_fmla_lookup[[dataset_name]]
 cat("Association formula:", deparse(assoc_fmla), "\n")
-cat("NOTE: batch not currently used for", dataset_id, "\n")
+
+# Set MOI based on dataset
+moi_lookup <- list(
+  gasperini = "high",
+  replogle = "low"
+)
+moi <- moi_lookup[[dataset_name]]
+cat("MOI:", moi, "\n")
+
+# Set covariates to use based on dataset
+covariates_lookup <- list(
+  replogle = c("grna_n_umis_subset", "grna_n_nonzero_subset"),
+  gasperini = c("grna_n_umis_subset", "grna_n_nonzero_subset", "prep_batch")
+)
+covariates_to_use <- covariates_lookup[[dataset_name]]
+cat("Extra covariates:", paste(covariates_to_use, collapse = ", "), "\n")
 
 # Import data into sceptre object
 cat("Importing data into sceptre object...\n")
@@ -47,8 +74,8 @@ scep <- import_data(
   response_matrix = response_matrix,
   grna_matrix = grna_matrix,
   grna_target_data_frame = grna_target_df,
-  moi = "low",
-  extra_covariates = cell_covariates[,c("grna_n_umis_subset", "grna_n_nonzero_subset")]
+  moi = moi,
+  extra_covariates = cell_covariates[, covariates_to_use]
 )
 
 # Construct positive control pairs (all gRNA -> target gene pairs)
