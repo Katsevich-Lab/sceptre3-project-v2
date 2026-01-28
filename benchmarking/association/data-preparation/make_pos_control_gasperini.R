@@ -79,7 +79,7 @@ make_pos_control_gasperini <- function(dataset_name, response_odm, grna_odm, cel
     function(guide) data.frame(cell_id = cells_expressing_on_target_or_nt_guides[[guide]], grna_id = guide)
   ) |>
     do.call(what = rbind) |>
-    left_join(grna_target_df |> select(grna_id, grna_target), by = "grna_id") |>
+    left_join(grna_target_df |> dplyr::select(grna_id, grna_target), by = "grna_id") |>
     mutate(cell_name = rownames(cell_covariates)[cell_id])
   
   
