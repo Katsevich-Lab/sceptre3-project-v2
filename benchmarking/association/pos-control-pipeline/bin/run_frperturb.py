@@ -48,24 +48,29 @@ covariates_lookup = {
 }
 covariates = covariates_lookup[dataset_name]
 print(f"Covariates: {covariates}", flush=True)
-skew_t_flag = '' # "--fit-zero-pval"
-print(f"Use skew_t: {skew_t_flag == '--fit-zero-pval'}", flush=True)
-# Run FR-Perturb
-# Output will be created as frperturb_results.*, frperturb_results_*.txt
-print("Running FR-Perturb...", flush=True)
-subprocess.run([
+use_skew_t = False  # Set to True to enable --fit-zero-pval
+print(f"Use skew_t: {use_skew_t}", flush=True)
+
+# Build command list
+cmd = [
     frperturb_script,
     "--input-h5ad", input_h5ad,
     "--perturbation-column-name", "perturbation",
     "--control-perturbation-name", "non-targeting",
     "--covariates", covariates,
     "--compute-pval",
-#    "--fit-zero-pval",
-    skew_t_flag,
     "--perturbation-delimiter", ":",
-    "--num-perms", 5000,
-    "--out", "frperturb_results"  # Creates frperturb_results.log, etc.
-], check=True)
+    "--num-perms", "5000",
+    "--out", "frperturb_results"
+]
+
+# Conditionally add skew_t flag at the end
+if use_skew_t:
+    cmd.append("--fit-zero-pval")
+
+# Run FR-Perturb
+print("Running FR-Perturb...", flush=True)
+subprocess.run(cmd, check=True)
 
 
 print("FR-Perturb analysis complete!", flush=True)
