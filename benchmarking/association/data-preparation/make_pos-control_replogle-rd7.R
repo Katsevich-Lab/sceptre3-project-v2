@@ -4,16 +4,6 @@ source("~/.Rprofile")
 library(Matrix)
 library(tidyverse)
 
-make_sparse_row <- function(x) {
-  j <- which(x != 0)
-  sparseMatrix(
-    i = rep.int(1L, length(j)),  # row index (all 1s)
-    j = j,                       # column indices
-    x = x[j],                    # nonzero values
-    dims = c(1L, length(x))
-  )
-}
-
 source_data <- "replogle-rd7"
 
 input_fp <- file.path(
@@ -292,11 +282,23 @@ make_pos_control_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_ce
   # using Option 2 from here
   # this is low MOI so the perturbation column is simple
   response_mat_frpert <- response_mat |> `colnames<-`(cell_names)
-  
+
+  # Compute response covariates from the subset (matching what sceptre computes internally)
+  # Note: response_mat_frpert has genes as rows, cells as columns
+  response_n_nonzero_subset <- Matrix::colSums(response_mat_frpert > 0)
+  response_n_umis_subset <- Matrix::colSums(response_mat_frpert)
+
   # these get added to .obs of the anndata object
   cell_covs_frpert <- dplyr::select(cell_covariates_sceptre,
                                     grna_n_nonzero_subset, grna_n_umis_subset, response_p_mito_full) |>
-    mutate(perturbation = cell_info$grna_target)
+    mutate(
+      # Log-transform all covariates for FR-Perturb (FR-Perturb doesn't take logs)
+      log_grna_n_nonzero_subset = log(grna_n_nonzero_subset),
+      log_grna_n_umis_subset = log(grna_n_umis_subset),
+      log_response_n_nonzero = log(response_n_nonzero_subset),
+      log_response_n_umis = log(response_n_umis_subset),
+      perturbation = cell_info$grna_target
+    )
   
   sce <- SingleCellExperiment(
     assays  = list(counts = response_mat_frpert),
@@ -314,21 +316,21 @@ make_pos_control_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_ce
 }
 
 
-make_pos_control_replogle_rd7(
-  num_pc_cells = 10000, num_nt_cells = 2000, min_num_cells_per_target = 100,
-  dataset_name = paste0(source_data, "_", "small"),
-  response_odm = response_odm, grna_odm = grna_odm,
-  grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
-  cell_covariates = cell_covariates, NT_name = NT_name
-)
-
-make_pos_control_replogle_rd7(
-  num_pc_cells = 50000, num_nt_cells = 5000, min_num_cells_per_target = 300,
-  dataset_name = paste0(source_data, "_", "medium"),
-  response_odm = response_odm, grna_odm = grna_odm,
-  grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
-  cell_covariates = cell_covariates, NT_name = NT_name
-)
+# make_pos_control_replogle_rd7(
+#   num_pc_cells = 10000, num_nt_cells = 2000, min_num_cells_per_target = 100,
+#   dataset_name = paste0(source_data, "_", "small"),
+#   response_odm = response_odm, grna_odm = grna_odm,
+#   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
+#   cell_covariates = cell_covariates, NT_name = NT_name
+# )
+# 
+# make_pos_control_replogle_rd7(
+#   num_pc_cells = 50000, num_nt_cells = 5000, min_num_cells_per_target = 300,
+#   dataset_name = paste0(source_data, "_", "medium"),
+#   response_odm = response_odm, grna_odm = grna_odm,
+#   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
+#   cell_covariates = cell_covariates, NT_name = NT_name
+# )
 
 # make_pos_control_replogle_rd7(
 #   num_pc_cells = 50000, num_nt_cells = 5000, min_num_cells_per_target = 300,
@@ -340,13 +342,13 @@ make_pos_control_replogle_rd7(
 
 
 
-# make_pos_control_replogle_rd7(
-#   num_pc_cells = 200000, num_nt_cells = 10000, min_num_cells_per_target = 20,
-#   dataset_name = paste0(source_data, "_", "large"),
-#   response_odm = response_odm, grna_odm = grna_odm,
-#   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
-#   cell_covariates = cell_covariates, NT_name = NT_name
-# )
+make_pos_control_replogle_rd7(
+  num_pc_cells = 200000, num_nt_cells = 10000, min_num_cells_per_target = 20,
+  dataset_name = paste0(source_data, "_", "large"),
+  response_odm = response_odm, grna_odm = grna_odm,
+  grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
+  cell_covariates = cell_covariates, NT_name = NT_name
+)
 
 
 

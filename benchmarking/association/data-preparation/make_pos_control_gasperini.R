@@ -180,12 +180,17 @@ make_pos_control_gasperini <- function(dataset_name, response_odm, grna_odm, cel
   # this is high MOI so we need to concat to make the perturbation column
   cell_names <- rownames(cell_covariates_subset)
   response_subset_frpert <- response_subset |> `colnames<-`(cell_names)
-  
+
+  # Compute response covariates from the subset (matching what sceptre computes internally)
+  # Note: response_subset_frpert has genes as rows, cells as columns
+  response_n_nonzero_subset <- Matrix::colSums(response_subset_frpert > 0)
+  response_n_umis_subset <- Matrix::colSums(response_subset_frpert)
+
   # these get added to .obs of the anndata object
   cell_covs_frpert <- dplyr::select(cell_covariates_sceptre,
-                                    grna_n_nonzero_subset, grna_n_umis_subset, response_p_mito_full = response_p_mito, prep_batch) 
+                                    grna_n_nonzero_subset, grna_n_umis_subset, response_p_mito_full = response_p_mito, prep_batch)
   # getting perturbation indicator
-  
+
   stopifnot(!any(grepl(":", on_targets)))  # ensure NO targets contain ":", making it safe as delimiter
   # for each cell, we need to get the perturbations it got
   perturb_df <- cell_info |> group_by(cell_name) |> summarise(perturbation = paste0(grna_target, collapse = ":"))
@@ -193,7 +198,14 @@ make_pos_control_gasperini <- function(dataset_name, response_odm, grna_odm, cel
     cell_covs_frpert %>% mutate(cell_name = rownames(.)),
     perturb_df,
     by = "cell_name"
-  )
+  ) |>
+    mutate(
+      # Log-transform all numeric covariates for FR-Perturb (FR-Perturb doesn't take logs)
+      log_grna_n_nonzero_subset = log(grna_n_nonzero_subset),
+      log_grna_n_umis_subset = log(grna_n_umis_subset),
+      log_response_n_nonzero = log(response_n_nonzero_subset),
+      log_response_n_umis = log(response_n_umis_subset)
+    )
   
   sce <- SingleCellExperiment(
     assays  = list(counts = response_subset_frpert),

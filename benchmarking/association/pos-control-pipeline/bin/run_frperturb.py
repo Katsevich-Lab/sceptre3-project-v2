@@ -43,8 +43,8 @@ input_h5ad = os.path.join(dataset_dir, "response_matrix.h5ad")
 
 # Set covariates based on dataset
 covariates_lookup = {
-    "replogle": "grna_n_nonzero_subset,grna_n_umis_subset",
-    "gasperini": "grna_n_nonzero_subset,grna_n_umis_subset,prep_batch"
+    "replogle": "log_grna_n_nonzero_subset,log_grna_n_umis_subset,log_response_n_nonzero,log_response_n_umis",
+    "gasperini": "log_grna_n_nonzero_subset,log_grna_n_umis_subset,prep_batch,log_response_n_nonzero,log_response_n_umis"
 }
 covariates = covariates_lookup[dataset_name]
 print(f"Covariates: {covariates}", flush=True)
