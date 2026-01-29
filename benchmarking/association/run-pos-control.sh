@@ -7,9 +7,8 @@
 
 set -euo pipefail
 
-# RUN_ID="test_sceptre"
-# RUN_ID="test_mixscale"
-RUN_ID="test_sceptre"
+# RUN_ID="run_all_but_mixscale_skew-t"
+RUN_ID="test_medium"
 
 OUT_BASE="${LOCAL_BENCHMARKING_DIR}/association/pos-control/outputs"
 OUT_DIR="${OUT_BASE}/${RUN_ID}"
@@ -44,7 +43,7 @@ echo "SGE stdout/err logs: $(pwd)/nf-logs/"
 if [ -n "${JOB_ID:-}" ]; then
   CLUSTER_LOG="pos-control.o${JOB_ID}"
   if [ -f "${CLUSTER_LOG}" ]; then
-    mv "${CLUSTER_LOG}" "${OUT_DIR}/"
+    cp "${CLUSTER_LOG}" "${OUT_DIR}/"
     echo "Cluster log moved to: ${OUT_DIR}/${CLUSTER_LOG}"
   fi
 fi
