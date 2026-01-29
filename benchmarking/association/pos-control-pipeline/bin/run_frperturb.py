@@ -48,7 +48,8 @@ covariates_lookup = {
 }
 covariates = covariates_lookup[dataset_name]
 print(f"Covariates: {covariates}", flush=True)
-
+skew_t_flag = '' # "--fit-zero-pval"
+print(f"Use skew_t: {skew_t_flag == '--fit-zero-pval'}", flush=True)
 # Run FR-Perturb
 # Output will be created as frperturb_results.*, frperturb_results_*.txt
 print("Running FR-Perturb...", flush=True)
@@ -59,11 +60,13 @@ subprocess.run([
     "--control-perturbation-name", "non-targeting",
     "--covariates", covariates,
     "--compute-pval",
-    "--fit-zero-pval",
+#    "--fit-zero-pval",
+    skew_t_flag,
     "--perturbation-delimiter", ":",
-    # "--num-perms", 100000,
+    "--num-perms", 5000,
     "--out", "frperturb_results"  # Creates frperturb_results.log, etc.
 ], check=True)
+
 
 print("FR-Perturb analysis complete!", flush=True)
 print("Output files: frperturb_results.log, frperturb_results_LFCs.txt, "
