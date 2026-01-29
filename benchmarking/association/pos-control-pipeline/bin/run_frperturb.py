@@ -69,6 +69,8 @@ if use_skew_t:
 else:
     cmd.extend(["--num-perms", "5000"])
 
+print(cmd, flush=True)
+
 # Run FR-Perturb
 print("Running FR-Perturb...", flush=True)
 subprocess.run(cmd, check=True)
