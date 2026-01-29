@@ -48,7 +48,7 @@ covariates_lookup = {
 }
 covariates = covariates_lookup[dataset_name]
 print(f"Covariates: {covariates}", flush=True)
-use_skew_t = False  # Set to True to enable --fit-zero-pval
+use_skew_t = True  # Set to True to enable --fit-zero-pval
 print(f"Use skew_t: {use_skew_t}", flush=True)
 
 # Build command list
