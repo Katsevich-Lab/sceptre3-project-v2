@@ -60,13 +60,14 @@ cmd = [
     "--covariates", covariates,
     "--compute-pval",
     "--perturbation-delimiter", ":",
-    "--num-perms", "5000",
     "--out", "frperturb_results"
 ]
 
 # Conditionally add skew_t flag at the end
 if use_skew_t:
     cmd.append("--fit-zero-pval")
+else:
+    cmd.extend(["--num-perms", "5000"])
 
 # Run FR-Perturb
 print("Running FR-Perturb...", flush=True)
