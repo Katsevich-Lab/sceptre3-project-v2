@@ -1,0 +1,625 @@
+---
+title: "association"
+output:
+  html_document: default
+  pdf_document: default
+date: "2026-01-17"
+---
+
+
+```{r, echo=FALSE, include=FALSE}
+library(tidyverse)
+library(magrittr)
+```
+
+Methods
+
+1. sceptre
+
+
+2. mixscale
+
+3. FR-Perturb
+
+idea: first get perturbation vectors. 
+
+Algo:
+
+1. for each cell $x_i$, get the $k$ nearest NT cells in PCA space, all with the same biological replicate value as $x_i$. Denote $y_{i1}, \dots, y_{ik}$.
+
+2. the \emph{perturbation vector} is defined as $p_i = x_i - \operatorname{Avg}(y_ij)$
+
+Controls for biological replicate at least, as the nearest NT neighbors all have the same replicate. And tries to mitigate against more general systematic effects. 
+
+Let $t$ be a target, and $P_t$ is the perturbation vectors for the cells expressing a guide for that target. $Y$ will be the NTs. In mixscale, we first do a DE test for every gene other than $t$ (mitigate selection bias), and only proceed if there are at least 5 marginally DE genes. We then only use those genes' measurements for our $p_i \in P_t$. Thus every coordinate of the $p_i$ in $P_t$ is the expression of a gene that is DE for this target $t$, and the dimension of $p_i$ is at least 5 (and at most 100 by default).
+
+So we expect the $p_i \in P_t$ to be clustered with a center different in every coordinate from $Y$, since the mean is significantly different in every coordinate. 
+
+We then get the \emph{perturbation scores} $s_i$ by projecting on the line going from $P_t$'s center to $Y$'s center. The $s_i$ give us a one-dimensional measure for how perturbed a cell is. 
+
+We finish by getting the \emph{standardized perturbation scores} $\tilde s_i$ by z-transforming the $s_i$ with the mean and std dev of the NT cells' $s_i$. The end result is that the $\tilde s_i$ for NT cells should be centered around 0, while the perturbed $\tilde s_i$ should be clustered "significantly" far away.  
+
+To actually DE test: let $\mathbf y \in \mathbb R^{N+M}$ give the response gene expressions for all $N$ cells targeting this gene $t$, and for all $M$ NT cells.
+
+I'm going to write this by ignoring cell line. In the paper they control for it. 
+
+Define $S\in\mathbb R^{N+M}$ by $S_{i} = \tilde s_i$ if cell $i$ targets $t$, and $0$ otherwise. Also define $\mathbf c \in \mathbb{R}^{N+M}$ where $\mathbf c_i$ is the $\log_{10}$ total expression for cell $i$. We then do a NB regression of $\mathbf y$ on $S$ and $\mathbf c$, with the coefficient $\beta$ of $S$ giving our weighted DE test. 
+
+
+Question: can we do an on-target test without testing every target-gene pair? 
+
+Pick gene 1. Get all cells targeting gene 1, call it $X$. Is there a difference on average between the gene 1 expressions for these cells $X$, and for the NT cells $Y$?
+
+- case 1: there are at least 5 other genes that are DE between these two groups of cells 
+
+  - compute the standardized perturbation scores 
+  
+  model $\log \operatorname{E}[\mathbf y] = \beta S+ \gamma \mathbf c$
+
+
+- case 2: Fewer than 5 genes (excluding gene 1) are DE between $X$ and $Y$
+
+  - model $\log \operatorname{E}[\mathbf y] = \beta \mathbf 1_{\text{ this cell targets }t} + \gamma \mathbf c$
+  
+  - we can compute this directly once we've picked our target $t$, so this case is efficient
+
+Pick a target $t$, do a marginal DE test on all other genes (LOO). Suppose at least 5 are significant (if not, $S$ is just the targeted indicator) We have to compute the $\tilde s_i$ for $X_t$, the cells targeting $t$,
+
+Datasets:
+
+
+```{r, eval=FALSE, include=FALSE}
+# not run
+dataset_names <- c("replogle-rd7_large", "gasperini_pos_control")
+for(dataset in dataset_names) {
+  base_path <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "association/pos-control/input_data", dataset)
+
+  response_mat <- read_rds(file.path(base_path, "sceptre/response_matrix.rds"))
+  # cell_info <- read_csv(file.path(base_path, "cell_info.csv"), show_col_types = FALSE)
+  grna_target_df <- read_csv(file.path(base_path, "sceptre/grna_target_data_frame.csv"), show_col_types = FALSE)
+  
+  cat("Dataset name:", dataset, "\n")
+  cat("Number of cells:", ncol(response_mat), "; number of genes:", nrow(response_mat),
+      "; number of unique guides:",  length(unique(grna_target_df$grna_id)), "\n")
+}
+```
+
+Dataset name: replogle-rd7_large                                                                                                                                                                             
+Number of cells: 210110 ; number of genes: 1619 ; number of unique guides: 1813 
+
+Dataset name: gasperini_pos_control                                                                                                                                                                          
+Number of cells: 185171 ; number of genes: 377 ; number of unique guides: 855 
+
+1. subsampled replogle 
+
+- run sceptre-pipeline on the full replogle-rd7. method = mixture, with the default formula used, so we regressed on response_n_nonzero, response_n_umis, grna_n_nonzero, and grna_n_umis (all log or log1p as needed). `batch` was not used because it has 56 levels. 
+
+Then, to get the desired subset of the response matrix:
+
+- Filter to low MOI cells: Keep only cells expressing exactly one gRNA
+
+  - Select positive control cells:
+  
+    - Iterate through response genes in dataset order
+    
+    - For each gene, collect all cells expressing gRNAs targeting that gene
+    
+    - Skip genes with fewer than min_num_cells_per_target cells (default: 20, used for "large")
+    
+    - Continue until reaching num_pc_cells positive control cells (e.g., 200,000 for "large")
+    
+  - Add non-targeting cells: Include cells expressing non-targeting gRNAs up to num_nt_cells (e.g., 10,000 for "large"), up to all of them
+  
+  - Extract expression data: Subset the response matrix to selected genes and cells
+  
+  - Quality filtering: Remove cells with zero expression across all genes, then remove any gRNAs left with zero cells
+  
+  - Export in multiple formats: Write data for sceptre (binary indicator matrix), mixscale (named vectors), and
+  FR-Perturb (h5ad)
+
+
+The resulting `response_matrix` resembles a block diagonal one, with ambient noise off the diagonal, as the first gene's targeting cells are the first cells in, and so on, until the final columns of NT cells. 
+
+2. subsampled gasperini
+
+- run sceptre-pipeline on the full gasperini data. method = mixture, with the default formula used, so we regressed on response_n_nonzero, response_n_umis, grna_n_nonzero, grna_n_umis (all log or log1p as needed), and batch (2 levels)
+
+- Identify on-target genes: Find genes that are both targeted by gRNAs and present in the response matrix
+
+  - Collect cells with on-target gRNAs:
+  
+    - For each on-target gene, get all gRNAs targeting that gene
+    
+    - Collect all cells expressing any of these gRNAs (no filtering to single gRNA per cell - this is high MOI)
+    
+  - Add non-targeting cells: Include all cells expressing non-targeting gRNAs
+  
+  - Create cell-level assignments: Build long-form dataframe mapping each cell to its expressed gRNAs (cells can have
+  multiple gRNAs)
+  
+  - Extract expression data: Subset response matrix to on-target genes and selected cells
+  
+  - Compute gRNA metrics: Calculate grna_n_nonzero_subset and grna_n_umis_subset from the gRNA UMI counts for the cell
+  subset
+  
+  - Export in multiple formats:
+  
+    - sceptre: Binary indicator matrix, cell covariates including prep_batch
+    
+    - FR-Perturb: h5ad file with colon-delimited multi-perturbation column (e.g., "GENE1:GENE2" for cells with multiple
+  gRNAs), includes prep_batch covariate
+  
+
+```{r, echo = FALSE, include = FALSE}
+rm(list=ls())
+
+
+revlog_trans <- function (base = exp(1)) 
+{
+    trans <- function(x) {
+        -log(x, base)
+    }
+    inv <- function(x) {
+        base^(-x)
+    }
+    scales::trans_new(name = paste("revlog-", base, sep = ""), 
+        transform = trans, inverse = inv, breaks = scales::log_breaks(base = base), 
+        domain = c(1e-250, Inf))
+}
+
+library(tidyverse)
+library(scales)
+
+# run_name <- "run_all_medium"
+# dataset_name = "replogle-rd7_medium"
+# run_name <- "run_all_large"
+# dataset_name = "replogle-rd7_large"
+# run_name <- "run_all_gasperini"
+# dataset_name = "gasperini_pos_control"
+
+# datasets <- list(
+#   gasperini = list(run_name = "run_all_gasperini", dataset_name = "gasperini_pos_control"),
+#   replogle_large = list(run_name = "run_all_large", dataset_name = "replogle-rd7_large")
+# )
+# datasets <- list(
+#   gasperini = list(run_name = "run_all_but_mixscale_skew-t", dataset_name = "gasperini_pos_control"),
+#   replogle_large = list(run_name = "run_all_but_mixscale_skew-t", dataset_name = "replogle-rd7_pos_control_large")
+# )
+datasets <- list(
+  gasperini_skew = list(run_name = "run_all_but_mixscale_skew-t", dataset_name = "gasperini_pos_control"),
+  # replogle_medium_skew = list(run_name = "run_all_but_mixscale_skew-t", dataset_name = "replogle-rd7_pos_control_medium"),
+  replogle_large_skew = list(run_name = "run_all_but_mixscale_skew-t", dataset_name = "replogle-rd7_pos_control_large"),
+  
+  gasperini_resamp = list(run_name = "run_all_but_mixscale_resamp", dataset_name = "gasperini_pos_control"),
+  # replogle_medium_resamp = list(run_name = "run_all_but_mixscale_resamp", dataset_name = "replogle-rd7_pos_control_medium"),
+  replogle_large_resamp = list(run_name = "run_all_but_mixscale_resamp", dataset_name = "replogle-rd7_pos_control_large"),
+  # replogle_large = list(run_name = "run_all_but_mixscale_skew-t", dataset_name = "replogle-rd7_pos_control_large"),
+  
+  replogle_medium = list(run_name = "test_medium", dataset_name = "replogle-rd7_pos_control_medium")
+)
+# datasets <- list(
+#   replogle_medium = list(run_name = "test_medium", dataset_name = "replogle-rd7_pos_control_medium")
+# )
+
+
+base_fp <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "association/pos-control/outputs")
+
+load_associations <- function(base_fp, dataset_name) {
+  scep = read.csv(paste0(base_fp, "/association_on_target_sceptre_", dataset_name, ".csv"))
+  if(file.exists(mixscale_fp <- paste0(base_fp, "/association_on_target_mixscale_", dataset_name, ".csv"))) {
+    mix = read.csv(mixscale_fp)
+  } else {
+    mix = NULL
+  }
+  
+  
+  # FR-Perturb: p-values and logFC (base e, not base 2, so we convert) 
+  frpert_pvals_raw <- read.table(paste0(base_fp, "/frperturb/frperturb_results_", dataset_name, "_pvals.txt"))
+  stopifnot("non.targeting" %in% colnames(frpert_pvals_raw), !"non-targeting" %in% rownames(frpert_pvals_raw))
+  frpert_lfc_raw <- read.table(paste0(base_fp, "/frperturb/frperturb_results_", dataset_name, "_LFCs.txt"))
+  stopifnot(rownames(frpert_pvals_raw) == rownames(frpert_lfc_raw))
+  frpert <- data.frame(
+    target = rownames(frpert_pvals_raw),
+    p_value_frpert = sapply(rownames(frpert_pvals_raw), function(target) frpert_pvals_raw[target,target]),
+    # convert from natural log to base 2
+    log2fc_frpert = sapply(rownames(frpert_pvals_raw), function(target) frpert_lfc_raw[target,target]) / log(2)
+  )
+
+  out = list(scep=scep, mix=mix, frpert = frpert)
+  out[!sapply(out, is.null)]
+}
+
+collect_results <- function(base_fp, dataset_name) {
+  assocs = load_associations(base_fp, dataset_name)
+  mixscale_used <- "mix" %in% names(assocs)
+  results <- dplyr::select(assocs$scep, log2fc_scep = log_2_fold_change, p_value_scep = p_value, target = grna_target) |>
+    full_join(assocs$frpert, by = "target")
+  if(mixscale_used) {
+    results <- results |> 
+      full_join(
+        dplyr::select(assocs$mix, target=gene_ID, log2fc_mix = log2FC, p_value_mix = p_weight, mixscale_method = DE_method),
+        by = "target"
+      ) 
+  }
+  results
+}
+
+# results <- collect_results(base_fp, dataset_name)
+
+all_results <- lapply(datasets, function(run_params) {
+  run_name = run_params$run_name
+  dataset_name = run_params$dataset_name
+  fp <- file.path(base_fp, run_name)
+  collect_results(fp, dataset_name)
+}) |>
+  setNames(names(datasets))
+
+```
+
+
+
+```{r, echo = FALSE}
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+library(scales)
+
+
+make_scatter <- function(df, xcol, ycol, xname, yname, use_revlog = FALSE) {
+  p <- ggplot(df, aes(x = .data[[xcol]], y = .data[[ycol]])) +
+    geom_point(alpha = 0.4, size = 0.6) +
+    theme_bw() +
+    geom_abline(slope = 1, intercept = 0, col = "grey", linetype="dashed") +
+    labs(
+      x = paste0(xname, " p-value (−log10)"),
+      y = paste0(yname, " p-value (−log10)")
+    )
+  if(use_revlog) {
+    p <- p + scale_x_continuous(trans = revlog_trans(10)) +
+    scale_y_continuous(trans = revlog_trans(10)) 
+  }
+  p
+}
+
+plot_pairwise_p_values <- function(results, dataset_name, eps = 1e-250, remove_fr_perturb_outliers = FALSE) {
+  dfp <- results %>%
+    dplyr::select(p_value_scep, p_value_frpert) 
+
+  mixscale_used <- "p_value_mix" %in% colnames(results)
+  
+  if(mixscale_used) {
+    dfp$p_value_mix <- results$p_value_mix
+  }
+  
+  dfp <- dfp %>%
+    mutate(across(everything(), ~ pmax(.x, eps)))
+  
+  if(remove_fr_perturb_outliers) {
+    dfp <- dfp |> dplyr::filter(p_value_frpert > eps)
+  }
+  
+  cmplt <- complete.cases(dfp)
+  if(!all(cmplt)) {
+    dfp <- dfp[cmplt,]
+    cat(sum(!cmplt), "rows removed due to incomplete cases.\n")
+  }
+  
+  pltlist <- if(mixscale_used) {
+    list(
+      p1 = make_scatter(dfp, "p_value_scep",   "p_value_mix",    "SCEPTRE", "Mixscale", use_revlog = TRUE),
+      p2 = make_scatter(dfp, "p_value_scep",   "p_value_frpert", "SCEPTRE", "FR-Pert", use_revlog = TRUE),
+      p3 = make_scatter(dfp, "p_value_mix",    "p_value_frpert", "Mixscale","FR-Pert", use_revlog = TRUE)
+    )
+  } else {
+    list(p1 = make_scatter(dfp, "p_value_scep",   "p_value_frpert", "SCEPTRE", "FR-Pert", use_revlog = TRUE))
+  }
+  
+  
+  title <- cowplot::ggdraw() +
+    cowplot::draw_label(
+      paste("Pairwise comparison of on-target p-values for", dataset_name),
+      fontface = "bold",
+      x = 0.5, hjust = 0.5
+    ) +
+    theme(plot.margin = margin(0, 0, 0, 0))
+  
+  grid <- cowplot::plot_grid(plotlist = pltlist, nrow = ifelse(mixscale_used, 2, 1), ncol=ifelse(mixscale_used, 2, 1), align = "hv")
+  
+  cowplot::plot_grid(
+    title,
+    grid,
+    ncol = 1,
+    rel_heights = c(0.12, 1)
+  )
+}
+plot_pairwise_p_values(results = all_results$replogle_medium, dataset_name = "replogle_medium skew")
+# plot_pairwise_p_values(results = all_results$replogle_medium_resamp, dataset_name = "replogle_medium resamp")
+# plot_pairwise_p_values(results = all_results$replogle_large, dataset_name = "replogle_large")
+plot_pairwise_p_values(results = all_results$gasperini_skew, dataset_name = "gasperini_pos_control skew")
+plot_pairwise_p_values(results = all_results$gasperini_resamp, dataset_name = "gasperini_pos_control resamp")
+plot_pairwise_p_values(results = all_results$replogle_large_skew, dataset_name = "replogle_pos_control skew")
+plot_pairwise_p_values(results = all_results$replogle_large_resamp, dataset_name = "replogle_pos_control resamp")
+# Map(plot_pairwise_p_values, all_results, names(all_results))
+```
+
+FR-Perturb has very poor agreement with sceptre. As sceptre agrees with Mixscale, and has generally (much) smaller p-values for the on-targets, I think sceptre is doing better. But it's not clear to me why the disagreement is so strong. 
+
+For replogle_medium, they have some agreement, for both methods although moreso for skew-t. 
+
+But for gasperini, essentially none at all.
+
+```{r}
+lapply(all_results, function(results) cor(results$p_value_scep, results$p_value_frpert, use = "complete.obs"))
+```
+
+
+
+```{r, eval=FALSE, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+library(scales)
+
+
+
+make_scatter <- function(df, xcol, ycol, xname, yname) {
+  ggplot(df, aes(x = .data[[xcol]], y = .data[[ycol]])) +
+    geom_point(alpha = 0.4, size = 0.6) +
+    scale_x_continuous(trans = revlog_trans(10)) +
+    scale_y_continuous(trans = revlog_trans(10)) +
+    theme_bw() +
+    geom_abline(slope = 1, intercept = 0, col = "grey", linetype="dashed") +
+    labs(
+      x = paste0(xname, " p-value (−log10)"),
+      y = paste0(yname, " p-value (−log10)")
+    )
+}
+
+plot_pairwise_logfc <- function(results, dataset_name) {
+  dffc <- results %>%
+    dplyr::select(log2fc_scep, log2fc_frpert) 
+  
+  mixscale_used <- "log2fc_mix" %in% colnames(results)
+  
+  if(mixscale_used) {
+    dfp$log2fc_mix <- results$log2fc_mix
+  }
+  
+  cmplt <- complete.cases(dffc)
+  if(!all(cmplt)) {
+    dffc <- dffc[cmplt,]
+    cat(sum(!cmplt), "rows removed due to incomplete cases.\n")
+  }
+  
+  
+  
+  if(mixscale_used) {
+  pltlist <- list(
+    p1 = make_scatter(dffc, "log2fc_scep",   "log2fc_mix",    "SCEPTRE", "Mixscale"),
+    p2 = make_scatter(dffc, "log2fc_scep",   "log2fc_frpert", "SCEPTRE", "FR-Pert"),
+    p3 = make_scatter(dffc, "log2fc_mix",    "log2fc_frpert", "Mixscale","FR-Pert")
+  )
+} else {
+  pltlist <- list(p1 = make_scatter(dffc, "log2fc_scep",   "log2fc_frpert", "SCEPTRE", "FR-Pert"))
+}
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  pltlist <- if(mixscale_used) {
+    list(
+      p1 = make_scatter(dfp, "p_value_scep",   "p_value_mix",    "SCEPTRE", "Mixscale"),
+      p2 = make_scatter(dfp, "p_value_scep",   "p_value_frpert", "SCEPTRE", "FR-Pert"),
+      p3 = make_scatter(dfp, "p_value_mix",    "p_value_frpert", "Mixscale","FR-Pert")
+    )
+  } else {
+    list(p1 = make_scatter(dfp, "p_value_scep",   "p_value_frpert", "SCEPTRE", "FR-Pert"))
+  }
+  
+  
+  title <- cowplot::ggdraw() +
+    cowplot::draw_label(
+      paste("Pairwise comparison of on-target p-values for", dataset_name),
+      fontface = "bold",
+      x = 0.5, hjust = 0.5
+    ) +
+    theme(plot.margin = margin(0, 0, 0, 0))
+  
+  grid <- cowplot::plot_grid(plotlist = pltlist, nrow = ifelse(mixscale_used, 2, 1), ncol=ifelse(mixscale_used, 2, 1), align = "hv")
+  
+  cowplot::plot_grid(
+    title,
+    grid,
+    ncol = 1,
+    rel_heights = c(0.12, 1)
+  )
+}
+
+
+
+dffc <- results %>%
+  dplyr::select(log2fc_scep, log2fc_frpert)
+if(mixscale_used) {
+  dffc$log2fc_mix <- results$log2fc_mix
+}
+  # mutate(across(everything(), ~ pmax(.x, eps)))   # avoid 0s on log scale
+
+make_scatter <- function(df, xcol, ycol, xname, yname) {
+  ggplot(df, aes(x = .data[[xcol]], y = .data[[ycol]])) +
+    geom_point(alpha = 0.4, size = 0.6) +
+    # scale_x_continuous(trans = revlog_trans(10)) +
+    # scale_y_continuous(trans = revlog_trans(10)) +
+    theme_bw() +
+    geom_abline(slope = 1, intercept = 0, col = "grey", linetype="dashed") +
+    labs(
+      x = paste0(xname, " log2 fold change"),
+      y = paste0(yname, " log2 fold change")
+    )
+}
+
+if(mixscale_used) {
+  pltlist <- list(
+    p1 = make_scatter(dffc, "log2fc_scep",   "log2fc_mix",    "SCEPTRE", "Mixscale"),
+    p2 = make_scatter(dffc, "log2fc_scep",   "log2fc_frpert", "SCEPTRE", "FR-Pert"),
+    p3 = make_scatter(dffc, "log2fc_mix",    "log2fc_frpert", "Mixscale","FR-Pert")
+  )
+} else {
+  pltlist <- list(p1 = make_scatter(dffc, "log2fc_scep",   "log2fc_frpert", "SCEPTRE", "FR-Pert"))
+}
+
+title <- cowplot::ggdraw() +
+  cowplot::draw_label(
+    paste("Pairwise comparison of on-target log2 FC for", dataset_name),
+    fontface = "bold",
+    x = 0.5, hjust = 0.5
+  ) +
+  theme(plot.margin = margin(0, 0, 0, 0))
+
+
+grid <- cowplot::plot_grid(plotlist = pltlist, nrow = ifelse(mixscale_used, 2, 1), ncol=ifelse(mixscale_used, 2, 1), align = "hv")
+
+cowplot::plot_grid(
+  title,
+  grid,
+  ncol = 1,
+  rel_heights = c(0.12, 1)
+)
+```
+
+
+violin plots of p-values
+```{r, eval=FALSE, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+p_floor <- 1e-250
+
+make_violin <- function(results, title) {
+  plot_df <- results %>%
+  transmute(
+    sceptre    = p_value_scep,
+    # mixscale   = p_value_mix,
+    `FR-Perturb`  = p_value_frpert
+  ) %>%
+  pivot_longer(everything(), names_to = "method", values_to = "p") %>%
+  mutate(
+    p = pmax(p, p_floor),              # avoid -Inf from p=0
+    neglog10_p = -log10(p),
+    method = factor(method, levels = c("sceptre",  "FR-Perturb")) # "mixscale",
+  )
+
+ggplot(plot_df, aes(x = method, y = p)) +
+  geom_violin(trim = FALSE) +
+  scale_y_continuous(trans = revlog_trans(10)) +
+  labs(x = NULL, y = "p-value (-log10)", title = title) +
+  theme_bw()
+
+}
+
+make_violin(all_results$gasperini_skew, paste0("p-value distribution by method for gasperini skew"))
+make_violin(all_results$gasperini_resamp, paste0("p-value distribution by method for gasperini resamp"))
+# TODO combine all on a single violin plot
+```
+
+```{r, echo=FALSE}
+# sanity check: at least they are decidedly not uniform
+# hist(all_results$gasperini_resamp$p_value_frpert, 30, main = "gasperini resamp")
+
+
+
+par(mfcol = c(2,1))
+hist(-log10(all_results$gasperini_skew$p_value_frpert), 50, main = "gasperini skew")
+hist(-log10(all_results$gasperini_skew$p_value_scep), 50, main = "gasperini skew")
+par(mfcol = c(1,1))
+# 
+# tmp <- -log10(all_results$gasperini_skew$p_value_frpert)
+# hist(tmp[tmp < 15], 50, main = "truncated gasperini skew", xlab = "p-values (-log10) (truncated to < 15)")
+# 
+# 
+# qqplot(-log10(all_results$gasperini_skew$p_value_frpert), -log10(all_results$gasperini_skew$p_value_scep))
+# abline(0,1)
+# 
+# # sanity check: there is pretty good correlation between the p-values for the two ones
+# plot(all_results$gasperini_resamp$p_value_frpert, all_results$gasperini_skew$p_value_frpert)
+# plot(-log10(all_results$gasperini_resamp$p_value_frpert), -log10(all_results$gasperini_skew$p_value_frpert))
+# abline(0,1)
+```
+
+
+
+plot: i want to indicate the sample size somehow
+```{r, echo=FALSE}
+run_name <- "gasperini_skew"
+dataset_name <- "gasperini_pos_control"
+# run_name <- "replogle_large_skew"
+# dataset_name <- "replogle-rd7_pos_control_large"
+results <- all_results[[run_name]]
+eps <- 1e-250
+# eps <- 1e-50
+# i want to do pairwise p-value plot but with sample size indicated somehow
+pdat <- results |> dplyr::select(p_value_scep, p_value_frpert, target) |>
+  mutate(p_value_scep = pmax(p_value_scep, eps), p_value_frpert = pmax(p_value_frpert, eps))
+
+
+
+cell_info <- read_csv(file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "association/pos-control/input_data", dataset_name, "cell_info.csv"))
+head(cell_info)
+
+# so... what represents my sample size here? the total number of cells that have that grna as a target?
+sample_sizes <- cell_info |> group_by(grna_target) |> summarize(n = n()) |> dplyr::select(target = grna_target, n)
+pdat %<>% left_join(sample_sizes, by = "target")
+
+pdat |> transmute(neglog_p_value_scep = -log10(p_value_scep), neglog_p_value_frpert = -log10(p_value_frpert), n = n) %>%
+  filter(complete.cases(.)) |>
+  cor()
+
+# this doesn't show much
+# pdat |>
+#   # mutate(n = cut(n, breaks = 3)) |>
+#   # dplyr::filter(p_value_frpert > eps) |>
+#   ggplot(aes(x = p_value_scep, y = p_value_frpert, color = n)) +
+#   geom_point(alpha = 0.25, size = 0.7) +
+#   # facet_grid(~n) +
+#   scale_color_viridis_c(option = "C", end = 0.95) +
+#   scale_x_continuous(trans = revlog_trans(10)) +
+#   scale_y_continuous(trans = revlog_trans(10)) +
+#   geom_abline(slope = 1, intercept = 0, col = "grey60", linetype = "dashed") +
+#   theme_bw() +
+#   labs(
+#     x = "SCEPTRE p-value (−log10)",
+#     y = "FR-Pert p-value (−log10)",
+#     color = "n"
+#   )
+
+pdat |>
+  mutate(cells_per_target = cut(n, breaks = c(339, 1050, 1800, 2509), dig.lab=4, ordered_result = TRUE)) %>%
+  split(f = .$cells_per_target) |>
+  lapply(function(df) data.frame(cor = cor(-log10(df$p_value_scep), -log10(df$p_value_frpert)) |> round(2))) %>%
+  do.call(what = rbind) %>%
+  mutate(cells_per_target = rownames(.)) |>
+  `rownames<-`(NULL)
+
+n_max <- Inf
+data.frame(
+  p_value = -log10(c(pdat$p_value_scep, pdat$p_value_frpert)),
+  method = rep(c("sceptre", "FR_perturb"), each = nrow(pdat)),
+  n = rep(pdat$n, times = 2)
+) |>
+  filter(n <= n_max) |>
+  ggplot(aes(y=  p_value, x  =n, color = method)) +
+  geom_point(alpha = 0.4, size = 0.8) +
+  facet_wrap(~method) +
+   geom_smooth(method = "lm", se = FALSE) +
+  # scale_y_continuous(trans = revlog_trans(10)) +
+labs(x = "total number of cells expressing this target", 
+     y = "p-value (-log10)",
+     title = paste0("On-target sample size vs p-value for ", dataset_name)
+) +
+  theme_bw()
+```
