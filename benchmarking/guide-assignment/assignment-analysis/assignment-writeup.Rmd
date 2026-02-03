@@ -785,7 +785,7 @@ disp_df %>%
 
 \begin{table}[!h]
 \centering
-\caption{Mean (2.5\%, 97.5\%) over guides}
+\caption{Metric means and (2.5\%, 97.5\%) quantiles over guides (Sim 1.5\% has 25 guides, and Sim. 0.5\% has 10 guides)}
 \centering
 \resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
 \fontsize{8}{10}\selectfont
