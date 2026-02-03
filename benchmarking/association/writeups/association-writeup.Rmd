@@ -555,10 +555,10 @@ par(mfcol = c(1,1))
 
 plot: i want to indicate the sample size somehow
 ```{r, echo=FALSE}
-run_name <- "gasperini_skew"
-dataset_name <- "gasperini_pos_control"
-# run_name <- "replogle_large_skew"
-# dataset_name <- "replogle-rd7_pos_control_large"
+# run_name <- "gasperini_skew"
+# dataset_name <- "gasperini_pos_control"
+run_name <- "replogle_large_skew"
+dataset_name <- "replogle-rd7_pos_control_large"
 results <- all_results[[run_name]]
 eps <- 1e-250
 # eps <- 1e-50
@@ -596,11 +596,15 @@ pdat |> transmute(neglog_p_value_scep = -log10(p_value_scep), neglog_p_value_frp
 #     y = "FR-Pert p-value (−log10)",
 #     color = "n"
 #   )
+breaks <- list(
+  gasperini_pos_control = c(339, 1050, 1800, 2509),
+  `replogle-rd7_pos_control_large` = c(16, 63, 117, 3782)
+)[[dataset_name]]
 
 pdat |>
-  mutate(cells_per_target = cut(n, breaks = c(339, 1050, 1800, 2509), dig.lab=4, ordered_result = TRUE)) %>%
+  mutate(cells_per_target = cut(n, breaks = breaks, dig.lab=4, ordered_result = TRUE)) %>%
   split(f = .$cells_per_target) |>
-  lapply(function(df) data.frame(cor = cor(-log10(df$p_value_scep), -log10(df$p_value_frpert)) |> round(2))) %>%
+  lapply(function(df) data.frame(cor = cor(-log10(df$p_value_scep), -log10(df$p_value_frpert), use="complete.obs") |> round(2))) %>%
   do.call(what = rbind) %>%
   mutate(cells_per_target = rownames(.)) |>
   `rownames<-`(NULL)
@@ -622,4 +626,24 @@ labs(x = "total number of cells expressing this target",
      title = paste0("On-target sample size vs p-value for ", dataset_name)
 ) +
   theme_bw()
+pdat |>
+  dplyr::select(p_value_scep, )
 ```
+
+
+
+plot ideas
+- can i do a single plot with all 3 QQ plots vs uniform? Use sceptre's qq plot layers
+- do a violin plot with all datasets and methods in one
+- how can i show the correlation between methods, and maybe also with sample size? can i do something like for each n, get cor[p1,p2|n], then smooth that? or, bigger range of n --> smooth on the n scale. 
+
+
+overall goals for this writeup: 
+- i want this to be my bundled up pos control section, showing how we're approaching it, and giving a convincing show that this effort is nearly concluded. 
+- for TODOs, i guess more datasets but i don't have any insight into that right now. 
+
+TODO
+
+- computational assessment: make downsampled datasets for this that are more representative, like similar scale of gene expression, etc to be kind of "unbiased"
+
+
