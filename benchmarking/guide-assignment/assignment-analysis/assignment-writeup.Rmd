@@ -631,21 +631,21 @@ metric_df <- bind_rows(
       factor(levels = method_renamer)
   )
 
-# Plot: one 2x4 histogram grid per metric
 plots <- lapply(levels(metric_df$metric), function(metric_name) {
   df <- metric_df %>% filter(metric == metric_name)
 
-  ggplot(df, aes(x = value)) +
-    geom_histogram(bins = 40, boundary = 0) +
-    facet_grid(dataset ~ method) +
-    theme_bw() +
+  ggplot(df, aes(x = method, y = value)) +
+    geom_violin(trim = FALSE, scale = "width", width = 0.9) +
+    # geom_boxplot(width = 0.12, outlier.shape = NA, alpha = 0.4) +
+    facet_wrap(~dataset, ncol = 1) +
+    theme_bw(base_size = 9) +
     labs(
       title = paste("Guide-level", metric_name, "vs True Perturbation Status"),
-      x = metric_name,
-      y = "Number of guides"
+      x = NULL,
+      y = metric_name
     ) +
-    coord_cartesian(xlim = c(0, 1)) +
-    theme(axis.text.x = element_text(size = 8))
+    coord_cartesian(ylim = c(0, 1)) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
 })
 
 names(plots) <- levels(metric_df$metric)
