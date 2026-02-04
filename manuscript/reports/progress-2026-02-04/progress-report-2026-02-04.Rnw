@@ -335,7 +335,7 @@ Replogle & SCEPTRE & FR-Perturb (skew) & 86.8\% & 0.013\\
 
 Below I outline all of the remaining TODOs I have for this project, along with my best guess for time estimates.
 
-I believe I can complete nearly all of the Assignment and Association TODOs by the first week of March, leaving a over a month for the final writing stage. 
+I believe I can complete nearly all of the Assignment and Association TODOs by the first week of March, leaving over a month for the final writing stage. 
 
 \begin{enumerate}
 
