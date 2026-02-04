@@ -1984,6 +1984,8 @@ TODO:
 
 - array jobs to make these more overlapping?
 
+- combine the computational results for the in-memory methods with sceptre-pipeline. How to handle that they are on different datasets?
+
 - add datasets: barnyard? Fancier simulation?
 
 - run on full datasets instead of medium? rename medium as "downsampled"? maybe do random downsample instead of 1:k? 
@@ -1992,6 +1994,7 @@ TODO:
 
 - add assessments: held-out or resampling based? sensitivity to downsampling? F1 vs Jaccard?
 
+- incorporate positive and negative control analysis into guide assignment assessment
 
 <!-- # NOTES FROM fishash PAPER -->
 

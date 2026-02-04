@@ -1,0 +1,397 @@
+\documentclass{article}
+
+
+\usepackage{graphicx}   % \includegraphics, \resizebox
+\usepackage{booktabs}   % \toprule \midrule \bottomrule \addlinespace
+\usepackage[table]{xcolor} % \cellcolor and color specs like gray!10
+\usepackage{array}      % >{\raggedright\arraybackslash}p{...}
+\usepackage{multirow}
+
+\title{Progress Report and Next Steps}
+\author{Louis Deutsch}
+\date{\today}
+
+
+% A report on what you have been working on / what you have accomplished since your thesis proposal meeting.
+% 
+% This report should be divided into two parts: 1) an executive summary and 2) a detailed report on your findings. You have been working on compiling something like item 2. What I have in mind for item 2 is one level of polish/structure above what you currently have, so that I can consume this information more easily. Instead of having every single plot you’ve ever made, choose what plots are the key to the story. Your plots should be easily digestible/readable, e.g. log scales when appropriate, etc. You will have to do this anyways later, so doing so a bit earlier will not be a waste of time and will allow me to assess where you are at. This task might take you a day or two.A fairly detailed summary of what items you have left to do, including high-priority items and items we have put on the back burner for now. This summary should include some reasonable time estimates for how long each task might take.
+
+
+\begin{document}
+
+\SweaveOpts{concordance=TRUE}
+
+\maketitle
+
+\section{Executive Summary}
+
+What has been done since my proposal defense: no actual results or work for the benchmarking project were part of my proposal defense, so every tangible part of the benchmarking project is new. In brief, I have done the following:
+
+\begin{enumerate}
+
+\item \textbf{gRNA assignment comparison:} \texttt{SCEPTRE}, \texttt{pertpy}, \texttt{CLEANSER}, and \texttt{crispat} have been evaluated and compared on both simulated and real datasets. 
+
+\begin{enumerate}
+\item I developed a nextflow pipeline to reproducibly parallelize gRNA assignment over dataset-method pairs, with metrics tracking, and GPU usage for \texttt{pertpy}
+
+\item I created an original mechanism for simulating gRNA matrices with covariate effects and known ground truth
+
+\item  I compared and contrasted all 4 of these methods on 2 simulated datasets and 2 real datasets, both statistically and computationally, as well as running the \texttt{sceptre-pipeline} on both real datasets
+\end{enumerate}
+
+\item \textbf{Association analysis comparison:} so far, \texttt{SCEPTRE}, \texttt{Mixscale}, and \texttt{FR-Perturb} have been evaluated and compared on real datasets for on-target performance
+\begin{enumerate}
+\item I created on-target downsamples of two real datasets, and developed a nextflow pipeline to reproducibly compare and contrast all 3 of these methods statistically using pre-determined guide assignments
+\end{enumerate}
+
+
+\end{enumerate}
+
+
+Major steps remaining:
+
+\begin{enumerate}
+\item Association: negative control analysis
+
+\item Association: computational benchmarking
+
+\item Possibly adding more datasets and methods
+
+\item Writing the paper, thesis, and thesis defense
+\end{enumerate}
+
+
+\section{Detailed Report}
+
+I will now give a review of the key findings so far.
+
+\subsection{Guide Assignment}
+
+For this project, we are currently comparing 4 methods on 2 simulated datasets, and 2 real datasets. 
+
+The methods are as follows:
+
+\begin{enumerate}
+
+\item \texttt{pertpy}'s \texttt{assign\_mixture\_model()}: a Poisson-Gaussian mixture model fit via MCMC to the log-transformed counts. 
+
+\item \texttt{CLEANSER}: either a Poisson-NB or NB-NB mixture, fit to the raw counts via MCMC, with a scaling factor for total library size. 
+
+\item \texttt{crispat}'s \texttt{ga\_poisson\_gauss()}: a Poisson-Gaussian mixture fit to the log-transformed counts. MAP estimates are obtained via stochastic variational inference.
+
+\item \texttt{SCEPTRE}: a latent variable Poisson GLM, fit via a modified EM algorithm, controlling for some guide covariates and possibly batch
+
+\end{enumerate}
+
+
+The datasets are as follows:
+
+\begin{enumerate}
+
+\item Simulated: two datasets with 100k cells were generated, where each guide is an independent sample of the same process. Covariate effects learned from Replogle-RD7 were included. The fraction of perturbed cells was set to either 1.5\% or 0.5\%. Currently only a large perturbation effect size is used.
+
+\item Real: Replogle-RD7 (possibly downsampled to the first 2500 guides and first 50,000 cells) and Gasperini (also possibly downsampled to the first 2500 guides and first 50,000 cells)
+
+\end{enumerate}
+
+\subsubsection{Simulation results}
+
+Figure \ref{fig:sims-umis} gives a comparison of the real and simulated data. Table \ref{tab:sims-results} gives the comparison of each method with the ground truth, while Table \ref{tab:sims-compute} shows the total memory use and runtime for each method on each dataset. 
+
+\texttt{SCEPTRE} is not quite the best in terms of these metrics, but is also never far from it. \texttt{CLEANSER} and \texttt{pertpy} both have the potential to fail. \texttt{SCEPTRE} strongly wins in terms of computational metrics.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=1.2\linewidth]{figures/assignment-simulated-umis.pdf}
+  \caption{A comparison of the real guide from Replogle-RD7 that served as the basis for the simulations, as well as one guide from each of the specific simulated datasets. The first row shows that the simulated guides marginally match the real one. The second row shows the true components of each guide. The components are fairly well separated in both cases, as this is a high signal strength simulation.}
+  \label{fig:sims-umis}
+\end{figure}
+
+
+
+\begin{table}[!h]
+\centering
+\caption{Metric means and (2.5\%, 97.5\%) quantiles over guides. Sim 1.5\% has 25 guides, and Sim. 0.5\% has 10 guides. Both datasets have 100k cells, so the expected number of actual perturbed cells are 1500 and 500, respectively.}
+  \label{tab:sims-results}
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
+\fontsize{10}{12}\selectfont
+\begin{tabular}[t]{>{\raggedright\arraybackslash}p{1.0in}>{\raggedright\arraybackslash}p{0.9in}>{\raggedright\arraybackslash}p{1.25in}>{\raggedright\arraybackslash}p{1.25in}>{\raggedright\arraybackslash}p{1.25in}>{\raggedright\arraybackslash}p{1.15in}}
+\toprule
+Dataset & Method & Jaccard & Precision & Recall & Num. Assn. Cells\\
+\midrule
+
+\cellcolor{gray!10}{1.5\% Perturbed} & \cellcolor{gray!10}{SCEPTRE} & \cellcolor{gray!10}{0.96 (0.94, 0.97)} & \cellcolor{gray!10}{0.98 (0.96, 0.99)} & \cellcolor{gray!10}{0.98 (0.98, 0.99)} & \cellcolor{gray!10}{1467 (1400, 1544)}\\
+
+1.5\% Perturbed & crispat & \textbf{0.96 (0.95, 0.97)} & \textbf{1.00 (0.99, 1.00)} & 0.96 (0.95, 0.97) & 1403 (1357, 1469)\\
+
+\cellcolor{gray!10}{1.5\% Perturbed} & \cellcolor{gray!10}{pertpy} & \cellcolor{gray!10}{0.08 (0.00, 0.81)} & \cellcolor{gray!10}{0.26 (0.00, 1.00)} & \cellcolor{gray!10}{0.08 (0.00, 0.81)} & \cellcolor{gray!10}{1013 (0, 5544)}\\
+
+1.5\% Perturbed & CLEANSER & 0.43 (0.42, 0.45) & 0.43 (0.42, 0.45) & \textbf{1.00 (0.99, 1.00)} & 3354 (3230, 3447)\\
+
+\addlinespace
+
+\cellcolor{gray!10}{0.5\% Perturbed} & \cellcolor{gray!10}{SCEPTRE} & \cellcolor{gray!10}{0.93 (0.89, 0.96)} & \cellcolor{gray!10}{0.96 (0.90, 0.99)} & \cellcolor{gray!10}{0.97 (0.95, 0.98)} & \cellcolor{gray!10}{538 (488, 596)}\\
+
+0.5\% Perturbed & crispat & \textbf{0.95 (0.93, 0.96)} & \textbf{0.98 (0.97, 0.99)} & 0.97 (0.95, 0.98) & 528 (497, 563)\\
+
+\cellcolor{gray!10}{0.5\% Perturbed} & \cellcolor{gray!10}{pertpy} & \cellcolor{gray!10}{0.11 (0.00, 0.75)} & \cellcolor{gray!10}{0.51 (0.01, 0.99)} & \cellcolor{gray!10}{0.11 (0.00, 0.75)} & \cellcolor{gray!10}{258 (0, 1537)}\\
+
+0.5\% Perturbed & CLEANSER & 0.22 (0.21, 0.23) & 0.22 (0.21, 0.23) & \textbf{1.00 (0.99, 1.00)} & 2454 (2401, 2531)\\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+
+\begin{table}[!h]
+\centering
+\caption{Simulations: Computational Performance}
+\label{tab:sims-compute}
+\begin{tabular}[t]{lrr}
+\toprule
+Method & Runtime (min) & Peak memory (GB)\\
+\midrule
+\addlinespace[0.3em]
+\multicolumn{3}{l}{\textbf{0.5\% Pert (10 guides)}}\\
+\hspace{1em}SCEPTRE & \textbf{0.21} & \textbf{0.31}\\
+\hspace{1em}crispat & 8.70 & 1.10\\
+\hspace{1em}CLEANSER & 13.80 & 2.90\\
+\hspace{1em}pertpy & 7.77 & 3.90\\
+\addlinespace[0.3em]
+\multicolumn{3}{l}{\textbf{1.5\% Pert (25 guides)}}\\
+\hspace{1em}SCEPTRE & \textbf{0.37} & \textbf{0.31}\\
+\hspace{1em}crispat & 10.53 & 1.10\\
+\hspace{1em}CLEANSER & 50.18 & 8.60\\
+\hspace{1em}pertpy & 12.98 & 5.40\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% \begin{figure}[htbp]
+%   \centering
+%   \includegraphics[width=1.2\linewidth]{figures/assignment-sims-compute.pdf}
+%   \caption{A comparison of the total memory and runtime for each method on each simulated dataset. Each method was run in-memory. \texttt{pertpy} was given access to a GPU, but no other parallelization was done. \texttt{SCEPTRE} does the best in every case.}
+%   \label{fig:simulated-compute}
+% \end{figure}
+
+
+\subsubsection{Results on real data}
+
+The downsampled Replogle and Gasperini datasets are used here, so they are denoted \texttt{medium}. Both have 50k cells and 2500 guides. Figure \ref{fig:assignment-real-jaccard} shows the agreement between each pair of methods on each guide. All but \texttt{pertpy} generally agree. Table \ref{tab:assignment-real-avgs} shows the estimated experimental MOI and the average number of cells assigned to each guide. We again see \texttt{pertpy} as an outlier. Table \ref{tab:assignment-real-compute} shows the computational results for these 4 methods, as well as for the \texttt{sceptre-pipeline}. \texttt{SCEPTRE} and the pipeline are by far the fastest and most memory efficient.
+
+Overall we see a picture of \texttt{SCEPTRE} being nearly the best method statistically, and by far the best computationally, so for large-scale guide assignment it is a very strong choice.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=1.2\linewidth]{figures/assignment-real-jaccard.pdf}
+  \caption{A comparison of the Jaccard similarities between the assignments made for each guide by each method pair. We can see that \texttt{SCEPTRE}, \texttt{crispat}, and \texttt{CLEANSER} generally agree, but \texttt{pertpy} can be quite different.}
+  \label{fig:assignment-real-jaccard}
+\end{figure}
+
+
+
+\begin{table}[!h]
+\centering
+\caption{Average assignment sizes: cells per gRNA and gRNAs per cell.}
+\label{tab:assignment-real-avgs}
+\fontsize{10}{12}\selectfont
+\begin{tabular}[t]{llrr}
+\toprule
+Dataset & Method & Avg cells per gRNA & Avg gRNAs per cell\\
+\midrule
+\multirow[t]{4}{*}{\raggedright gasperini\_medium} & SCEPTRE  & 131.9 & 6.68\\
+                                                & crispat  & 129.1 & 6.57\\
+                                                & pertpy   & 90.6  & 4.73\\
+                                                & CLEANSER & 122.5 & 6.29\\
+\cmidrule{1-4}
+\multirow[t]{4}{*}{\raggedright replogle\_medium} & SCEPTRE  & 27.0 & 1.54\\
+                                                & crispat  & 25.3 & 1.56\\
+                                                & pertpy   & 33.9 & 2.07\\
+                                                & CLEANSER & 24.5 & 1.54\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+
+
+
+
+\begin{table}[!h]
+\centering
+\caption{Real data: Computational Performance. For \texttt{sceptre-pipeline}, the peak memory is the maximum from a single node. The average number of concurrent workers for \texttt{sceptre-pipeline} was 31 and 14 for Gasperini and Replogle-RD7, respectively.}
+\label{tab:assignment-real-compute}
+\begin{tabular}[t]{lrr}
+\toprule
+Method & Runtime (min) & Peak memory (GB)\\
+\midrule
+\addlinespace[0.3em]
+\multicolumn{3}{l}{\textbf{gasperini\_medium}}\\
+\hspace{1em}SCEPTRE & \textbf{10.63} & \textbf{0.29}\\
+\hspace{1em}crispat & 103.03 & 1.40\\
+\hspace{1em}CLEANSER & 217.55 & 54.10\\
+\hspace{1em}pertpy & 533.00 & 7.70\\
+
+\addlinespace[0.3em]
+\multicolumn{3}{l}{\textbf{replogle-rd7\_medium}}\\
+\hspace{1em}SCEPTRE & \textbf{12.43} & \textbf{0.30}\\
+\hspace{1em}crispat & 107.92 & 1.40\\
+\hspace{1em}CLEANSER & 211.62 & 49.60\\
+\hspace{1em}pertpy & 660.48 & 8.40\\
+
+\addlinespace[0.3em]
+\multicolumn{3}{l}{\textbf{Replogle-RD7}}\\
+\hspace{1em}sceptre-pipeline & 13.4 & 0.744\\
+
+\addlinespace[0.3em]
+\multicolumn{3}{l}{\textbf{Gasperini}}\\
+\hspace{1em}sceptre-pipeline & 11.4 & 0.644\\
+
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Association: positive control analysis}
+
+Next, we turn to association analysis. For this part of the project, we are currently comparing 3 methods on 2 real datasets.
+
+The methods are as follows:
+
+\begin{enumerate}
+
+\item \texttt{FR-Perturb}: An approach based on sparse factorization. Both the resampling and skew-t variants are included. 
+
+\item \texttt{Mixscale}: Inference is done via a NB regression using Mixscape-style scores as weights to account for perturbation effectiveness. Low MOI only.
+
+\item \texttt{SCEPTRE}
+
+\end{enumerate}
+
+
+The datasets are as follows:
+
+\begin{enumerate}
+
+\item \textbf{Replogle-RD7 on-target}: the Replogle-RD7 data, downsampled to around 210k cells, with around 1600 on-target genes, corresponding to around 1800 guides. Only on-target genes were included where every guide for them had at least 20 cells expressing it. Cell expressions were obtained via the \texttt{sceptre-pipeline}.
+
+\item \textbf{Gasperini on-target}: the Gasperini data, downsampled to around 185k cells, with almost 400 on-target genes, corresponding to around 850 guides. Cell expressions were obtained via the \texttt{sceptre-pipeline}.
+
+\end{enumerate}
+
+Table \ref{tab:pc-method-results} gives some results for each dataset-method pair. SCEPTRE has by far the smallest p-values. Next, Table \ref{tab:pc-method-pair-results} shows that SCEPTRE and Mixscale give very similar rankings to the on-target genes, and the two FR-Perturb methods strongly agree with each other as well, but there is very little agreement between FR-Perturb and the other methods. Finally, Figure \ref{fig:pc-p-value-violins} shows the distribution of the $-\log_{10}$ p-values for each method. FR-Perturb can be seen to be much more concentrated on large p-values.
+
+\begin{table}[!h]
+\centering
+\caption{Summary statistics by dataset and method. The column 'Corr. with n' gives the Spearman correlation of the negative p-value with the number of cells expressing each target. 'Pcnt. $\leq$ 0.05' gives the percentage of p-values at or below 0.05. Both datasets are downsampled to only have on-targets. \texttt{SCEPTRE} has by far the smallest on-target p-values.}
+\label{tab:pc-method-results}
+\begin{tabular}[t]{llrrrl}
+\toprule
+Dataset & Method & Num. Targets & Mean p-value & Corr. with n & Pcnt. $\leq$ 0.05\\
+\midrule
+\cellcolor{gray!10}{Gasperini} & \cellcolor{gray!10}{FR-Perturb (resamp)} & \cellcolor{gray!10}{377} & \cellcolor{gray!10}{0.2510} & \cellcolor{gray!10}{0.031} & \cellcolor{gray!10}{43\%}\\
+Gasperini & FR-Perturb (skew) & 377 & 0.2530 & 0.022 & 43.5\%\\
+\cellcolor{gray!10}{Gasperini} & \cellcolor{gray!10}{SCEPTRE} & \cellcolor{gray!10}{377} & \cellcolor{gray!10}{0.0113} & \cellcolor{gray!10}{0.177} & \cellcolor{gray!10}{98.1\%}\\
+\addlinespace
+Replogle & FR-Perturb (resamp) & 1619 & 0.2850 & 0.068 & 33.5\%\\
+\cellcolor{gray!10}{Replogle} & \cellcolor{gray!10}{FR-Perturb (skew)} & \cellcolor{gray!10}{1619} & \cellcolor{gray!10}{0.2840} & \cellcolor{gray!10}{0.067} & \cellcolor{gray!10}{34.1\%}\\
+Replogle & Mixscale & 1619 & 0.1650 & 0.313 & 78.1\%\\
+\cellcolor{gray!10}{Replogle} & \cellcolor{gray!10}{SCEPTRE} & \cellcolor{gray!10}{1619} & \cellcolor{gray!10}{0.0456} & \cellcolor{gray!10}{0.318} & \cellcolor{gray!10}{87.7\%}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\begin{table}[!h]
+\centering
+\caption{Pairwise method comparisons within each dataset. 'Pcnt. 1 $\leq$ 2' gives the percentage of times the p-value for Method 1 is at or below the p-value for Method 2. 'Corr.' gives the Spearman correlation between the p-values for Methods 1 and 2. Both datasets are downsampled to only have on-targets.}
+\label{tab:pc-method-pair-results}
+\begin{tabular}[t]{llllr}
+\toprule
+Dataset & Method 1 & Method 2 & Pcnt. 1 $\leq$ 2 & Corr.\\
+\midrule
+\cellcolor{gray!10}{Gasperini} & \cellcolor{gray!10}{FR-Perturb (skew)} & \cellcolor{gray!10}{FR-Perturb (resamp)} & \cellcolor{gray!10}{59.4\%} & \cellcolor{gray!10}{0.990}\\
+Gasperini & SCEPTRE & FR-Perturb (resamp) & 98.4\% & 0.233\\
+\cellcolor{gray!10}{Gasperini} & \cellcolor{gray!10}{SCEPTRE} & \cellcolor{gray!10}{FR-Perturb (skew)} & \cellcolor{gray!10}{98.1\%} & \cellcolor{gray!10}{0.238}\\
+\addlinespace
+Replogle & FR-Perturb (skew) & FR-Perturb (resamp) & 55.8\% & 0.996\\
+\cellcolor{gray!10}{Replogle} & \cellcolor{gray!10}{Mixscale} & \cellcolor{gray!10}{FR-Perturb (resamp)} & \cellcolor{gray!10}{77.9\%} & \cellcolor{gray!10}{0.007}\\
+
+Replogle & Mixscale & FR-Perturb (skew) & 76\% & 0.005\\
+\cellcolor{gray!10}{Replogle} & \cellcolor{gray!10}{SCEPTRE} & \cellcolor{gray!10}{FR-Perturb (resamp)} & \cellcolor{gray!10}{89\%} & \cellcolor{gray!10}{0.014}\\
+Replogle & SCEPTRE & FR-Perturb (skew) & 86.8\% & 0.013\\
+\cellcolor{gray!10}{Replogle} & \cellcolor{gray!10}{SCEPTRE} & \cellcolor{gray!10}{Mixscale} & \cellcolor{gray!10}{81.1\%} & \cellcolor{gray!10}{0.926}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=1.2\linewidth]{figures/pc-p-value-violins.pdf}
+  \caption{A comparison of the -log10 p-values for each method. FR-Perturb assigns much larger p-values in general.}
+  \label{fig:pc-p-value-violins}
+\end{figure}
+
+
+\section{Next Steps}
+
+Below I outline all of the remaining TODOs I have for this project, along with my best guess for time estimates.
+
+I believe I can complete nearly all of the Assignment and Association TODOs by the first week of March, leaving a over a month for the final writing stage. 
+
+\begin{enumerate}
+
+\item General
+
+\begin{enumerate}
+
+\item Switch to array jobs? [3 days]
+
+\end{enumerate}
+
+\item Assignment
+
+\begin{enumerate}
+
+\item Add more simulated datasets: try the approach of fishash? [4 days]
+
+\item Add more real datasets: barnyard in particular [4 days]
+
+\item Add more methods: geomux in particular [4 days]
+
+\item Add more assessments, perhaps using hold-outs or resampling? [low priority]
+
+\item Incorporate positive and negative control analysis into guide assignment assessment [3 days]
+
+\end{enumerate}
+
+
+\item Association
+
+\begin{enumerate}
+
+\item Implement and analyze negative control analysis [7 days]
+
+\item Implement and analyze computational benchmarking [7 days]
+
+\item For positive control analysis, consider more methods and more datasets [7 days]
+
+\item For positive control analysis, consider using covariates to understand the results [1 day]
+
+\item For positive control analysis, include effect size results [1 day]
+
+\end{enumerate}
+
+
+\item Writing
+
+\begin{enumerate}
+\item The benchmarking paper [1 month?]
+
+\item Thesis defense presentation [14 days]
+
+\item Thesis [14 days?]
+
+\end{enumerate}
+
+\end{enumerate}
+
+\end{document}
