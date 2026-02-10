@@ -1,0 +1,2 @@
+method,dataset,cpus,memory
+frperturb,replogle-rd7_neg_control_100genes,1,3.GB
