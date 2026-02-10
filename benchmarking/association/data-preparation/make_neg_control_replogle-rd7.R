@@ -216,10 +216,8 @@ make_neg_control_replogle <- function(
   #   )
   # )
 
-  # Save formula object (NO BATCH for Replogle)
-  formula_object <- ~ 1 + log(response_n_nonzero_full + 1) +
-    log(response_n_umis_full + 1) + log(grna_n_nonzero_full + 1) +
-    log(grna_n_umis_full + 1)
+  # Save formula as character string (NO BATCH for Replogle)
+  formula_string <- "~ 1 + log(response_n_nonzero_full + 1) + log(response_n_umis_full + 1) + log(grna_n_nonzero_full + 1) + log(grna_n_umis_full + 1)"
 
   # Create discovery pairs (Cartesian product of all pseudo-targets × all genes)
   discovery_pairs <- expand.grid(
@@ -233,7 +231,7 @@ make_neg_control_replogle <- function(
   saveRDS(grna_indicator_matrix, file.path(write_sceptre_fp, "grna_matrix.rds"))
   write.csv(cell_covariates_sceptre, file.path(write_sceptre_fp, "cell_covariates.csv"), row.names = FALSE)
   write.csv(grna_target_df_kept, file.path(write_sceptre_fp, "grna_target_data_frame.csv"), row.names = FALSE)
-  saveRDS(formula_object, file.path(write_sceptre_fp, "formula_object.rds"))
+  saveRDS(formula_string, file.path(write_sceptre_fp, "formula_object.rds"))
   saveRDS(discovery_pairs, file.path(write_sceptre_fp, "discovery_pairs.rds"))
   cat("   sceptre written.\n")
 
