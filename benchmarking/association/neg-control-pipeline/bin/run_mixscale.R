@@ -33,6 +33,9 @@ library(future.apply)
 # Set Seurat options
 options(Seurat.object.assay.version = 'v3')
 
+# Remove size limit for future globals (for large datasets with parallel processing)
+options(future.globals.maxSize = +Inf)
+
 # Configure parallelization based on NCPUS
 n_processors <- as.integer(Sys.getenv("NCPUS", "1"))
 cat("Processors allocated:", n_processors, "\n")
