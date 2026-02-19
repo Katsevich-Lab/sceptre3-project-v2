@@ -92,10 +92,14 @@ make_pos_control_gasperini <- function(dataset_name, response_odm, grna_odm, cel
   response_subset <- odm_to_sparse_matrix(odm = response_odm, genes = on_targets, cell_idx = all_cell_idx) |>
     `rownames<-`(on_targets)
   cat("response matrix subset made with", nrow(response_subset), "genes and", ncol(response_subset), "cells.\n")
-  
+
   # 4. now i need to save this for sceptre and FR-Perturb
+  # Add _full suffix to all covariates EXCEPT prep_batch
   cell_covariates_subset <- cell_covariates[all_cell_idx, ]
-  
+  new_names <- names(cell_covariates_subset)
+  new_names[new_names != "prep_batch"] <- paste0(new_names[new_names != "prep_batch"], "_full")
+  cell_covariates_subset <- cell_covariates_subset |> setNames(new_names)
+
   write_fp <- file.path(
     .get_config_path("LOCAL_BENCHMARKING_DIR"),
     "association/pos-control/input_data", dataset_name
@@ -175,20 +179,19 @@ make_pos_control_gasperini <- function(dataset_name, response_odm, grna_odm, cel
   py_config()
   
   # actually writing
-  # see here for input specifications: https://github.com/douglasyao/FR-Perturb 
+  # see here for input specifications: https://github.com/douglasyao/FR-Perturb
   # using Option 2 from here
   # this is high MOI so we need to concat to make the perturbation column
   cell_names <- rownames(cell_covariates_subset)
   response_subset_frpert <- response_subset |> `colnames<-`(cell_names)
 
-  # Compute response covariates from the subset (matching what sceptre computes internally)
-  # Note: response_subset_frpert has genes as rows, cells as columns
-  response_n_nonzero_subset <- Matrix::colSums(response_subset_frpert > 0)
-  response_n_umis_subset <- Matrix::colSums(response_subset_frpert)
-
   # these get added to .obs of the anndata object
-  cell_covs_frpert <- dplyr::select(cell_covariates_sceptre,
-                                    grna_n_nonzero_subset, grna_n_umis_subset, response_p_mito_full = response_p_mito, prep_batch)
+  # Using *_full covariates (not *_subset) for FR-Perturb
+  # Keep prep_batch as-is (no log transformation)
+  cell_covs_frpert <- dplyr::select(cell_covariates_subset,
+                                    response_n_nonzero_full, response_n_umis_full,
+                                    grna_n_nonzero_full, grna_n_umis_full,
+                                    response_p_mito_full, prep_batch)
   # getting perturbation indicator
 
   stopifnot(!any(grepl(":", on_targets)))  # ensure NO targets contain ":", making it safe as delimiter
@@ -200,11 +203,12 @@ make_pos_control_gasperini <- function(dataset_name, response_odm, grna_odm, cel
     by = "cell_name"
   ) |>
     mutate(
-      # Log-transform all numeric covariates for FR-Perturb (FR-Perturb doesn't take logs)
-      log_grna_n_nonzero_subset = log(grna_n_nonzero_subset),
-      log_grna_n_umis_subset = log(grna_n_umis_subset),
-      log_response_n_nonzero = log(response_n_nonzero_subset),
-      log_response_n_umis = log(response_n_umis_subset)
+      # Log1p-transform numeric covariates for FR-Perturb (FR-Perturb doesn't take logs)
+      # prep_batch and response_p_mito_full are NOT log-transformed
+      log_response_n_nonzero_full = log1p(response_n_nonzero_full),
+      log_response_n_umis_full = log1p(response_n_umis_full),
+      log_grna_n_nonzero_full = log1p(grna_n_nonzero_full),
+      log_grna_n_umis_full = log1p(grna_n_umis_full)
     )
   
   sce <- SingleCellExperiment(

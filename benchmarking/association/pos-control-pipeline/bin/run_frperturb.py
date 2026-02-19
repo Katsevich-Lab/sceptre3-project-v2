@@ -42,9 +42,10 @@ frperturb_script = os.path.join(frperturb_repo, "run_FR_Perturb.py")
 input_h5ad = os.path.join(dataset_dir, "response_matrix.h5ad")
 
 # Set covariates based on dataset
+# Using *_full covariates (not *_subset)
 covariates_lookup = {
-    "replogle": "log_grna_n_nonzero_subset,log_grna_n_umis_subset,log_response_n_nonzero,log_response_n_umis",
-    "gasperini": "log_grna_n_nonzero_subset,log_grna_n_umis_subset,prep_batch,log_response_n_nonzero,log_response_n_umis"
+    "replogle": "log_response_n_nonzero_full,log_response_n_umis_full,log_grna_n_nonzero_full,log_grna_n_umis_full",
+    "gasperini": "log_response_n_nonzero_full,log_response_n_umis_full,log_grna_n_nonzero_full,log_grna_n_umis_full,prep_batch"
 }
 covariates = covariates_lookup[dataset_name]
 print(f"Covariates: {covariates}", flush=True)
