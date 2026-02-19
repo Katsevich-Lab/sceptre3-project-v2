@@ -61,9 +61,10 @@ moi <- moi_lookup[[dataset_name]]
 cat("MOI:", moi, "\n")
 
 # Set covariates to use based on dataset
+# Using *_full covariates (not *_subset)
 covariates_lookup <- list(
-  replogle = c("grna_n_umis_subset", "grna_n_nonzero_subset"),
-  gasperini = c("grna_n_umis_subset", "grna_n_nonzero_subset", "prep_batch")
+  replogle = c("response_n_nonzero_full", "response_n_umis_full", "grna_n_nonzero_full", "grna_n_umis_full"),
+  gasperini = c("response_n_nonzero_full", "response_n_umis_full", "grna_n_nonzero_full", "grna_n_umis_full", "prep_batch")
 )
 covariates_to_use <- covariates_lookup[[dataset_name]]
 cat("Extra covariates:", paste(covariates_to_use, collapse = ", "), "\n")
