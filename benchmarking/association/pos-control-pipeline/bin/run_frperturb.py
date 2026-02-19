@@ -48,8 +48,11 @@ covariates_lookup = {
 }
 covariates = covariates_lookup[dataset_name]
 print(f"Covariates: {covariates}", flush=True)
-use_skew_t = True  # Set to True to enable --fit-zero-pval
+use_skew_t = True # Set to True to enable --fit-zero-pval
+num_resamps = 2000
 print(f"Use skew_t: {use_skew_t}", flush=True)
+if not use_skew_t:
+    print(f'num_resamps = {num_resamps}', flush=True)
 
 # Build command list
 cmd = [
@@ -67,7 +70,7 @@ cmd = [
 if use_skew_t:
     cmd.append("--fit-zero-pval")
 else:
-    cmd.extend(["--num-perms", "5000"])
+    cmd.extend(["--num-perms", str(num_resamps)])
 
 print(cmd, flush=True)
 
