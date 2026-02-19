@@ -22,17 +22,17 @@ scep <- sceptre::read_ondisc_backed_sceptre_object(
 )
 
 
-# inputs
-num_pc_cells = 200000
-num_nt_cells = 10000
-response_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "response.odm"))
-grna_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "grna.odm"))
-grna_assign_mat = readRDS(file.path(output_fp, "grna_assignment_matrix.rds"))
-grna_target_df = scep@grna_target_data_frame
-cell_covariates = scep@covariate_data_frame
-NT_name = "non-targeting"
-dataset_name = paste0(source_data, "_", "large")
-min_num_cells_per_target = 20
+# # inputs
+# num_pc_cells = 20000
+# num_nt_cells = 1000
+# response_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "response.odm"))
+# grna_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "grna.odm"))
+# grna_assign_mat = readRDS(file.path(output_fp, "grna_assignment_matrix.rds"))
+# grna_target_df = scep@grna_target_data_frame
+# cell_covariates = scep@covariate_data_frame
+# NT_name = "non-targeting"
+# dataset_name = paste0(source_data, "_", "large")
+# min_num_cells_per_target = 200
 
 
 odm_to_sparse_matrix <- function(odm, genes, cell_idx) {
@@ -51,16 +51,31 @@ odm_to_sparse_matrix <- function(odm, genes, cell_idx) {
               dims = c(length(genes), length(cell_idx)))
 }
 
+# num_pc_cells = 50000
+# num_nt_cells = 5000
+# min_num_cells_per_target = 300
+# dataset_name = paste0(source_data, "_", "medium")
+# response_odm = response_odm
+# grna_odm = grna_odm
+# grna_assign_mat = grna_assign_mat
+# grna_target_df = grna_target_df
+# cell_covariates = cell_covariates
+# NT_name = NT_name
+
+
 # NOTE
 # this has low MOI pretty hard-coded in, since we only take the 
 # cells expressing exactly one gRNA
 make_pos_control_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_target,
                               dataset_name, response_odm,
                               grna_odm, grna_assign_mat, grna_target_df,
-                              cell_covariates, NT_name) {
+                              cell_covariates, NT_name, seed=452) {
   
   ## 0. determining which cells express exactly one gRNA. 
   ##    This is the population we subsample from.
+  if(!is.null(seed)) {
+    set.seed(seed)
+  }
   
   num_grnas_expressed_per_cell <- Matrix::colSums(grna_assign_mat) # potentially big operation
   expresses_exactly_one_grna <- which(num_grnas_expressed_per_cell == 1)
@@ -71,7 +86,7 @@ make_pos_control_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_ce
   # they appear in the data, get the cells expressing any gRNA
   # targeting that gene. Keep doing this until we have at least
   # `num_pc_cells` many cells.
-  all_response_gene_names <- rownames(response_odm) 
+  all_response_gene_names <- rownames(response_odm) |> sample()
   target_to_grna_ids <- split(grna_target_df$grna_id, grna_target_df$grna_target)
   num_cells_per_grna <- c()
   cells_per_grna <- list()
@@ -131,7 +146,7 @@ make_pos_control_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_ce
   all_cell_idx <- unlist(cells_per_grna) |> setNames(NULL)
   cell_info <- data.frame(stringsAsFactors = FALSE,
                           cell_idx = all_cell_idx,
-                          grna_id = rep(names(cells_per_grna), num_cells_per_grna)
+                          grna_id = rep(names(cells_per_grna), sapply(cells_per_grna, length))
   ) |>
     dplyr::left_join(grna_target_df, by = "grna_id")
 
@@ -204,7 +219,7 @@ make_pos_control_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_ce
   dir.create(write_sceptre_fp, showWarnings = FALSE, recursive = TRUE)
 
   grna_target_df_kept <- grna_target_df |>
-    dplyr::filter(grna_id %in% names(cells_per_grna))
+    dplyr::filter(grna_id %in% cell_info$grna_id)
 
   # Create binary assignment indicator matrix (not UMI counts)
   # grna_indicator_matrix[grna, cell] = 1 if cell is assigned to grna, 0 otherwise
@@ -278,25 +293,22 @@ make_pos_control_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_ce
   py_config()
   
   # actually writing
-  # see here for input specifications: https://github.com/douglasyao/FR-Perturb 
+  # see here for input specifications: https://github.com/douglasyao/FR-Perturb
   # using Option 2 from here
   # this is low MOI so the perturbation column is simple
   response_mat_frpert <- response_mat |> `colnames<-`(cell_names)
 
-  # Compute response covariates from the subset (matching what sceptre computes internally)
-  # Note: response_mat_frpert has genes as rows, cells as columns
-  response_n_nonzero_subset <- Matrix::colSums(response_mat_frpert > 0)
-  response_n_umis_subset <- Matrix::colSums(response_mat_frpert)
-
   # these get added to .obs of the anndata object
-  cell_covs_frpert <- dplyr::select(cell_covariates_sceptre,
-                                    grna_n_nonzero_subset, grna_n_umis_subset, response_p_mito_full) |>
+  # Using *_full covariates (not *_subset) for FR-Perturb
+  cell_covs_frpert <- dplyr::select(cell_covariates,
+                                    response_n_nonzero_full, response_n_umis_full,
+                                    grna_n_nonzero_full, grna_n_umis_full, response_p_mito_full) |>
     mutate(
-      # Log-transform all covariates for FR-Perturb (FR-Perturb doesn't take logs)
-      log_grna_n_nonzero_subset = log(grna_n_nonzero_subset),
-      log_grna_n_umis_subset = log(grna_n_umis_subset),
-      log_response_n_nonzero = log(response_n_nonzero_subset),
-      log_response_n_umis = log(response_n_umis_subset),
+      # Log1p-transform numeric covariates for FR-Perturb (FR-Perturb doesn't take logs)
+      log_response_n_nonzero_full = log1p(response_n_nonzero_full),
+      log_response_n_umis_full = log1p(response_n_umis_full),
+      log_grna_n_nonzero_full = log1p(grna_n_nonzero_full),
+      log_grna_n_umis_full = log1p(grna_n_umis_full),
       perturbation = cell_info$grna_target
     )
   
@@ -315,6 +327,12 @@ make_pos_control_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_ce
   cat(dataset_name, "finished.\n\n")
 }
 
+response_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "response.odm"))
+grna_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "grna.odm"))
+grna_assign_mat = readRDS(file.path(output_fp, "grna_assignment_matrix.rds"))
+grna_target_df = scep@grna_target_data_frame
+cell_covariates = scep@covariate_data_frame
+
 
 # make_pos_control_replogle_rd7(
 #   num_pc_cells = 10000, num_nt_cells = 2000, min_num_cells_per_target = 100,
@@ -325,11 +343,11 @@ make_pos_control_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_ce
 # )
 # 
 # make_pos_control_replogle_rd7(
-#   num_pc_cells = 50000, num_nt_cells = 5000, min_num_cells_per_target = 300,
-#   dataset_name = paste0(source_data, "_", "medium"),
-#   response_odm = response_odm, grna_odm = grna_odm,
-#   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
-#   cell_covariates = cell_covariates, NT_name = NT_name
+  # num_pc_cells = 50000, num_nt_cells = 5000, min_num_cells_per_target = 300,
+  # dataset_name = paste0(source_data, "_", "medium"),
+  # response_odm = response_odm, grna_odm = grna_odm,
+  # grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
+  # cell_covariates = cell_covariates, NT_name = NT_name
 # )
 
 # make_pos_control_replogle_rd7(
@@ -347,7 +365,7 @@ make_pos_control_replogle_rd7(
   dataset_name = paste0(source_data, "_", "large"),
   response_odm = response_odm, grna_odm = grna_odm,
   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
-  cell_covariates = cell_covariates, NT_name = NT_name
+  cell_covariates = cell_covariates, NT_name = "non-targeting"
 )
 
 

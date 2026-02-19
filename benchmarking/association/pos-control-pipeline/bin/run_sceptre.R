@@ -42,12 +42,12 @@ if(length(dataset_name) != 1) {
 cat("Detected dataset:", dataset_name, "\n")
 
 # Define association formula based on dataset
-# TODO this will throw an error if any of these covariates have exact 0s
+# Using *_full covariates with log(x + 1) transformation
 assoc_fmla_lookup <- list(
-  replogle = ~ log(response_n_nonzero) + log(response_n_umis) +
-               log(grna_n_umis_subset) + log(grna_n_nonzero_subset),
-  gasperini = ~ log(response_n_nonzero) + log(response_n_umis) +
-                log(grna_n_umis_subset) + log(grna_n_nonzero_subset) + prep_batch
+  replogle = ~ log(response_n_nonzero_full + 1) + log(response_n_umis_full + 1) +
+               log(grna_n_umis_full + 1) + log(grna_n_nonzero_full + 1),
+  gasperini = ~ log(response_n_nonzero_full + 1) + log(response_n_umis_full + 1) +
+                log(grna_n_umis_full + 1) + log(grna_n_nonzero_full + 1) + prep_batch
 )
 assoc_fmla <- assoc_fmla_lookup[[dataset_name]]
 cat("Association formula:", deparse(assoc_fmla), "\n")
