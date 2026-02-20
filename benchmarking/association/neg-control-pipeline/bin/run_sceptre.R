@@ -64,14 +64,14 @@ cat("MOI:", moi, "\n")
 
 # Set covariates to use - all use _full versions of grna and response
 # Only gasperini has prep_batch
-covariates_lookup <- list(
-  replogle = c("response_n_nonzero_full", "response_n_umis_full",
-               "grna_n_nonzero_full", "grna_n_umis_full"),
-  gasperini = c("response_n_nonzero_full", "response_n_umis_full",
-                "grna_n_nonzero_full", "grna_n_umis_full", "prep_batch")
-)
-covariates_to_use <- covariates_lookup[[dataset_name]]
-cat("Extra covariates:", paste(covariates_to_use, collapse = ", "), "\n")
+# covariates_lookup <- list(
+#   replogle = c("response_n_nonzero_full", "response_n_umis_full",
+#                "grna_n_nonzero_full", "grna_n_umis_full"),
+#   gasperini = c("response_n_nonzero_full", "response_n_umis_full",
+#                 "grna_n_nonzero_full", "grna_n_umis_full", "prep_batch")
+# )
+# covariates_to_use <- covariates_lookup[[dataset_name]]
+# cat("Extra covariates:", paste(covariates_to_use, collapse = ", "), "\n")
 
 # Import data into sceptre object
 cat("Importing data into sceptre object...\n")
@@ -80,7 +80,7 @@ scep <- import_data(
   grna_matrix = grna_matrix,
   grna_target_data_frame = grna_target_df,
   moi = moi,
-  extra_covariates = cell_covariates[, covariates_to_use, drop = FALSE]
+  extra_covariates = cell_covariates#[, covariates_to_use, drop = FALSE]
 )
 
 # Set analysis parameters with pre-computed discovery pairs
