@@ -30,6 +30,12 @@ process SCEPTRE_NEGCTRL {
   # Set number of processors for R (from Nextflow task allocation)
   export NCPUS="${task.cpus}"
 
+  # prevents too many resources being used
+  # NOTE: this is only for neg-control since i will always be 
+  # running sceptre in parallel here
+  export OMP_NUM_THREADS=1
+
+
   # R needs writable temp and (if any package tries) a user lib dir
   export TMPDIR="\$PWD/tmp";           mkdir -p "\$TMPDIR"
   export R_TMPDIR="\$TMPDIR"
