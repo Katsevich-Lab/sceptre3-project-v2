@@ -129,7 +129,7 @@ cat("  Preprocessing complete\n")
 
 end_time <- Sys.time()
 elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
-cat("Total loop time:", round(elapsed, 2), "seconds\n")
+cat("Total time:", round(elapsed, 2), "seconds\n")
 
 # Combine all results (remove NULL entries if any)
 cat("Combining results...\n")
