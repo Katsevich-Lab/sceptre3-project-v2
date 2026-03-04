@@ -7,10 +7,7 @@
 
 set -euo pipefail
 
-# RUN_ID="test_sceptre"
-# RUN_ID="test_100genes"
-# RUN_ID="small_500genes"
-RUN_ID="test_all_small"
+RUN_ID="run_repl_cells_50k_100k"
 
 OUT_BASE="${LOCAL_BENCHMARKING_DIR}/association/computational/outputs"
 OUT_DIR="${OUT_BASE}/${RUN_ID}"
