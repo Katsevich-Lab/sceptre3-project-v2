@@ -53,20 +53,34 @@ enforce_single_guide_per_cell <- function(grna_indicator_matrix, random_seed = N
 
   # Make a copy to avoid modifying the input
   result <- grna_indicator_matrix
-
-  for(cell_idx in seq_len(ncol(result))) {
-    expressed_guides <- which(result[, cell_idx] == 1)
-
-    if(length(expressed_guides) == 0) {
-      stop("Cell ", cell_idx, " has no expressed guides! Should not happen.")
-    }
-
-    if(length(expressed_guides) > 1) {
-      guide_to_keep <- sample(expressed_guides, 1)
-      guides_to_remove <- setdiff(expressed_guides, guide_to_keep)
-      result[guides_to_remove, cell_idx] <- 0
-    }
+  num_expressed_guides = Matrix::colSums(result)
+  if(any(num_expressed_guides == 0)) {
+    stop("Some cells have no expressed guides! Should not happen here.")
   }
+  
+  idx_to_enforce = which(num_expressed_guides > 1)
+  for(cell_idx in idx_to_enforce) {
+    expressed_guides <- which(result[, cell_idx] == 1)
+    guide_to_keep <- sample(expressed_guides, 1)
+    guides_to_remove <- setdiff(expressed_guides, guide_to_keep)
+    result[guides_to_remove, cell_idx] <- 0
+  }
+  
+
+  ## old slower way
+  # for(cell_idx in seq_len(ncol(result))) {
+  #   expressed_guides <- which(result[, cell_idx] == 1)
+  # 
+  #   if(length(expressed_guides) == 0) {
+  #     stop("Cell ", cell_idx, " has no expressed guides! Should not happen.")
+  #   }
+  # 
+  #   if(length(expressed_guides) > 1) {
+  #     guide_to_keep <- sample(expressed_guides, 1)
+  #     guides_to_remove <- setdiff(expressed_guides, guide_to_keep)
+  #     result[guides_to_remove, cell_idx] <- 0
+  #   }
+  # }
 
   # Validate output
   stopifnot(all(Matrix::colSums(result) == 1))  # Every cell has exactly 1 guide
@@ -123,7 +137,7 @@ write_mixscale_output <- function(
   response_matrix,
   cell_info,
   output_path,
-  all_targets
+  all_targets = NULL
 ) {
   # Create output directory
   dir.create(output_path, showWarnings = FALSE, recursive = TRUE)
@@ -142,10 +156,15 @@ write_mixscale_output <- function(
   # Write files
   saveRDS(response_mat_mixscale, file.path(output_path, "response_matrix.rds"))
   saveRDS(assign_vec, file.path(output_path, "assignments.rds"))
-  saveRDS(all_targets, file.path(output_path, "mixscale_nt_targets.rds"))
+  if(!is.null(all_targets)) {
+    saveRDS(all_targets, file.path(output_path, "mixscale_nt_targets.rds"))
+  }
+
 
   cat("   Mixscale format written to:", output_path, "\n")
-  cat("   Mixscale targets:", length(all_targets), "\n")
+  if(!is.null(all_targets)) {
+    cat("   Mixscale targets:", length(all_targets), "\n")
+  }
 }
 
 
