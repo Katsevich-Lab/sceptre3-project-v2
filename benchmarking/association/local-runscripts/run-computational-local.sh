@@ -25,6 +25,7 @@ nextflow \
   run computational-pipeline/main.nf \
   --run_id "${RUN_ID}" \
   -profile local \
+  -anew \
   -with-report   "${OUT_DIR}/report.html" \
   -with-trace    "${OUT_DIR}/trace.txt" \
   -with-timeline "${OUT_DIR}/timeline.html" \
