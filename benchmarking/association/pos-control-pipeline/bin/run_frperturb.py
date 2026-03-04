@@ -49,6 +49,13 @@ covariates_lookup = {
 }
 covariates = covariates_lookup[dataset_name]
 print(f"Covariates: {covariates}", flush=True)
+
+moi_lookup = {
+    "replogle": "low",
+    "gasperini": "high"
+}
+moi = moi_lookup[dataset_name]
+
 use_skew_t = True # Set to True to enable --fit-zero-pval
 num_resamps = 2000
 print(f"Use skew_t: {use_skew_t}", flush=True)
@@ -60,12 +67,14 @@ cmd = [
     frperturb_script,
     "--input-h5ad", input_h5ad,
     "--perturbation-column-name", "perturbation",
-    "--control-perturbation-name", "non-targeting",
     "--covariates", covariates,
     "--compute-pval",
     "--perturbation-delimiter", ":",
     "--out", "frperturb_results"
 ]
+
+if moi == "low":
+    cmd.extend(["--control-perturbation-name", "non-targeting"])
 
 # Conditionally add skew_t flag at the end
 if use_skew_t:
