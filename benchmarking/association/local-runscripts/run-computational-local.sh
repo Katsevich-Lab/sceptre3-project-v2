@@ -10,6 +10,9 @@ OUT_BASE="$HOME/data/projects/sceptre3/benchmarking/association/computational/ou
 OUT_DIR="${OUT_BASE}/${RUN_ID}"
 mkdir -p "$OUT_DIR"
 
+# Clean work directory for fresh benchmark (critical - prevents cached results)
+rm -rf computational-pipeline/work
+
 # Copy config file to output directory for record keeping
 cp "computational-pipeline/configs/${RUN_ID}_config.csv" "${OUT_DIR}/"
 
@@ -25,7 +28,6 @@ nextflow \
   run computational-pipeline/main.nf \
   --run_id "${RUN_ID}" \
   -profile local \
-  -anew \
   -with-report   "${OUT_DIR}/report.html" \
   -with-trace    "${OUT_DIR}/trace.txt" \
   -with-timeline "${OUT_DIR}/timeline.html" \
