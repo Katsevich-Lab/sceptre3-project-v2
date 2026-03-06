@@ -80,25 +80,29 @@ scep <- assign_grnas(
 )
 
 # Very permissive QC for negative control
-cat("Running QC (very permissive for computational benchmarking)...\n")
+# cat("Running QC (very permissive for computational benchmarking)...\n")
+# scep <- run_qc(
+#   sceptre_object = scep,
+#   n_nonzero_trt_thresh = 0,
+#   n_nonzero_cntrl_thresh = 0,
+#   response_n_umis_range = c(0, 1),
+#   response_n_nonzero_range = c(0, 1),
+#   p_mito_threshold = 1
+# )
+cat("Running QC (default settings)...\n")
 scep <- run_qc(
-  sceptre_object = scep,
-  n_nonzero_trt_thresh = 0,
-  n_nonzero_cntrl_thresh = 0,
-  response_n_umis_range = c(0, 1),
-  response_n_nonzero_range = c(0, 1),
-  p_mito_threshold = 1
+  sceptre_object = scep
 )
 
 cat("Running discovery analysis...\n")
 
-  start_time <- Sys.time()
-  scep <- run_discovery_analysis(
-    sceptre_object = scep,
-    parallel = FALSE,
-    output_amount = 2
-  )
-  end_time <- Sys.time()
+start_time <- Sys.time()
+scep <- run_discovery_analysis(
+  sceptre_object = scep,
+  parallel = FALSE,
+  output_amount = 2
+)
+end_time <- Sys.time()
 
 results <- get_result(scep, "run_discovery_analysis")
 write.csv(results, "association_computational_sceptre.csv", row.names = FALSE)

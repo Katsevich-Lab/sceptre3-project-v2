@@ -74,57 +74,57 @@ seu <- seu |>
 
 cat("  Preprocessing complete\n")
 
-  seu$gene <- factor(assign_vec[colnames(seu)])
+seu$gene <- factor(assign_vec[colnames(seu)])
 
-  # Calculate perturbation signatures (curr_target vs "nt")
-  seu <- CalcPerturbSig(
-    object        = seu,
-    assay         = "RNA",
-    slot          = "data",
-    gd.class      = "gene",
-    nt.cell.class = NT_NAME,
-    reduction     = "pca",
-    num.neighbors = 20,
-    new.assay.name = "PRTB"
+# Calculate perturbation signatures (curr_target vs "nt")
+seu <- CalcPerturbSig(
+  object        = seu,
+  assay         = "RNA",
+  slot          = "data",
+  gd.class      = "gene",
+  nt.cell.class = NT_NAME,
+  reduction     = "pca",
+  num.neighbors = 20,
+  new.assay.name = "PRTB"
+)
+
+# Run Mixscale
+seu <- RunMixscale(
+  object          = seu,
+  assay           = "PRTB",
+  slot            = "scale.data",
+  labels          = "gene",
+  nt.class.name   = NT_NAME,
+  de.assay        = "RNA",
+  max.de.genes    = 100,
+  new.class.name  = "mixscale_score",
+  fine.mode       = FALSE,
+  verbose         = FALSE
+)
+
+# Prepare arguments for DE testing (only test curr_target, not "nt")
+de_args <- list(
+  object          = seu,
+  assay           = "RNA",
+  slot            = "counts",
+  labels          = "gene",
+  nt.class.name   = NT_NAME,
+  PRTB_list       = all_targets,
+  logfc.threshold = 0,
+  min.cells.group = 0,
+  min.pct         = 0,
+  verbose         = FALSE
+)
+
+de_res <- do.call(Run_wmvRegDE, de_args)
+
+for(j in seq_along(de_res)) {
+  de_res[[j]] <- mutate(
+    de_res[[j]],
+      grna_target = names(de_res)[j],
+      response_id = rownames(de_res[[j]])
   )
-
-  # Run Mixscale
-  seu <- RunMixscale(
-    object          = seu,
-    assay           = "PRTB",
-    slot            = "scale.data",
-    labels          = "gene",
-    nt.class.name   = NT_NAME,
-    de.assay        = "RNA",
-    max.de.genes    = 100,
-    new.class.name  = "mixscale_score",
-    fine.mode       = FALSE,
-    verbose         = FALSE
-  )
-
-  # Prepare arguments for DE testing (only test curr_target, not "nt")
-  de_args <- list(
-    object          = seu,
-    assay           = "RNA",
-    slot            = "counts",
-    labels          = "gene",
-    nt.class.name   = NT_NAME,
-    PRTB_list       = all_targets, 
-    logfc.threshold = 0,
-    min.cells.group = 0,
-    min.pct         = 0,
-    verbose         = FALSE
-  )
-
-  de_res <- do.call(Run_wmvRegDE, de_args)
-
-  for(j in seq_along(de_res)) {
-    de_res[[j]] <- mutate(
-      de_res[[j]],
-        grna_target = names(de_res)[j],
-        response_id = rownames(de_res[[j]])
-    )
-  }
+}
 
 
 end_time <- Sys.time()
