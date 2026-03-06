@@ -38,7 +38,7 @@ cat("  gRNA matrix:", nrow(grna_matrix), "gRNAs x", ncol(grna_matrix), "cells\n"
 cat("  gRNA targets:", nrow(grna_target_df), "mappings\n")
 cat("  Cell covariates:", nrow(cell_covariates), "cells x", ncol(cell_covariates), "covariates\n")
 cat("  Discovery pairs:", nrow(discovery_pairs), "\n")
-cat("  Formula loaded from file\n")
+cat("  Formula loaded from file:", formula_string, "\n")
 
 # Determine which dataset this is (for MOI)
 DATASET_NAMES <- c("gasperini", "replogle")
