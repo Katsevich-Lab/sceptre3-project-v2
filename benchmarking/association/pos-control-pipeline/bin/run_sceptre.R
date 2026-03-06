@@ -108,7 +108,7 @@ scep <- run_qc(
 
 # Run power check on positive controls
 cat("Running power check...\n")
-scep <- run_power_check(sceptre_object = scep)
+scep <- run_power_check(sceptre_object = scep, output_amount = 2)
 
 results <- get_result(scep, "run_power_check")
 write.csv(results, "association_on_target_sceptre.csv", row.names = FALSE)

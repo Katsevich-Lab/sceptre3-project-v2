@@ -95,7 +95,8 @@ cat("Running discovery analysis...\n")
   start_time <- Sys.time()
   scep <- run_discovery_analysis(
     sceptre_object = scep,
-    parallel = FALSE
+    parallel = FALSE,
+    output_amount = 2
   )
   end_time <- Sys.time()
 

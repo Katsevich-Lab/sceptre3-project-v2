@@ -124,7 +124,8 @@ if(n_processors > 1) {
   scep <- run_discovery_analysis(
     sceptre_object = scep,
     parallel = TRUE,
-    n_processors = n_processors
+    n_processors = n_processors,
+    output_amount = 2
   )
   end_time <- Sys.time()
 
@@ -136,7 +137,8 @@ if(n_processors > 1) {
   start_time <- Sys.time()
   scep <- run_discovery_analysis(
     sceptre_object = scep,
-    parallel = FALSE
+    parallel = FALSE,
+    output_amount = 2
   )
   end_time <- Sys.time()
 
