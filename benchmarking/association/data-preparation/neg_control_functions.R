@@ -426,8 +426,10 @@ make_cell_info <- function(all_cell_idx, grna_indicator, grna_target_df_pseudo) 
 #'
 #' @param cell_covariates_subset Subset covariates with _full suffix
 #' @param cell_info Cell metadata with guide assignments
+#' @param fr_perturb_concat_string Delimiter for concatenating multiple targets per cell
 #' @return Data frame ready for FR-Perturb
-prepare_frperturb_covariates_highmoi <- function(cell_covariates_subset, cell_info) {
+prepare_frperturb_covariates_highmoi <- function(cell_covariates_subset, cell_info,
+                                                 fr_perturb_concat_string = "@") {
   # Select covariates for FR-Perturb
   cell_covs_frpert <- cell_covariates_subset |>
     transmute(
@@ -438,11 +440,11 @@ prepare_frperturb_covariates_highmoi <- function(cell_covariates_subset, cell_in
       grna_n_umis_full_log1p = log1p(grna_n_umis_full),
       prep_batch
     )
-  
-  # Create HIGH MOI perturbation column (concatenate with ":")
+
+  # Create HIGH MOI perturbation column (concatenate with fr_perturb_concat_string)
   perturb_df <- cell_info |>
     group_by(cell_idx) |>
-    summarise(perturbation = paste0(grna_target, collapse = ":")) |>
+    summarise(perturbation = paste0(grna_target, collapse = fr_perturb_concat_string)) |>
     dplyr::select(cell_idx, perturbation)
   
   # Join perturbation and log-transform numeric covariates
@@ -473,6 +475,7 @@ make_neg_control_gasperini <- function(
     num_nt_guides = 200,
     # min_cells_per_guide = 10,
     nt_name = "non-targeting",
+    fr_perturb_concat_string = "@",
     random_seed = 243535
 ) {
   cat("=== Gasperini Negative Control (HIGH MOI) ===\n\n")
@@ -589,11 +592,11 @@ make_neg_control_gasperini <- function(
   # 9b. FR-Perturb format
   cat("\n=== Writing FR-Perturb ===\n")
   
-  # Ensure ":" is safe delimiter
-  stopifnot(!any(grepl(":", grna_target_df_pseudo$grna_target)))
-  
+  # Ensure fr_perturb_concat_string is safe delimiter
+  stopifnot(!any(grepl(fr_perturb_concat_string, grna_target_df_pseudo$grna_target, fixed = TRUE)))
+
   cell_covs_frpert <- prepare_frperturb_covariates_highmoi(
-    cell_covariates_subset, cell_info_long
+    cell_covariates_subset, cell_info_long, fr_perturb_concat_string
   )
   
   cell_names <- rownames(cell_covs_frpert)

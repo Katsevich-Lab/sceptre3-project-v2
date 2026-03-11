@@ -63,6 +63,12 @@ if use_skew_t:
 else:
     print(f"Number of permutations: {num_perms}", flush=True)
 
+delimiter_lookup = {
+    "replogle": None,   # low MOI: single perturbation per cell, no delimiter needed
+    "gasperini": "@"    # high MOI: multiple targets concatenated with "@"
+}
+delimiter = delimiter_lookup[dataset_name]
+
 # Build command list
 # NOTE: No --control-perturbation-name specified - each pseudo-target compared against average
 cmd = [
@@ -71,9 +77,11 @@ cmd = [
     "--perturbation-column-name", "perturbation",
     "--covariates", covariates,
     "--compute-pval",
-    "--perturbation-delimiter", ":",
     "--out", "frperturb_results"
 ]
+
+if delimiter is not None:
+    cmd.extend(["--perturbation-delimiter", delimiter])
 
 # Conditionally add skew_t flag at the end
 if use_skew_t:
