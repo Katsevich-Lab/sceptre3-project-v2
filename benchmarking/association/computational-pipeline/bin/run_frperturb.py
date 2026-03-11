@@ -72,12 +72,14 @@ cmd = [
     "--perturbation-column-name", "perturbation",
     "--covariates", covariates,
     "--compute-pval",
-    "--perturbation-delimiter", ":",
     "--out", "frperturb_results"
 ]
 
 if moi == "low":
     cmd.extend(["--control-perturbation-name", "non-targeting"])
+else:
+    cmd.extend(["--perturbation-delimiter", "@"])
+
 
 # Conditionally add skew_t flag at the end
 if use_skew_t:

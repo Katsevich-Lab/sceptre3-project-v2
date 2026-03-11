@@ -264,7 +264,7 @@ write_frperturb_output <- function(
   # Create SingleCellExperiment object
   sce <- SingleCellExperiment(
     assays  = list(counts = response_subset_frpert),
-    colData = cell_covariates_frpert
+    colData = cell_covariates_frpert 
   )
 
   # Write H5AD file

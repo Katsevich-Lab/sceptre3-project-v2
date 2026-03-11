@@ -27,6 +27,8 @@ select_genes_random <- function(response_odm, num_genes, random_seed = NULL) {
   }
 }
 
+
+
 select_targets_random <- function(grna_target_df, num_targets, exclude = NULL, random_seed = NULL) {
   if(!is.null(random_seed)) {
     set.seed(random_seed)
@@ -200,6 +202,7 @@ prepare_cell_metadata_low_moi <- function(grna_indicator_matrix, grna_target_df,
     cell_covariates_subset = cell_covariates_subset
   ))
 }
+
 
 
 #' Main negative control data preparation function
