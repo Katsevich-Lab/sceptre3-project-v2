@@ -3,7 +3,7 @@
 #$ -cwd
 #$ -j y
 #$ -pe openmp 2
-#$ -l m_mem_free=20G
+#$ -l m_mem_free=2G
 export NXF_OPTS="-Xms500M -Xmx4G"
 
 source $HOME/.research_config
@@ -13,16 +13,31 @@ nextflow pull timothy-barry/sceptre-pipeline
 # REQUIRED INPUT ARGUMENTS
 ##########################
 
-dataset="gasperini"
+data_name="gasperini"
+assoc_dataset_name="gasperini_comp_ngenes=100_ntargets=100_ncells=50k_n_nonzero_p=0.75"
 
-data_directory=$LOCAL_BENCHMARKING_DIR"guide_assignment/input_data/"$dataset"/sceptre-pipeline/"
-# sceptre object
-sceptre_object_fp=$data_directory"sceptre_object.rds"
-# response ODM
-response_odm_fp=$data_directory"response.odm"
-# grna ODM
+data_dir=$LOCAL_BENCHMARKING_DIR"guide_assignment/input_data/"$data_name"/sceptre-pipeline/"
+assoc_input_dir=$LOCAL_BENCHMARKING_DIR"association/computational/input_data/"$dataset"/sceptre-pipeline/"
+
+sceptre_object_fp=$assoc_input_dir"sceptre_object.rds"
+
+response_odm_fp=$data_dir"response.odm"
 grna_odm_fp=$data_directory"grna.odm"
-output_fp=$LOCAL_BENCHMARKING_DIR"association/outputs/"$dataset"/sceptre-pipeline"
+
+
+output_fp=$LOCAL_BENCHMARKING_DIR"association/computational/outputs/sceptre-pipeline/"$assoc_dataset_name
+mkdir -p $output_fp
+
+
+# data_directory=$LOCAL_BENCHMARKING_DIR"guide_assignment/input_data/"$dataset"/sceptre-pipeline/"
+# sceptre object
+# sceptre_object_fp=$LOCAL_BENCHMARKING_DIR"guide_assignment/input_data/"$dataset"/sceptre-pipeline/"
+# sceptre_object_fp=$data_directory"sceptre_object.rds"
+# response ODM
+# response_odm_fp=$data_directory"response.odm"
+# grna ODM
+# grna_odm_fp=$data_directory"grna.odm"
+# output_fp=$LOCAL_BENCHMARKING_DIR"association/outputs/"$dataset"/sceptre-pipeline"
 
 #################
 # Invoke pipeline

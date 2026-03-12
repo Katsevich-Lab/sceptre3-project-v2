@@ -3,7 +3,8 @@
 #$ -j y
 #$ -cwd
 #$ -pe openmp 1              # use the existing PE
-#$ -l m_mem_free=20G         # scheduler reservation (per slot)
+#$ -l m_mem_free=200G         # scheduler reservation (per slot)
+
 
 set -euo pipefail
 
