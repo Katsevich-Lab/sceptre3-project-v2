@@ -7,8 +7,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SIF="${SCRIPT_DIR}/../../images/sceptre/sceptre.sif"
+SIF="../../images/sceptre/sceptre.sif"
 
 apptainer exec \
   --bind "$HOME":"$HOME" \
