@@ -80,19 +80,19 @@ scep <- assign_grnas(
 )
 
 # Very permissive QC for negative control
-cat("Running QC (very permissive for computational benchmarking)...\n")
-scep <- run_qc(
-  sceptre_object = scep,
-  n_nonzero_trt_thresh = 0,
-  n_nonzero_cntrl_thresh = 0,
-  response_n_umis_range = c(0, 1),
-  response_n_nonzero_range = c(0, 1),
-  p_mito_threshold = 1
-)
-# cat("Running QC (default settings)...\n")
+# cat("Running QC (very permissive for computational benchmarking)...\n")
 # scep <- run_qc(
-#   sceptre_object = scep
+#   sceptre_object = scep,
+#   n_nonzero_trt_thresh = 0,
+#   n_nonzero_cntrl_thresh = 0,
+#   response_n_umis_range = c(0, 1),
+#   response_n_nonzero_range = c(0, 1),
+#   p_mito_threshold = 1
 # )
+cat("Running QC (default settings)...\n")
+scep <- run_qc(
+  sceptre_object = scep
+)
 
 cat("Running discovery analysis...\n")
 
