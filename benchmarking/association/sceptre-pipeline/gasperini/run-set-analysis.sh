@@ -7,9 +7,4 @@
 
 set -euo pipefail
 
-SIF="../../images/sceptre/sceptre.sif"
-
-apptainer exec \
-  --bind "$HOME":"$HOME" \
-  "$SIF" \
-  R --vanilla -e 'source("set_analysis_parameters.R")'
+R --vanilla -e 'source("set_analysis_parameters.R")'
