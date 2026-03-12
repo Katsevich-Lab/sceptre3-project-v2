@@ -37,7 +37,8 @@ odm_to_sparse_matrix <- function(odm, genes, cell_idx) {
                        dims = c(length(genes), length(cell_idx)))
 }
 
-make_pos_control_gasperini <- function(dataset_name, response_odm, grna_odm, cell_covariates, scep_assn_mat, grna_target_df) {
+make_pos_control_gasperini <- function(dataset_name, response_odm, grna_odm, cell_covariates, scep_assn_mat, grna_target_df,
+                                       fr_perturb_concat_string = "@") {
   # idea:
   # 1. determine which targets are on-targets
   # 2. determine which cells express these, or NT cells
@@ -194,9 +195,9 @@ make_pos_control_gasperini <- function(dataset_name, response_odm, grna_odm, cel
                                     response_p_mito_full, prep_batch)
   # getting perturbation indicator
 
-  stopifnot(!any(grepl(":", on_targets)))  # ensure NO targets contain ":", making it safe as delimiter
+  stopifnot(!any(grepl(fr_perturb_concat_string, on_targets, fixed = TRUE)))  # ensure delimiter does not appear in targets
   # for each cell, we need to get the perturbations it got
-  perturb_df <- cell_info |> group_by(cell_name) |> summarise(perturbation = paste0(grna_target, collapse = ":"))
+  perturb_df <- cell_info |> group_by(cell_name) |> summarise(perturbation = paste0(grna_target, collapse = fr_perturb_concat_string))
   cell_covs_frpert <- left_join(
     cell_covs_frpert %>% mutate(cell_name = rownames(.)),
     perturb_df,

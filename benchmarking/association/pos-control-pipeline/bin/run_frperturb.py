@@ -62,6 +62,12 @@ print(f"Use skew_t: {use_skew_t}", flush=True)
 if not use_skew_t:
     print(f'num_resamps = {num_resamps}', flush=True)
 
+delimiter_lookup = {
+    "replogle": None,   # low MOI: single perturbation per cell, no delimiter needed
+    "gasperini": "@"    # high MOI: multiple targets concatenated with "@"
+}
+delimiter = delimiter_lookup[dataset_name]
+
 # Build command list
 cmd = [
     frperturb_script,
@@ -69,9 +75,11 @@ cmd = [
     "--perturbation-column-name", "perturbation",
     "--covariates", covariates,
     "--compute-pval",
-    "--perturbation-delimiter", ":",
     "--out", "frperturb_results"
 ]
+
+if delimiter is not None:
+    cmd.extend(["--perturbation-delimiter", delimiter])
 
 if moi == "low":
     cmd.extend(["--control-perturbation-name", "non-targeting"])
