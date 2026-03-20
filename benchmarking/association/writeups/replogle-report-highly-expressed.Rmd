@@ -1,0 +1,1487 @@
+---
+title: "replogle-analysis-highly-expressed"
+output:
+  pdf_document: default
+  html_document: default
+date: "2026-03-19"
+---
+
+
+This notebook makes figures to explore the following:
+
+analysis of positive and negative control on replogle, only using highly expressed genes.
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(stringr)
+  library(ggplot2)
+  library(readr)
+  library(tidyr)
+  library(purrr)
+  
+  library(scales)
+  library(pROC)
+  library(forcats)
+})
+```
+
+```{r, include=FALSE, echo=FALSE, message=FALSE}
+rm(list=ls())
+
+source("~/.Rprofile")
+
+load_associations_neg <- function(base_fp, run_name, dataset_name) {
+  curr_fp <- file.path(base_fp, run_name)
+  scep = read.csv(paste0(curr_fp,  "/association_neg_control_sceptre_", dataset_name, ".csv")) 
+  
+  if(file.exists(mixscale_fp <- paste0(curr_fp, "/association_neg_control_mixscale_", dataset_name, ".csv"))) {
+    mix = read.csv(mixscale_fp) |> dplyr::select(-gene_ID)  # redundant with `gene`
+  } else {
+    mix = NULL
+  }
+
+  # FR-Perturb: p-values and logFC (base e, not base 2, so we convert) 
+  frpert_pvals_raw <- read.table(paste0(curr_fp, "/frperturb/frperturb_results_", dataset_name, "_pvals.txt"))
+
+  # gotta melt 
+  frpert <- frpert_pvals_raw %>%
+    mutate(gene = rownames(.)) |>
+    pivot_longer(cols = !gene, values_to = "p_value_frpert", names_to = "target") |>
+    mutate(target = str_replace_all(target, "\\.", "-"))
+  
+  out = list(scep=scep, mix=mix, frpert = frpert)
+  out[!sapply(out, is.null)]
+}
+
+combine_and_prepare_results_neg <- function(results_list_neg, disc_pairs, eps = NULL) {
+  results_neg <- disc_pairs |>
+    transmute(
+      target = grna_target, gene = response_id
+    ) |>
+    left_join(results_list_neg$scep |> dplyr::select(target = grna_target, gene = response_id, n_nonzero_trt, n_nonzero_cntrl, p_value_scep = p_value),
+              by = c("target", "gene")
+    )  |>
+    left_join(results_list_neg$frpert |> dplyr::select(target, gene, p_value_frpert),
+              by = c("target", "gene")
+    ) |>
+    mutate(pair_type = "negative control")
+  
+  if(is.numeric(eps)) {
+    results_neg <- results_neg |>
+      mutate(
+        p_value_scep = pmax(pmin(p_value_scep, 1), eps),
+        p_value_frpert = pmax(pmin(p_value_frpert, 1), eps)
+      )
+  }
+  if("mix" %in% names(results_list_neg)) {
+    results_neg <- results_neg |>
+      left_join(results_list_neg$mix |> dplyr::select(target = grna_target, gene = response_id, p_value_mix = p_weight),
+                by = c("target", "gene")
+      )
+    if(is.numeric(eps)) {
+      results_neg <- results_neg |>
+        mutate(
+          p_value_mix = pmax(pmin(p_value_mix, 1), eps)
+        )
+    }
+  }
+  results_neg
+}
+
+load_associations_pos <- function(base_fp, run_name, dataset_name) {
+  base_fp = file.path(base_fp, run_name)
+  scep = read_csv(paste0(base_fp, "/association_on_target_sceptre_", dataset_name, ".csv"), show_col_types = FALSE) |>
+    dplyr::select(target = grna_target, gene = response_id, n_nonzero_trt, n_nonzero_cntrl, p_value_scep = p_value)
+  if(file.exists(mixscale_fp <- paste0(base_fp, "/association_on_target_mixscale_", dataset_name, ".csv"))) {
+    mix = suppressMessages(read_csv(mixscale_fp, show_col_types = FALSE)) |>
+      dplyr::select(
+        target = ...1,
+        gene = gene_ID, 
+        p_value_mix = p_weight
+      )
+  } else {
+    mix = NULL
+  }
+  
+  # FR-Perturb: p-values and logFC (base e, not base 2, so we convert) 
+  frpert_pvals_raw <- read.table(paste0(base_fp, "/frperturb/frperturb_results_", dataset_name, "_pvals.txt"))
+  frpert <- tibble(
+    target = rownames(frpert_pvals_raw),
+    gene = target,
+    p_value_frpert = sapply(rownames(frpert_pvals_raw), function(target) frpert_pvals_raw[target,target])
+  )
+
+  out = list(scep=scep, mix=mix, frpert = frpert)
+  out[!sapply(out, is.null)]
+}
+
+combine_and_prepare_results_pos <- function(results_list_pos, eps = NULL) {
+  results_pos <- results_list_pos$scep  |>
+    left_join(results_list_pos$frpert, by = c("target", "gene"))
+  if("mix" %in% names(results_list_pos)) {
+    results_pos <- results_pos |>
+      left_join(results_list_pos$mix, by = c("target", "gene"))
+  }
+  
+  if(is.numeric(eps)) {
+    results_pos <- results_pos |>
+      mutate(
+        p_value_scep = pmax(pmin(p_value_scep, 1), eps),
+        p_value_frpert = pmax(pmin(p_value_frpert, 1), eps)
+      )
+    
+    if("mix" %in% names(results_list_pos)) {
+      results_pos <- results_pos |>
+        mutate(
+          p_value_mix = pmax(pmin(p_value_mix, 1), eps)
+        )
+    }
+  }
+  results_pos
+}
+
+revlog_trans <- function (base = exp(1)) 
+{
+    trans <- function(x) {
+        -log(x, base)
+    }
+    inv <- function(x) {
+        base^(-x)
+    }
+    scales::trans_new(name = paste("revlog-", base, sep = ""), 
+        transform = trans, inverse = inv, breaks = scales::log_breaks(base = base), 
+        domain = c(1e-250, Inf))
+}
+
+#' `plot_pvalues()` creates QQ plots and optionally a volcano plot from a vector of p-values.
+#' This function can be used independently of the sceptre pipeline when you have p-values
+#' from external analyses.
+#'
+#' @param p_values A numeric vector of p-values (required)
+#' @param log_2_fold_change A numeric vector of log-2 fold changes (optional). If provided,
+#'   a volcano plot will be included. Must be the same length as p_values if provided.
+#' @param alpha Significance threshold for multiple testing (default 0.05)
+#' @param multiple_testing_method Method for p-value adjustment (default "BH" for Benjamini-Hochberg)
+#' @param plot_title A string to use as the overall plot title (default NULL, no title)
+#' @param x_limits For volcano plot: numeric vector of length 2 giving x-axis limits (default c(-1.5, 1.5))
+#' @param point_size Size of points in plots (default 0.55)
+#' @param transparency Transparency of points (default 0.8)
+#' @param return_indiv_plots If FALSE (default), returns combined cowplot; if TRUE, returns list of individual plots
+#' @param verbose If TRUE, prints diagnostic information (default FALSE)
+#'
+#' @return A cowplot object (if return_indiv_plots=FALSE) or list of ggplot objects (if return_indiv_plots=TRUE)
+#' @export
+#' @examples
+#' # With just p-values (3 plots: 2 QQ plots + text summary)
+#' pvals <- runif(1000)
+#' plot_pvalues(pvals)
+#'
+#' # With p-values and fold changes (4 plots: 2 QQ plots + volcano + text summary)
+#' pvals <- runif(1000)
+#' fc <- rnorm(1000, mean = 0, sd = 0.5)
+#' plot_pvalues(pvals, log_2_fold_change = fc, plot_title = "My Analysis Results")
+plot_pvalues <- function(p_values,
+                         is_significant = NULL,
+                         log_2_fold_change = NULL,
+                         alpha = 0.1,
+                         multiple_testing_method = "BH",
+                         plot_title = NULL,
+                         x_limits = c(-1.5, 1.5),
+                         point_size = 0.55,
+                         transparency = 0.8,
+                         return_indiv_plots = FALSE,
+                         verbose = FALSE,
+                         qc_name = NULL) {
+  
+  # Input validation
+  if (!is.numeric(p_values) || any(p_values < 0, na.rm = TRUE) || any(p_values > 1, na.rm = TRUE)) {
+    stop("p_values must be a numeric vector with values between 0 and 1")
+  }
+  
+  if (!is.null(log_2_fold_change)) {
+    if (!is.numeric(log_2_fold_change)) {
+      stop("log_2_fold_change must be a numeric vector")
+    }
+    if (length(log_2_fold_change) != length(p_values)) {
+      stop("log_2_fold_change must be the same length as p_values")
+    }
+  }
+  
+  # Remove NAs
+  valid_idx <- !is.na(p_values)
+  if (!is.null(log_2_fold_change)) {
+    valid_idx <- valid_idx & !is.na(log_2_fold_change)
+  }
+  
+  p_values <- p_values[valid_idx]
+  if (!is.null(log_2_fold_change)) {
+    log_2_fold_change <- log_2_fold_change[valid_idx]
+  }
+  
+  # Create data frame
+  if (is.null(log_2_fold_change)) {
+    result_df <- data.frame(p_value = p_values)
+  } else {
+    result_df <- data.frame(
+      p_value = p_values,
+      log_2_fold_change = log_2_fold_change
+    )
+  }
+  
+  # Calculate significance
+  if(is.null(is_significant)) {
+    # used to be result_df$significant but now just its own thing
+    significant <- stats::p.adjust(result_df$p_value, method = multiple_testing_method) < alpha
+  } else {
+    significant <- is_significant
+  }
+  
+  # Diagnostic output if requested
+  if (verbose) {
+    cat("=== Diagnostic Information ===\n")
+    cat("Number of p-values:", nrow(result_df), "\n")
+    cat("Range of raw p-values:",
+        min(result_df$p_value, na.rm = TRUE), "to",
+        max(result_df$p_value, na.rm = TRUE), "\n")
+    
+    adjusted_pvals <- stats::p.adjust(result_df$p_value, method = multiple_testing_method)
+    cat("Range of adjusted p-values:",
+        min(adjusted_pvals, na.rm = TRUE), "to",
+        max(adjusted_pvals, na.rm = TRUE), "\n")
+    
+    cat("Alpha threshold:", alpha, "\n")
+    cat("Number significant (raw p <", alpha, "):",
+        sum(result_df$p_value < alpha, na.rm = TRUE), "\n")
+    cat("Number significant (adjusted p <", alpha, "):",
+        sum(significant, na.rm = TRUE), "\n")
+    cat("Any NAs in significant column?:", any(is.na(significant)), "\n")
+    cat("==============================\n\n")
+  }
+  
+  # Get theme (you'll need this helper from sceptre)
+  my_theme <- sceptre:::get_my_theme()
+  
+  # Create QQ plot (bulk)
+  p1 <- ggplot2::ggplot(
+    data = result_df,
+    mapping = ggplot2::aes(y = p_value)
+  ) +
+    sceptre:::stat_qq_points(
+      ymin = 1e-8, size = point_size,
+      col = "dodgerblue3",
+      alpha = transparency
+    ) +
+    sceptre:::stat_qq_band() +
+    ggplot2::scale_x_reverse() +
+    ggplot2::scale_y_reverse() +
+    ggplot2::labs(x = "Expected null p-value", y = "Observed p-value") +
+    ggplot2::geom_abline(col = "black") +
+    ggplot2::ggtitle("QQ plot (bulk)") +
+    my_theme
+  
+  # Create QQ plot (tail)
+  p2 <- ggplot2::ggplot(
+    data = result_df,
+    mapping = ggplot2::aes(y = p_value)
+  ) +
+    sceptre:::stat_qq_points(
+      ymin = 1e-8, size = point_size,
+      col = "dodgerblue3",
+      alpha = transparency
+    ) +
+    sceptre:::stat_qq_band() +
+    ggplot2::scale_x_continuous(trans = sceptre:::revlog_trans(10)) +
+    ggplot2::scale_y_continuous(trans = sceptre:::revlog_trans(10)) +
+    ggplot2::labs(x = "Expected null p-value", y = "Observed p-value") +
+    ggplot2::geom_abline(col = "black") +
+    ggplot2::ggtitle("QQ plot (tail)") +
+    my_theme
+  
+  # Create volcano plot if fold changes provided
+  if (!is.null(log_2_fold_change)) {
+    discovery_set <- result_df |>
+      dplyr::filter(significant & !is.na(significant))
+    p_thresh <- if (nrow(discovery_set) >= 1L) max(discovery_set$p_value) else NA
+    
+    p3 <- sceptre:::make_volcano_plot(
+      discovery_result = result_df,
+      p_thresh = p_thresh,
+      transparency = transparency,
+      point_size = point_size,
+      x_limits = x_limits
+    )
+  }
+  
+  # Create text summary
+  n_rejections <- sum(significant, na.rm = TRUE)
+  n_tests <- nrow(result_df)
+  str <- paste0(
+    "Num. signif\n(at alpha ",
+    signif(alpha, 1), "):\n",
+    n_rejections, " of ", n_tests
+  )
+  if(!is.null(qc_name)) {
+    str <- paste0("QC: ", qc_name, "\n", str)
+  }
+  
+  p_text <- ggplot2::ggplot() +
+    ggplot2::annotate(geom = "text", label = str, x = 1.1, y = 1.2) +
+    ggplot2::theme_void() +
+    ggplot2::theme(panel.background = ggplot2::element_rect(fill = "white", color = "white")) +
+    ggplot2::xlim(c(0, 2)) +
+    ggplot2::ylim(c(0, 2))
+  
+  # Combine plots
+  if (return_indiv_plots) {
+    if (!is.null(log_2_fold_change)) {
+      out <- list(p1, p2, p3, p_text)
+    } else {
+      out <- list(p1, p2, p_text)
+    }
+  } else {
+    if (!is.null(log_2_fold_change)) {
+      plot_grid_obj <- cowplot::plot_grid(
+        p1, p2, p3, p_text,
+        labels = c("a", "b", "c", ""),
+        rel_heights = c(0.55, 0.45),
+        nrow = 2
+      )
+    } else {
+      plot_grid_obj <- cowplot::plot_grid(
+        p1, p2, p_text,
+        labels = c("a", "b", ""),
+        rel_widths = c(1, 1, 0.7),
+        nrow = 1
+      )
+    }
+    
+    # Add title if provided
+    if (!is.null(plot_title)) {
+      title_grob <- cowplot::ggdraw() +
+        cowplot::draw_label(
+          plot_title,
+          fontface = 'bold',
+          size = 14,
+          x = 0.5,
+          hjust = 0.5
+        )
+      
+      out <- cowplot::plot_grid(
+        title_grob,
+        plot_grid_obj,
+        ncol = 1,
+        rel_heights = c(0.05, 1)
+      )
+    } else {
+      out <- plot_grid_obj
+    }
+  }
+  
+  return(out)
+}
+
+objs_to_keep = c("combine_and_prepare_results_neg", "combine_and_prepare_results_pos", 
+"load_associations_neg", "load_associations_pos", "plot_pvalues", 
+"revlog_trans", "objs_to_keep")
+```
+
+
+
+```{r, echo=FALSE}
+
+response_n_nonzero_min = 0.75 # only take genes above this quantile 
+
+run_name_neg <- "run_repl_4000genes"
+dataset_name_neg <- "replogle-rd7_neg_control_4000genes"
+
+base_path_neg <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/neg-control")
+run_name_pos <- "run_all_skew-t"
+dataset_name_pos = "replogle-rd7_pos_control_large"
+
+base_path_pos <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/pos-control")
+path_to_outputs_pos <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/pos-control/outputs")
+
+# pre-computed replogle gene statistics
+replogle_gene_summary_stats = read_csv(
+  file.path(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "guide_assignment/input_data/replogle-rd7/sceptre-pipeline/gene_summary_stats.csv"
+  ),
+  show_col_types = FALSE
+)
+
+highly_expressed_genes = replogle_gene_summary_stats |>
+  filter(gene_n_nonzero >= quantile(gene_n_nonzero, response_n_nonzero_min)) |>
+  pull(gene)
+
+
+datasets <- c(neg = dataset_name_neg, pos = dataset_name_pos)
+for(i in 1:length(datasets)) {
+  dataset = datasets[i]
+  dataset_type = names(datasets)[i]
+  dataset_name = get(paste0("dataset_name_", dataset_type))
+  curr_scep_fp = paste0(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "/association/", dataset_type, "-control/input_data/",
+    dataset_name, "/sceptre"
+  )
+  response_matrix = read_rds(file.path(curr_scep_fp, "response_matrix.rds"))
+  cat("Dataset:", dataset_name, ": #genes =", nrow(response_matrix), "; #cells =", ncol(response_matrix), "\n")
+  
+  
+  grna_target_df = read_csv(file.path(curr_scep_fp, "grna_target_data_frame.csv"), show_col_types = FALSE)
+  targets_table = table(grna_target_df$grna_target)
+  cat("#guides =", nrow(grna_target_df), "; #targets =", length(targets_table), "; avg # guides / target:", mean(targets_table) |> round(2), "\n")
+  
+  grna_matrix = read_rds(file.path(curr_scep_fp, "grna_matrix.rds"))
+  num_cells_per_guide = Matrix::rowSums(grna_matrix)
+  num_guides_per_cell = Matrix::colSums(grna_matrix)
+  num_cells_per_target = tibble(
+    num_cells_per_guide = num_cells_per_guide,
+    guide = rownames(grna_matrix)
+  ) |>
+    left_join(
+      grna_target_df, by = join_by(guide == grna_id)
+    ) |>
+    group_by(grna_target) |>
+    summarize(num_cells_per_target = sum(num_cells_per_guide)) |>
+    pull(num_cells_per_target)
+  
+  cat("# cells per guide: median =", median(num_cells_per_guide), "; min =", min(num_cells_per_guide), "; max =", max(num_cells_per_guide), "\n")
+
+  cat("# cells per target: avg =", median(num_cells_per_target), "; min =", min(num_cells_per_target), "; max =", max(num_cells_per_target), "\n")
+
+    cat("# guides per cell: moi (avg) =", mean(num_guides_per_cell), "; min =", min(num_guides_per_cell), "; max =", max(num_guides_per_cell), "\n")
+    
+    if(file.exists(disc_path <- file.path(curr_scep_fp, "discovery_pairs.rds"))) {
+      curr_disc_pairs = read_rds(disc_path)
+      cat("# discovery pairs:", nrow(curr_disc_pairs), "\n")
+    }
+
+    if(i < length(datasets))
+      cat("\n ******************************************************************* \n")
+}
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+## negative controls ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+disc_pairs <- read_rds(file.path(base_path_neg, "input_data", dataset_name_neg, "sceptre/discovery_pairs.rds")) |>
+  as_tibble()
+
+results_list_neg <- load_associations_neg(file.path(base_path_neg, "outputs"), run_name_neg, dataset_name_neg)
+results_neg <- combine_and_prepare_results_neg(results_list_neg, disc_pairs, eps = 1e-250)
+
+results_neg[,c("p_value_scep", "p_value_mix", "p_value_frpert")] |>
+  apply(2, function(v) sum(is.na(v)))
+
+# results_neg$p_value_mix[is.na(results_neg$p_value_mix)] <- 1 
+
+
+
+## positive controls ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+results_list_pos = load_associations_pos(file.path(base_path_pos, "outputs"), run_name_pos, dataset_name_pos)
+results_pos <- combine_and_prepare_results_pos(results_list_pos, eps = 1e-250)
+
+results_pos[,c("p_value_scep", "p_value_mix", "p_value_frpert")] |>
+  apply(2, function(v) sum(is.na(v)))
+
+# TODO i have some NAs. How to handle?
+
+
+## adding in sample sizes ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cell_info <- read_csv(
+  file.path(base_path_pos, "input_data", dataset_name_pos, "cell_info.csv"),
+  show_col_types = FALSE)
+
+sample_sizes <- cell_info |> group_by(grna_target) |> summarize(n = n()) |>
+    dplyr::select(target = grna_target, num_expressed_cells = n) |>
+  mutate(pair_type = "positive control")
+
+results <- rbind(
+  results_neg,
+  mutate(results_pos, pair_type = "positive control")[names(results_neg)]
+) |> mutate(
+  pass_qc_75 = gene %in% highly_expressed_genes,
+  pass_qc_trt = n_nonzero_trt > 0,
+  pass_qc_def = n_nonzero_trt >= 7 & n_nonzero_cntrl >= 7
+) |>
+  as_tibble() |>
+  left_join(
+    sample_sizes,
+    by = c("target", "pair_type")
+  )
+
+# any post-qc NAs?
+apply(results, 2, function(v) sum(is.na(v)))
+```
+
+
+```{r, echo=FALSE}
+cat("In total:", sum(results$pair_type == "positive control"), "pos. ctrl pairs and", 
+    sum(results$pair_type == "negative control"), "neg. ctrl pairs.\n")
+# cat("QC: ", sum(!results$pass_qc), " pairs filtered out. ", sum(results$pass_qc), " kept using top", response_n_nonzero_min * 100, "% n_nonzero genes.\n", sep="")
+
+results |> dplyr::select(starts_with("pass_qc")) |> apply(2, table)
+```
+
+
+
+
+```{r, echo=FALSE, fig.cap="No method is fully calibrated on Replogle."}
+
+make_qq_plots <- function(results, qc_col) {
+  pvals = results[results[,qc_col,drop=TRUE], ] |>
+    dplyr::filter(pair_type == "negative control") |>
+    dplyr::select(starts_with("p_value"))
+  plot_names = gsub("p_value_", "", names(pvals))
+  
+  lapply(plot_names, function(name) {
+    plot_pvalues(dplyr::select(pvals, ends_with(name))[,1,drop=T], qc_name=qc_col)
+  }) |>
+    set_names(plot_names)
+}
+
+qqs_75 = make_qq_plots(results, "pass_qc_75")
+qqs_trt = make_qq_plots(results, "pass_qc_trt")
+qqs_def = make_qq_plots(results, "pass_qc_def")
+
+cowplot::plot_grid(plotlist = qqs_75, ncol = 1, labels = names(qqs_75))
+cowplot::plot_grid(plotlist = qqs_trt, ncol = 1, labels = names(qqs_trt))
+cowplot::plot_grid(plotlist = qqs_def, ncol = 1, labels = names(qqs_def))
+
+```
+
+
+
+```{r, echo=FALSE, fig.cap="ROC analysis"}
+
+make_roc_plot <- function(results, qc_col) {
+  if(!setequal(results$pair_type, c("positive control", "negative control"))) {
+    stop("'pair_type' contains unexpected values.")
+  }
+  
+  results_clean <- results |>
+    mutate(
+      is_positive = pair_type == "positive control"
+    ) %>%
+    dplyr::filter(.data[[qc_col]])
+  
+  
+  p_val_cols = names(results_clean)[grepl("^p_value_", names(results_clean))]
+  
+  roc_list <- lapply(names())
+  
+  
+  
+}
+
+
+results_clean <- results |>
+  mutate(
+    is_positive = pair_type == "positive control"
+  ) |>
+  filter(pass_qc)
+
+
+roc_sceptre <- roc(
+  response = results_clean$is_positive,
+  predictor = -log10(results_clean$p_value_scep),
+  levels = c(FALSE, TRUE),
+  direction = "<"
+)
+
+roc_mixscale <- roc(
+  response = results_clean$is_positive,
+  predictor = -log10(results_clean$p_value_mix),
+  levels = c(FALSE, TRUE),
+  direction = "<"
+)
+
+roc_frperturb <- roc(
+  response = results_clean$is_positive,
+  predictor = -log10(results_clean$p_value_frpert),
+  levels = c(FALSE, TRUE),
+  direction = "<"
+)
+
+# Calculate AUCs
+auc_sceptre <- auc(roc_sceptre)
+auc_mixscale <- auc(roc_mixscale)
+auc_frperturb <- auc(roc_frperturb)
+
+roc_data <- bind_rows(
+  tibble(
+    method = "SCEPTRE",
+    fpr = 1 - roc_sceptre$specificities,
+    tpr = roc_sceptre$sensitivities,
+    auc = as.numeric(auc_sceptre)  # Convert to numeric
+  ),
+  tibble(
+    method = "Mixscale",
+    fpr = 1 - roc_mixscale$specificities,
+    tpr = roc_mixscale$sensitivities,
+    auc = as.numeric(auc_mixscale)  # Convert to numeric
+  ),
+  tibble(
+    method = "FR-Perturb",
+    fpr = 1 - roc_frperturb$specificities,
+    tpr = roc_frperturb$sensitivities,
+    auc = as.numeric(auc_frperturb)  # Convert to numeric
+  )
+) |>
+  mutate(
+    method_label = sprintf("%s (AUC = %.3f)", method, auc)
+  )
+
+
+# Plot ROC curves
+p_roc <- ggplot(roc_data, aes(x = fpr, y = tpr, color = method_label)) +
+  geom_line(linewidth = 1.2) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") +
+  scale_color_manual(
+    values = c("#E41A1C", "#4DAF4A", "#377EB8"),
+    name = NULL
+  ) +
+  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  labs(
+    title = bquote("Separation of pos. and neg. control pairs"),
+    x = "False Positive Rate",
+    y = "Recall"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = c(0.65, 0.25),
+    legend.background = element_rect(fill = "white", color = "gray80"),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  ) +
+  coord_fixed()
+
+print(p_roc)
+
+```
+
+
+```{r, echo=FALSE}
+results |>
+  filter(n_nonzero_trt == 0, pass_qc) |> 
+  mutate(
+    cntrl_is_pos = n_nonzero_cntrl > 0
+  ) |>
+  dplyr::select(p_value_scep, p_value_mix, pair_type = pair_type) |>
+  pivot_longer(cols = c("p_value_scep", "p_value_mix"), names_to = "method", values_to = "p-value") |>
+  mutate(
+    method = ifelse(method == "p_value_scep", "sceptre p-value", "mixscale p-value")
+  ) |>
+  ggplot(aes(x = `p-value`, fill = method)) +
+  geom_histogram(bins=50) +
+  facet_wrap(method ~ pair_type) +
+  # scale_y_continuous(trans = "log1p") +
+  # scale_y_log10() +
+  theme_bw() +
+  labs(y ="count", title = "All highly expressed pairs with n_nonzero_trt = 0")
+```
+
+
+
+```{r, echo=FALSE}
+
+results_clean <- results |>
+  mutate(
+    is_positive = pair_type == "positive control"
+  ) |>
+  filter(pass_qc, n_nonzero_trt > 0)
+
+roc_sceptre <- roc(
+  response = results_clean$is_positive,
+  predictor = -log10(results_clean$p_value_scep),
+  levels = c(FALSE, TRUE),
+  direction = "<"
+)
+
+roc_mixscale <- roc(
+  response = results_clean$is_positive,
+  predictor = -log10(results_clean$p_value_mix),
+  levels = c(FALSE, TRUE),
+  direction = "<"
+)
+
+roc_frperturb <- roc(
+  response = results_clean$is_positive,
+  predictor = -log10(results_clean$p_value_frpert),
+  levels = c(FALSE, TRUE),
+  direction = "<"
+)
+
+# Calculate AUCs
+auc_sceptre <- auc(roc_sceptre)
+auc_mixscale <- auc(roc_mixscale)
+auc_frperturb <- auc(roc_frperturb)
+
+
+roc_data <- bind_rows(
+  tibble(
+    method = "SCEPTRE",
+    fpr = 1 - roc_sceptre$specificities,
+    tpr = roc_sceptre$sensitivities,
+    auc = as.numeric(auc_sceptre)  # Convert to numeric
+  ),
+  tibble(
+    method = "Mixscale",
+    fpr = 1 - roc_mixscale$specificities,
+    tpr = roc_mixscale$sensitivities,
+    auc = as.numeric(auc_mixscale)  # Convert to numeric
+  ),
+  tibble(
+    method = "FR-Perturb",
+    fpr = 1 - roc_frperturb$specificities,
+    tpr = roc_frperturb$sensitivities,
+    auc = as.numeric(auc_frperturb)  # Convert to numeric
+  )
+) |>
+  mutate(
+    method_label = sprintf("%s (AUC = %.3f)", method, auc)
+  )
+
+
+# Plot ROC curves
+p_roc <- ggplot(roc_data, aes(x = fpr, y = tpr, color = method_label)) +
+  geom_line(linewidth = 1.2) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") +
+  scale_color_manual(
+    values = c("#E41A1C", "#4DAF4A", "#377EB8"),
+    name = NULL
+  ) +
+  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  labs(
+    title = bquote("Separation of pairs with n_nonzero_trt > 0"),
+    x = "False Positive Rate",
+    y = "Recall"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = c(0.65, 0.25),
+    legend.background = element_rect(fill = "white", color = "gray80"),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  ) +
+  coord_fixed()
+
+print(p_roc)
+```
+
+
+
+
+
+
+
+```{r, echo=FALSE}
+
+## ---- inputs you may want to edit ----
+results_in <- results %>% filter(pass_qc)   # change/remove if you already filtered
+pair_col   <- "pair_type"
+pos_label  <- "positive control"
+neg_label  <- "negative control"
+
+# FP budgets you want
+fp_budgets <- c(0, 1,2,3,4,5,10,15,20,25,30)
+
+# map: column name in results -> method label
+p_cols <- c(
+  p_value_scep   = "SCEPTRE",
+  p_value_frpert = "FR-Perturb",
+  p_value_mix    = "MIXSCALE"
+)
+
+p_floor <- 1e-250  # clamps 0/tiny p-values so ordering is well-defined
+
+## ---- compute TP-at-FP-budget table ----
+p_cols_present <- p_cols[names(p_cols) %in% names(results_in)]
+stopifnot(length(p_cols_present) > 0, pair_col %in% names(results_in))
+
+long <- results_in %>%
+  select(all_of(c(pair_col, names(p_cols_present)))) %>%
+  pivot_longer(cols = all_of(names(p_cols_present)),
+               names_to = "method_col",
+               values_to = "p_value") %>%
+  mutate(
+    method    = recode(method_col, !!!as.list(p_cols_present)),
+    pair_type = .data[[pair_col]],
+    p_value   = pmax(as.numeric(p_value), p_floor)
+  ) %>%
+  filter(pair_type %in% c(pos_label, neg_label), !is.na(p_value)) %>%
+  select(method, pair_type, p_value)
+
+tp_at_fp <- function(df_m) {
+  n_pos <- sum(df_m$pair_type == pos_label)
+  n_neg <- sum(df_m$pair_type == neg_label)
+
+  steps <- df_m %>%
+    mutate(is_pos = pair_type == pos_label,
+           is_neg = pair_type == neg_label) %>%
+    group_by(p_value) %>%
+    summarise(tp_step = sum(is_pos), fp_step = sum(is_neg), .groups = "drop") %>%
+    arrange(p_value) %>%
+    mutate(tp_cum = cumsum(tp_step),
+           fp_cum = cumsum(fp_step))
+
+  idx <- findInterval(fp_budgets, steps$fp_cum)  # 0..nrow(steps)
+
+  fp_actual <- integer(length(fp_budgets))
+  tp        <- integer(length(fp_budgets))
+  threshold <- rep(NA_real_, length(fp_budgets))
+
+  ok <- idx > 0
+  fp_actual[ok] <- steps$fp_cum[idx[ok]]
+  tp[ok]        <- steps$tp_cum[idx[ok]]
+  threshold[ok] <- steps$p_value[idx[ok]]
+
+  # if budget allows all negatives, set threshold=1 and recover all positives
+  big <- fp_budgets >= n_neg
+  fp_actual[big] <- n_neg
+  tp[big]        <- n_pos
+  threshold[big] <- 1
+
+  tibble(
+    fp_budget = fp_budgets,
+    fp_actual = fp_actual,
+    threshold = threshold,
+    tp        = tp,
+    tpr       = if (n_pos > 0) tp / n_pos else NA_real_,
+    n_pos     = n_pos,
+    n_neg     = n_neg
+  )
+}
+
+tp_fp_budget_tbl <- long %>%
+  group_by(method) %>%
+  group_modify(~ tp_at_fp(.x)) %>%
+  ungroup()
+
+
+# pick what to plot on y: "tp" or "tpr"
+y_var <- "tpr"   # change to "tpr" if you want recall instead of counts
+
+plot_df <- tp_fp_budget_tbl %>%
+  arrange(method, fp_actual, fp_budget) %>%
+  group_by(method, fp_actual) %>%              # collapse duplicates from ties
+  summarise(
+    tp  = max(tp),
+    tpr = max(tpr),
+    .groups = "drop"
+  )
+
+p_tp_fp <- ggplot(plot_df, aes(x = fp_actual, y = .data[[y_var]], color = method)) +
+  geom_step(direction = "hv", linewidth = 1.1) +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = sort(unique(tp_fp_budget_tbl$fp_budget))) +
+  labs(
+    title = paste0(if (y_var == "tp") "#TP recovered vs #FP allowed" else "TPR vs #FP allowed"),
+    x = "#FP (neg. controls called significant)",
+    y = if (y_var == "tp") "#TP (pos. controls recovered)" else "TPR (recall on positives)",
+    color = "Method"
+  ) +
+  theme_bw(base_size = 14)
+
+print(p_tp_fp)
+```
+
+```{r, echo=FALSE}
+
+set.seed(1)
+
+## ---- inputs ----
+q_target <- 0.1
+N_total  <- 5000
+pi_grid  <- c(.01, .02, .05, .075, .1, .15, .2)
+B        <- 100
+p_floor  <- 1e-250
+
+
+p_cols <- c(
+  p_value_scep   = "sceptre",
+  p_value_frpert = "FR-Perturb",
+  p_value_mix    = "MIXSCALE"
+)
+
+## ---- prep pools of p-values (pos/neg), long format ----
+p_cols_present <- p_cols[names(p_cols) %in% names(results)]
+stopifnot(length(p_cols_present) > 0)
+
+pools <- results %>%
+  filter(pass_qc,
+         pair_type %in% c("positive control", "negative control")) %>%
+  select(pair_type, all_of(names(p_cols_present))) %>%
+  pivot_longer(all_of(names(p_cols_present)),
+               names_to = "method_col",
+               values_to = "p") %>%
+  filter(!is.na(p)) %>%
+  mutate(
+    method = recode(method_col, !!!as.list(p_cols_present)),
+    p      = pmax(as.numeric(p), p_floor),
+    is_pos = pair_type == "positive control",
+    is_neg = pair_type == "negative control"
+  ) %>%
+  select(method, p, is_pos, is_neg)
+
+## ---- simulate FDP at q=0.1 across pi and methods ----
+bench <- tidyr::crossing(method = unique(pools$method), pi = pi_grid, b = seq_len(B)) %>%
+  group_by(method, pi, b) %>%
+  group_modify(~{
+    m  <- .y$method
+    pi <- .y$pi
+
+    pos_pool <- pools %>% filter(method == m, is_pos) %>% pull(p)
+    neg_pool <- pools %>% filter(method == m, is_neg) %>% pull(p)
+
+    N_pos <- floor(pi * N_total)
+    N_neg <- N_total - N_pos
+
+    # sample (use replacement only if needed)
+    if(N_pos > length(pos_pool)) {
+      stop("Trying to sample ", N_pos, "pos. pairs from ", length(pos_pool), " total.\n pi = ", round(pi, 4))
+    }
+    pos_samp <- sample(pos_pool, size = N_pos, replace = FALSE)#(N_pos > length(pos_pool)))
+    neg_samp <- sample(neg_pool, size = N_neg, replace = FALSE)#(N_neg > length(neg_pool)))
+
+    p_mix <- c(pos_samp, neg_samp)
+    lab   <- c(rep(TRUE, N_pos), rep(FALSE, N_neg))  # TRUE = positive control
+
+    p_adj <- p.adjust(p_mix, method = "BH")
+    disc  <- p_adj <= q_target
+
+    tp <- sum(disc &  lab)
+    fp <- sum(disc & !lab)
+    D  <- tp + fp
+
+    tibble(
+      discoveries = D,
+      tp = tp,
+      fp = fp,
+      fdp = ifelse(D == 0, 0, fp / D),
+      tpr = ifelse(N_pos == 0, NA_real_, tp / N_pos)
+    )
+  }) %>%
+  ungroup()
+
+bench_sum <- bench %>%
+  group_by(method, pi) %>%
+  summarise(
+    fdp_med = mean(fdp, na.rm = TRUE),
+    fdp_lo  = quantile(fdp, 0.25, na.rm = TRUE),
+    fdp_hi  = quantile(fdp, 0.75, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(method = fct_inorder(method))
+
+## ---- plot: FDP vs pi at q=0.1 ----
+p_fdp_vs_pi_q01 <- ggplot(bench_sum, aes(x = pi, y = fdp_med, color = method, fill = method)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2) +
+  geom_ribbon(aes(ymin = fdp_lo, ymax = fdp_hi), alpha = 0.15, color = NA) +
+  geom_hline(yintercept = q_target, linetype = "dashed") +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0,NA)) +
+  labs(
+    x = expression(pi~"(downsample / prevalence)"),
+    y = "FDP",
+    color = "Method",
+    fill  = "Method",
+    title = bquote("FDP vs " * pi * " at BH q = " * .(q_target) * " (N=" * .(N_total) * ", B=" * .(B) * ")")
+  ) +
+  theme_bw(base_size = 14)
+
+print(p_fdp_vs_pi_q01)
+```
+
+
+
+```{r, echo=FALSE}
+
+set.seed(1)
+
+q_target <- 0.1
+N_total  <- 50000
+pi_grid  <-  c(0.001, 0.002, 0.005, .0075, 0.01, 0.015)  
+B        <- 100
+p_floor  <- 1e-250
+
+
+p_cols <- c(
+  p_value_scep   = "sceptre",
+  p_value_frpert = "FR-Perturb",
+  p_value_mix    = "MIXSCALE"
+)
+
+## ---- prep pools of p-values (pos/neg), long format ----
+p_cols_present <- p_cols[names(p_cols) %in% names(results)]
+stopifnot(length(p_cols_present) > 0)
+
+pools <- results %>%
+  filter(pass_qc,
+         pair_type %in% c("positive control", "negative control")) %>%
+  select(pair_type, all_of(names(p_cols_present))) %>%
+  pivot_longer(all_of(names(p_cols_present)),
+               names_to = "method_col",
+               values_to = "p") %>%
+  filter(!is.na(p)) %>%
+  mutate(
+    method = recode(method_col, !!!as.list(p_cols_present)),
+    p      = pmax(as.numeric(p), p_floor),
+    is_pos = pair_type == "positive control",
+    is_neg = pair_type == "negative control"
+  ) %>%
+  select(method, p, is_pos, is_neg)
+
+## ---- simulate FDP at q=0.1 across pi and methods ----
+bench <- tidyr::crossing(method = unique(pools$method), pi = pi_grid, b = seq_len(B)) %>%
+  group_by(method, pi, b) %>%
+  group_modify(~{
+    m  <- .y$method
+    pi <- .y$pi
+
+    pos_pool <- pools %>% filter(method == m, is_pos) %>% pull(p)
+    neg_pool <- pools %>% filter(method == m, is_neg) %>% pull(p)
+
+    N_pos <- floor(pi * N_total)
+    N_neg <- N_total - N_pos
+
+    # sample (use replacement only if needed)
+    if(N_pos > length(pos_pool)) {
+      stop("Trying to sample ", N_pos, "pos. pairs from ", length(pos_pool), " total.\n pi = ", round(pi, 4))
+    }
+    pos_samp <- sample(pos_pool, size = N_pos, replace = FALSE)#(N_pos > length(pos_pool)))
+    neg_samp <- sample(neg_pool, size = N_neg, replace = FALSE)#(N_neg > length(neg_pool)))
+
+    p_mix <- c(pos_samp, neg_samp)
+    lab   <- c(rep(TRUE, N_pos), rep(FALSE, N_neg))  # TRUE = positive control
+
+    p_adj <- p.adjust(p_mix, method = "BH")
+    disc  <- p_adj <= q_target
+
+    tp <- sum(disc &  lab)
+    fp <- sum(disc & !lab)
+    D  <- tp + fp
+
+    tibble(
+      discoveries = D,
+      tp = tp,
+      fp = fp,
+      fdp = ifelse(D == 0, 0, fp / D),
+      tpr = ifelse(N_pos == 0, NA_real_, tp / N_pos)
+    )
+  }) %>%
+  ungroup()
+
+bench_sum <- bench %>%
+  group_by(method, pi) %>%
+  summarise(
+    fdp_med = mean(fdp, na.rm = TRUE),
+    fdp_lo  = quantile(fdp, 0.25, na.rm = TRUE),
+    fdp_hi  = quantile(fdp, 0.75, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(method = fct_inorder(method))
+
+## ---- plot: FDP vs pi at q=0.1 ----
+p_fdp_vs_pi_q01 <- ggplot(bench_sum, aes(x = pi, y = fdp_med, color = method, fill = method)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2) +
+  geom_ribbon(aes(ymin = fdp_lo, ymax = fdp_hi), alpha = 0.15, color = NA) +
+  geom_hline(yintercept = q_target, linetype = "dashed") +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    x = expression(pi~"(downsample / prevalence)"),
+    y = "FDP",
+    color = "Method",
+    fill  = "Method",
+    title = bquote("FDP vs " * pi * " at BH q = " * .(q_target) * " (N=" * .(N_total) * ", B=" * .(B) * ")")
+  ) +
+  theme_bw(base_size = 14)
+
+print(p_fdp_vs_pi_q01)
+```
+
+
+
+
+```{r, echo=FALSE}
+df_long_no_zero_trt <- results %>%
+  filter(pass_qc) %>%
+  filter(pair_type %in% c("positive control", "negative control")) %>%
+  select(pair_type, p_value_scep, p_value_frpert, p_value_mix) %>%
+  pivot_longer(starts_with("p_value_"),
+               names_to = "method",
+               values_to = "p") %>%
+  filter(!is.na(p)) %>%
+  mutate(
+    method = recode(method,
+                    p_value_scep   = "sceptre",
+                    p_value_frpert = "FR-Perturb",
+                    p_value_mix    = "MIXSCALE"),
+    is_pos = pair_type == "positive control",
+    is_neg = pair_type == "negative control"
+  )
+
+df_long <- df_long_no_zero_trt
+# Choose a fixed total N for the synthetic benchmark
+N_total <- 50000
+
+# Prevalence grid (fraction positives)
+pi_grid <- c(0.001, 0.002, 0.005, .0075, 0.01, 0.015)  
+# this is the most we could get
+stopifnot(max(pi_grid) <= sum(results$pair_type == "positive control") / N_total)
+
+# q grid (same as above, or denser)
+q_grid <- c(1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1)
+
+B <- 100  # number of resamples per (pi, method)
+
+# Split long df into pos/neg pools per method
+pools <- df_long %>%
+  select(method, p, is_pos, is_neg)
+
+bench <- crossing(method = unique(pools$method),
+                  pi = pi_grid,
+                  b = seq_len(B)) %>%
+  group_by(method, pi, b) %>%
+  group_modify(~{
+    m <- .y$method
+    pi <- .y$pi
+
+    pos_pool <- pools %>% filter(method == m, is_pos) %>% pull(p)
+    neg_pool <- pools %>% filter(method == m, is_neg) %>% pull(p)
+
+    N_pos <- floor(pi * N_total)
+    N_neg <- N_total - N_pos
+    
+    if(N_pos > length(pos_pool)) {
+      stop("cannot sample more pos pairs than there are.")
+    }
+
+    # sample with replacement if needed
+    pos_samp <- sample(pos_pool, size = N_pos, replace = FALSE)# N_pos > length(pos_pool))
+    neg_samp <- sample(neg_pool, size = N_neg, replace = FALSE)# N_neg > length(neg_pool))
+
+    p_mix <- c(pos_samp, neg_samp)
+    lab   <- c(rep(TRUE, N_pos), rep(FALSE, N_neg))  # TRUE = positive
+
+    p_adj <- p.adjust(p_mix, method = "BH")
+
+    map_dfr(q_grid, function(q) {
+      discover <- p_adj <= q
+      tp <- sum(discover & lab)
+      fp <- sum(discover & !lab)
+      disc <- tp + fp
+      tibble(
+        q = q,
+        tp = tp,
+        fp = fp,
+        discoveries = disc,
+        fdp = ifelse(disc == 0, 0, fp / disc),
+        tpr = ifelse(N_pos == 0, NA_real_, tp / N_pos)
+      )
+    })
+  }) %>%
+  ungroup()
+
+# Summarise across resamples
+bench_sum <- bench %>%
+  group_by(method, pi, q) %>%
+  summarise(
+    fdp_med = mean(fdp, na.rm = TRUE),
+    fdp_lo  = quantile(fdp, 0.25, na.rm = TRUE),
+    fdp_hi  = quantile(fdp, 0.75, na.rm = TRUE),
+    tpr_med = mean(tpr, na.rm = TRUE),
+    tpr_lo  = quantile(tpr, 0.25, na.rm = TRUE),
+    tpr_hi  = quantile(tpr, 0.75, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Plot: FDP vs q, faceted by prevalence
+p_fdp_pi <- ggplot(bench_sum, aes(x = q, y = fdp_med, color = method)) +
+  geom_line(linewidth = 0.9) +
+  geom_ribbon(aes(ymin = fdp_lo, ymax = fdp_hi, fill = method),
+              alpha = 0.15, color = NA) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  scale_x_log10() +
+  scale_y_log10() +
+  facet_wrap(~ pi, labeller = label_bquote(pi == .(pi))) +
+  labs(
+    x = "BH target level (q)",
+    y = bquote("Observed FDP (mean across" ~ .(B) ~ "resamples)"),
+    color = "Method",
+    fill = "Method",
+    title = bquote("BH FDP vs q under different positive fractions (fixed total N =" ~ .(N_total/1000) * "k)")
+  ) +
+  theme_bw()
+
+p_fdp_pi
+
+```
+
+
+```{r, echo=FALSE}
+cor_mats = results |>
+  dplyr::filter(pass_qc) %>%
+  split(.$pair_type) |>
+  lapply(function(df) df |> dplyr::select(p_value_scep, p_value_mix, p_value_frpert) |>
+  cor(method="spearman") |> as.data.frame())
+
+cor_results = data.frame(
+  method1 = c("scep", "scep", "mix", "scep", "scep", "mix"),
+  method2 = c("mix", "frpert", "frpert", "mix", "frpert", "frpert"),
+  pair_type = rep(c("negative control", "positive control"), each = 3)
+) |>
+  mutate(
+    method1 = paste0("p_value_", method1), method2 = paste0("p_value_", method2),
+    spearman=0
+  )
+for(i in 1:nrow(cor_results)) {
+  cor_results$spearman[i] = cor_mats[[cor_results$pair_type[i]]][cor_results$method1[i], cor_results$method2[i]]
+}
+cor_results$spearman = round(cor_results$spearman, 2)
+print(as_tibble(cor_results))
+```
+
+
+```{r, echo=FALSE}
+# idea: make pairwise scatter plots of pos and neg p-values
+
+num_negs = 20000
+
+
+results_downsamp <- results %>%
+  dplyr::filter(pass_qc) %>%
+  group_by(pair_type) %>%
+  group_modify(~ {if (.y$pair_type == "negative control") slice_sample(.x, n = num_negs) else .x}) %>%
+  ungroup() |>
+  dplyr::select(pair_type, p_value_scep, p_value_frpert, p_value_mix) 
+
+df <- results_downsamp %>%
+  mutate(
+    across(starts_with("p_value_"), ~ -log10(.x))
+  )
+
+pairs <- list(
+  c("p_value_scep",   "p_value_frpert"),
+  c("p_value_scep",   "p_value_mix"),
+  c("p_value_frpert", "p_value_mix")
+)
+
+# 3) build plotting data: one row per observation per pair
+pair_df <- map_dfr(pairs, \(cols) {
+  x_col <- cols[1]
+  y_col <- cols[2]
+  tibble(
+    pair_type = df$pair_type,
+    x = df[[x_col]],
+    y = df[[y_col]],
+    pair = paste("x =", sub("^p_value_", "", x_col), " y =", sub("^p_value_", "", y_col))
+  )
+})
+
+# 4) plot: 3 rows (pairs) x 2 cols (pair_type)
+ggplot(pair_df, aes(x = x, y = y)) +
+  geom_point(alpha = 0.25, size = 0.6) +
+  # coord_equal() +
+  facet_wrap(pair_type ~ pair, scales = "free") +
+  labs(
+    x = expression(-log[10](p)~"(method 1)"),
+    y = expression(-log[10](p)~"(method 2)")
+  ) +
+  theme_bw(base_size = 14) +
+  ggtitle("Comparisons of p-values by method and pair type")
+
+```
+
+
+```{r, echo=FALSE}
+
+results_long <- results |>
+  dplyr::filter(
+    pass_qc, 
+    pair_type == "positive control"
+  ) |>
+  dplyr::select(p_value_scep, p_value_frpert, p_value_mix, num_expressed_cells, gene) |>
+  pivot_longer(
+    cols = starts_with("p_value"), names_to = "method", values_to = "p_value"
+  ) |>
+  mutate(
+    method = gsub("p_value_", "", method),
+    neglog10 = -log10(p_value)
+  )
+
+
+# Single plot with all methods + LOESS per method
+ggplot(results_long, aes(x = num_expressed_cells, y = neglog10, color = method)) +
+  geom_point(alpha = 0.25, size = 0.7) +
+  geom_smooth(method = "loess", se = FALSE, linewidth = 0.9, formula = y~x) +
+  scale_x_continuous(trans = "log10") +   # comment out if you want raw n
+  labs(
+    title = "Replogle on-targets: -log10(p-value) vs num. expressed cells",
+    x = "Number of on-target cells (log10 scale)",
+    y = expression(-log[10](p)),
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank())
+```
+
+
+```{r}
+# compute
+# make plot of times, add in pipeline
+# and repeat for memory
+
+run_name = "run_repl_mix_scep_highly_expressed_seq"
+scep_pipe_run = "replogle-rd7_comp_ngenes=560_ntargets=225_ncells=90k_n_nonzero_p=0.75"
+base_path_comp = file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/computational")
+scep_pipe = read_tsv(
+  file.path(base_path_comp, "outputs/sceptre-pipeline", scep_pipe_run, "tracing/trace.tsv"),
+  show_col_types = FALSE
+)
+
+
+## hard coded for now!!
+# assoc_start_process = "prepare_association_analysis"
+# start_time = dplyr::filter(scep_pipe, process == assoc_start_process) |>
+#   pull(start)
+# end_time = max(scep_pipe$complete)
+# elapsed = end_time - start_time
+# 
+# # max memory per node all under 1GB
+# scep_pipe |>
+#   dplyr::filter(start >= start_time) |>
+#   pull(peak_rss) |>
+#   sort()
+
+pair_data = data.frame(
+  ngenes = c(430, 500, 560),
+  ntargets = c(175, 200, 225),
+  npairs = c(75, 100, 125)
+)
+
+trace_file = read_tsv(
+  file.path(base_path_comp, "outputs", run_name, "trace.txt"),
+  show_col_types = FALSE
+) |>
+  tidyr::extract(
+    tag,
+    into = c("ngenes", "ntargets"),
+    regex = "ngenes=([0-9]+)_ntargets=([0-9]+)",
+    remove = FALSE,
+    convert = TRUE
+  ) |>
+  transmute(
+    method = gsub("_computational", "", process, ignore.case = TRUE) |> tolower(),
+    peak_rss, realtime,
+    num_cells =  sub(".*ncells=([^_]+).*", "\\1", tag), ngenes, ntargets
+  ) |>
+  mutate(
+    peak_rss_gb = case_when(
+      str_detect(peak_rss, regex("\\bGB\\b", ignore_case = TRUE)) ~ parse_number(peak_rss),
+      str_detect(peak_rss, regex("\\bMB\\b", ignore_case = TRUE)) ~ parse_number(peak_rss) / 1024,
+      TRUE ~ NA_real_
+    )
+  ) |>
+  mutate(
+    h = parse_number(str_extract(realtime, "\\d+(?=h)")),
+    m = parse_number(str_extract(realtime, "\\d+(?=m)")),
+    s = parse_number(str_extract(realtime, "\\d+(?=s)")),
+    h = coalesce(h, 0),
+    m = coalesce(m, 0),
+    s = coalesce(s, 0),
+    realtime_sec = 3600*h + 60*m + s,
+    realtime_min = realtime_sec / 60
+  ) %>%
+  select(-h, -m, -s) |>
+  left_join(pair_data, by = c("ngenes", "ntargets"))
+
+
+# helper: seconds -> "HH:MM:SS"
+sec_to_hms <- function(x) {
+  x <- round(x)
+  h <- x %/% 3600
+  m <- (x %% 3600) %/% 60
+  s <- x %% 60
+  sprintf("%02d:%02d:%02d", h, m, s)
+}
+
+# df_plot should have: realtime_sec, method, num_cells, npairs
+x_levels <- c(75, 100, 125)
+x_labels <- paste0(x_levels, "k")
+
+df_plot2 <- trace_file %>%
+  mutate(
+    npairs_cat = factor(npairs, levels = x_levels, labels = x_labels),
+    num_cells  = factor(num_cells)
+  )
+
+# custom point: (125k, 00:13:30) = 810 sec
+df_pipeline <- tibble(
+  npairs_cat   = factor("125k", levels = x_labels),
+  realtime_sec = 13 * 60 + 30,
+  method       = "sceptre-pipeline"
+)
+
+ggplot(df_plot2, aes(
+  x = npairs_cat, y = realtime_sec,
+  color = method, shape = num_cells,
+  group = interaction(method, num_cells)
+)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 4) +
+  geom_point(
+    data = df_pipeline,
+    aes(x = npairs_cat, y = realtime_sec, color = method),
+    inherit.aes = FALSE,
+    shape = 8, size = 3
+  ) +
+  scale_y_continuous(
+    limits = c(0, NA),                 # include 00:00:00
+    labels = sec_to_hms
+  ) +
+  labs(
+    x = "Number of pairs",
+    y = "Runtime (HH:MM:SS)",
+    color = "method",
+    shape = "num_cells",
+    title = "Runtime for highly expressed genes"
+  ) +
+  theme_bw(base_size = 14)
+
+```
+
+```{r}
+ggplot(df_plot2, aes(
+  x = npairs_cat, y = peak_rss_gb,
+  color = method, shape = num_cells,
+  group = interaction(method, num_cells)
+)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 4) +
+  scale_y_log10() +
+  labs(
+    x = "Number of pairs",
+    y = "Peak RSS (log10 scale)",
+    color = "method",
+    shape = "num_cells",
+    title = "Memory for highly expressed genes"
+  ) +
+  theme_bw(base_size = 14)
+```
+
