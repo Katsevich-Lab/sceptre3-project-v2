@@ -563,7 +563,7 @@ cowplot::plot_grid(plotlist = qqs_def, ncol = 1, labels = names(qqs_def))
 
 
 
-```{r, echo=FALSE, fig.cap="ROC analysis"}
+```{r, echo=FALSE, fig.cap="ROC analysis",fig.show='hold', fig.align='center', out.width='100%'}
 
 make_roc_plot <- function(results, qc_col) {
   if(!setequal(results$pair_type, c("positive control", "negative control"))) {
@@ -579,765 +579,646 @@ make_roc_plot <- function(results, qc_col) {
   
   p_val_cols = names(results_clean)[grepl("^p_value_", names(results_clean))]
   
-  roc_list <- lapply(names())
+  roc_list <- lapply(p_val_cols, function(pval_col) {
+    roc(
+      response = results_clean$is_positive,
+      predictor = -log10(results_clean[,pval_col,drop=TRUE]),
+      levels = c(FALSE, TRUE),
+      direction = "<"
+    )
+  })
   
+  aucs <- lapply(roc_list, auc)
   
-  
-}
-
-
-results_clean <- results |>
-  mutate(
-    is_positive = pair_type == "positive control"
-  ) |>
-  filter(pass_qc)
-
-
-roc_sceptre <- roc(
-  response = results_clean$is_positive,
-  predictor = -log10(results_clean$p_value_scep),
-  levels = c(FALSE, TRUE),
-  direction = "<"
-)
-
-roc_mixscale <- roc(
-  response = results_clean$is_positive,
-  predictor = -log10(results_clean$p_value_mix),
-  levels = c(FALSE, TRUE),
-  direction = "<"
-)
-
-roc_frperturb <- roc(
-  response = results_clean$is_positive,
-  predictor = -log10(results_clean$p_value_frpert),
-  levels = c(FALSE, TRUE),
-  direction = "<"
-)
-
-# Calculate AUCs
-auc_sceptre <- auc(roc_sceptre)
-auc_mixscale <- auc(roc_mixscale)
-auc_frperturb <- auc(roc_frperturb)
-
-roc_data <- bind_rows(
-  tibble(
-    method = "SCEPTRE",
-    fpr = 1 - roc_sceptre$specificities,
-    tpr = roc_sceptre$sensitivities,
-    auc = as.numeric(auc_sceptre)  # Convert to numeric
-  ),
-  tibble(
-    method = "Mixscale",
-    fpr = 1 - roc_mixscale$specificities,
-    tpr = roc_mixscale$sensitivities,
-    auc = as.numeric(auc_mixscale)  # Convert to numeric
-  ),
-  tibble(
-    method = "FR-Perturb",
-    fpr = 1 - roc_frperturb$specificities,
-    tpr = roc_frperturb$sensitivities,
-    auc = as.numeric(auc_frperturb)  # Convert to numeric
+  roc_data = Map(
+    function(roc_, auc_, name_) {
+    tibble(
+    method = name_,
+    fpr = 1 - roc_$specificities,
+    tpr = roc_$sensitivities,
+    auc = as.numeric(auc_)  # Convert to numeric
   )
-) |>
+  }, 
+  roc_list, aucs, gsub("p_value_", "", p_val_cols)
+  ) |>
+    do.call(what=rbind) |>
   mutate(
     method_label = sprintf("%s (AUC = %.3f)", method, auc)
   )
 
-
-# Plot ROC curves
-p_roc <- ggplot(roc_data, aes(x = fpr, y = tpr, color = method_label)) +
-  geom_line(linewidth = 1.2) +
-  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") +
-  scale_color_manual(
-    values = c("#E41A1C", "#4DAF4A", "#377EB8"),
-    name = NULL
-  ) +
-  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
-  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
-  labs(
-    title = bquote("Separation of pos. and neg. control pairs"),
-    x = "False Positive Rate",
-    y = "Recall"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = c(0.65, 0.25),
-    legend.background = element_rect(fill = "white", color = "gray80"),
-    plot.title = element_text(hjust = 0.5, face = "bold")
-  ) +
-  coord_fixed()
-
-print(p_roc)
-
-```
-
-
-```{r, echo=FALSE}
-results |>
-  filter(n_nonzero_trt == 0, pass_qc) |> 
-  mutate(
-    cntrl_is_pos = n_nonzero_cntrl > 0
-  ) |>
-  dplyr::select(p_value_scep, p_value_mix, pair_type = pair_type) |>
-  pivot_longer(cols = c("p_value_scep", "p_value_mix"), names_to = "method", values_to = "p-value") |>
-  mutate(
-    method = ifelse(method == "p_value_scep", "sceptre p-value", "mixscale p-value")
-  ) |>
-  ggplot(aes(x = `p-value`, fill = method)) +
-  geom_histogram(bins=50) +
-  facet_wrap(method ~ pair_type) +
-  # scale_y_continuous(trans = "log1p") +
-  # scale_y_log10() +
-  theme_bw() +
-  labs(y ="count", title = "All highly expressed pairs with n_nonzero_trt = 0")
-```
-
-
-
-```{r, echo=FALSE}
-
-results_clean <- results |>
-  mutate(
-    is_positive = pair_type == "positive control"
-  ) |>
-  filter(pass_qc, n_nonzero_trt > 0)
-
-roc_sceptre <- roc(
-  response = results_clean$is_positive,
-  predictor = -log10(results_clean$p_value_scep),
-  levels = c(FALSE, TRUE),
-  direction = "<"
-)
-
-roc_mixscale <- roc(
-  response = results_clean$is_positive,
-  predictor = -log10(results_clean$p_value_mix),
-  levels = c(FALSE, TRUE),
-  direction = "<"
-)
-
-roc_frperturb <- roc(
-  response = results_clean$is_positive,
-  predictor = -log10(results_clean$p_value_frpert),
-  levels = c(FALSE, TRUE),
-  direction = "<"
-)
-
-# Calculate AUCs
-auc_sceptre <- auc(roc_sceptre)
-auc_mixscale <- auc(roc_mixscale)
-auc_frperturb <- auc(roc_frperturb)
-
-
-roc_data <- bind_rows(
-  tibble(
-    method = "SCEPTRE",
-    fpr = 1 - roc_sceptre$specificities,
-    tpr = roc_sceptre$sensitivities,
-    auc = as.numeric(auc_sceptre)  # Convert to numeric
-  ),
-  tibble(
-    method = "Mixscale",
-    fpr = 1 - roc_mixscale$specificities,
-    tpr = roc_mixscale$sensitivities,
-    auc = as.numeric(auc_mixscale)  # Convert to numeric
-  ),
-  tibble(
-    method = "FR-Perturb",
-    fpr = 1 - roc_frperturb$specificities,
-    tpr = roc_frperturb$sensitivities,
-    auc = as.numeric(auc_frperturb)  # Convert to numeric
-  )
-) |>
-  mutate(
-    method_label = sprintf("%s (AUC = %.3f)", method, auc)
-  )
-
-
-# Plot ROC curves
-p_roc <- ggplot(roc_data, aes(x = fpr, y = tpr, color = method_label)) +
-  geom_line(linewidth = 1.2) +
-  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") +
-  scale_color_manual(
-    values = c("#E41A1C", "#4DAF4A", "#377EB8"),
-    name = NULL
-  ) +
-  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
-  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
-  labs(
-    title = bquote("Separation of pairs with n_nonzero_trt > 0"),
-    x = "False Positive Rate",
-    y = "Recall"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = c(0.65, 0.25),
-    legend.background = element_rect(fill = "white", color = "gray80"),
-    plot.title = element_text(hjust = 0.5, face = "bold")
-  ) +
-  coord_fixed()
-
-print(p_roc)
-```
-
-
-
-
-
-
-
-```{r, echo=FALSE}
-
-## ---- inputs you may want to edit ----
-results_in <- results %>% filter(pass_qc)   # change/remove if you already filtered
-pair_col   <- "pair_type"
-pos_label  <- "positive control"
-neg_label  <- "negative control"
-
-# FP budgets you want
-fp_budgets <- c(0, 1,2,3,4,5,10,15,20,25,30)
-
-# map: column name in results -> method label
-p_cols <- c(
-  p_value_scep   = "SCEPTRE",
-  p_value_frpert = "FR-Perturb",
-  p_value_mix    = "MIXSCALE"
-)
-
-p_floor <- 1e-250  # clamps 0/tiny p-values so ordering is well-defined
-
-## ---- compute TP-at-FP-budget table ----
-p_cols_present <- p_cols[names(p_cols) %in% names(results_in)]
-stopifnot(length(p_cols_present) > 0, pair_col %in% names(results_in))
-
-long <- results_in %>%
-  select(all_of(c(pair_col, names(p_cols_present)))) %>%
-  pivot_longer(cols = all_of(names(p_cols_present)),
-               names_to = "method_col",
-               values_to = "p_value") %>%
-  mutate(
-    method    = recode(method_col, !!!as.list(p_cols_present)),
-    pair_type = .data[[pair_col]],
-    p_value   = pmax(as.numeric(p_value), p_floor)
-  ) %>%
-  filter(pair_type %in% c(pos_label, neg_label), !is.na(p_value)) %>%
-  select(method, pair_type, p_value)
-
-tp_at_fp <- function(df_m) {
-  n_pos <- sum(df_m$pair_type == pos_label)
-  n_neg <- sum(df_m$pair_type == neg_label)
-
-  steps <- df_m %>%
-    mutate(is_pos = pair_type == pos_label,
-           is_neg = pair_type == neg_label) %>%
-    group_by(p_value) %>%
-    summarise(tp_step = sum(is_pos), fp_step = sum(is_neg), .groups = "drop") %>%
-    arrange(p_value) %>%
-    mutate(tp_cum = cumsum(tp_step),
-           fp_cum = cumsum(fp_step))
-
-  idx <- findInterval(fp_budgets, steps$fp_cum)  # 0..nrow(steps)
-
-  fp_actual <- integer(length(fp_budgets))
-  tp        <- integer(length(fp_budgets))
-  threshold <- rep(NA_real_, length(fp_budgets))
-
-  ok <- idx > 0
-  fp_actual[ok] <- steps$fp_cum[idx[ok]]
-  tp[ok]        <- steps$tp_cum[idx[ok]]
-  threshold[ok] <- steps$p_value[idx[ok]]
-
-  # if budget allows all negatives, set threshold=1 and recover all positives
-  big <- fp_budgets >= n_neg
-  fp_actual[big] <- n_neg
-  tp[big]        <- n_pos
-  threshold[big] <- 1
-
-  tibble(
-    fp_budget = fp_budgets,
-    fp_actual = fp_actual,
-    threshold = threshold,
-    tp        = tp,
-    tpr       = if (n_pos > 0) tp / n_pos else NA_real_,
-    n_pos     = n_pos,
-    n_neg     = n_neg
-  )
+  # Plot ROC curves
+  p_roc <- ggplot(roc_data, aes(x = fpr, y = tpr, color = method_label)) +
+    geom_line(linewidth = 1.2) +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") +
+    scale_color_manual(
+      values = c("#E41A1C", "#4DAF4A", "#377EB8"),
+      name = NULL
+    ) +
+    scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
+    scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+    labs(
+      title = bquote("Separation of pos. and neg. (QC =" ~ .(qc_col) *")"),
+      x = "False Positive Rate",
+      y = "Recall"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      legend.position = c(0.65, 0.25),
+      legend.background = element_rect(fill = "white", color = "gray80"),
+      plot.title = element_text(hjust = 0.5, face = "bold")
+    ) +
+    coord_fixed()
+  p_roc
 }
 
-tp_fp_budget_tbl <- long %>%
-  group_by(method) %>%
-  group_modify(~ tp_at_fp(.x)) %>%
-  ungroup()
+make_roc_plot(results, "pass_qc_75")
 
 
-# pick what to plot on y: "tp" or "tpr"
-y_var <- "tpr"   # change to "tpr" if you want recall instead of counts
 
-plot_df <- tp_fp_budget_tbl %>%
-  arrange(method, fp_actual, fp_budget) %>%
-  group_by(method, fp_actual) %>%              # collapse duplicates from ties
-  summarise(
-    tp  = max(tp),
-    tpr = max(tpr),
-    .groups = "drop"
-  )
-
-p_tp_fp <- ggplot(plot_df, aes(x = fp_actual, y = .data[[y_var]], color = method)) +
-  geom_step(direction = "hv", linewidth = 1.1) +
-  geom_point(size = 2) +
-  scale_x_continuous(breaks = sort(unique(tp_fp_budget_tbl$fp_budget))) +
-  labs(
-    title = paste0(if (y_var == "tp") "#TP recovered vs #FP allowed" else "TPR vs #FP allowed"),
-    x = "#FP (neg. controls called significant)",
-    y = if (y_var == "tp") "#TP (pos. controls recovered)" else "TPR (recall on positives)",
-    color = "Method"
-  ) +
-  theme_bw(base_size = 14)
-
-print(p_tp_fp)
 ```
 
-```{r, echo=FALSE}
-
-set.seed(1)
-
-## ---- inputs ----
-q_target <- 0.1
-N_total  <- 5000
-pi_grid  <- c(.01, .02, .05, .075, .1, .15, .2)
-B        <- 100
-p_floor  <- 1e-250
-
-
-p_cols <- c(
-  p_value_scep   = "sceptre",
-  p_value_frpert = "FR-Perturb",
-  p_value_mix    = "MIXSCALE"
-)
-
-## ---- prep pools of p-values (pos/neg), long format ----
-p_cols_present <- p_cols[names(p_cols) %in% names(results)]
-stopifnot(length(p_cols_present) > 0)
-
-pools <- results %>%
-  filter(pass_qc,
-         pair_type %in% c("positive control", "negative control")) %>%
-  select(pair_type, all_of(names(p_cols_present))) %>%
-  pivot_longer(all_of(names(p_cols_present)),
-               names_to = "method_col",
-               values_to = "p") %>%
-  filter(!is.na(p)) %>%
-  mutate(
-    method = recode(method_col, !!!as.list(p_cols_present)),
-    p      = pmax(as.numeric(p), p_floor),
-    is_pos = pair_type == "positive control",
-    is_neg = pair_type == "negative control"
-  ) %>%
-  select(method, p, is_pos, is_neg)
-
-## ---- simulate FDP at q=0.1 across pi and methods ----
-bench <- tidyr::crossing(method = unique(pools$method), pi = pi_grid, b = seq_len(B)) %>%
-  group_by(method, pi, b) %>%
-  group_modify(~{
-    m  <- .y$method
-    pi <- .y$pi
-
-    pos_pool <- pools %>% filter(method == m, is_pos) %>% pull(p)
-    neg_pool <- pools %>% filter(method == m, is_neg) %>% pull(p)
-
-    N_pos <- floor(pi * N_total)
-    N_neg <- N_total - N_pos
-
-    # sample (use replacement only if needed)
-    if(N_pos > length(pos_pool)) {
-      stop("Trying to sample ", N_pos, "pos. pairs from ", length(pos_pool), " total.\n pi = ", round(pi, 4))
-    }
-    pos_samp <- sample(pos_pool, size = N_pos, replace = FALSE)#(N_pos > length(pos_pool)))
-    neg_samp <- sample(neg_pool, size = N_neg, replace = FALSE)#(N_neg > length(neg_pool)))
-
-    p_mix <- c(pos_samp, neg_samp)
-    lab   <- c(rep(TRUE, N_pos), rep(FALSE, N_neg))  # TRUE = positive control
-
-    p_adj <- p.adjust(p_mix, method = "BH")
-    disc  <- p_adj <= q_target
-
-    tp <- sum(disc &  lab)
-    fp <- sum(disc & !lab)
-    D  <- tp + fp
-
-    tibble(
-      discoveries = D,
-      tp = tp,
-      fp = fp,
-      fdp = ifelse(D == 0, 0, fp / D),
-      tpr = ifelse(N_pos == 0, NA_real_, tp / N_pos)
-    )
-  }) %>%
-  ungroup()
-
-bench_sum <- bench %>%
-  group_by(method, pi) %>%
-  summarise(
-    fdp_med = mean(fdp, na.rm = TRUE),
-    fdp_lo  = quantile(fdp, 0.25, na.rm = TRUE),
-    fdp_hi  = quantile(fdp, 0.75, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(method = fct_inorder(method))
-
-## ---- plot: FDP vs pi at q=0.1 ----
-p_fdp_vs_pi_q01 <- ggplot(bench_sum, aes(x = pi, y = fdp_med, color = method, fill = method)) +
-  geom_line(linewidth = 0.9) +
-  geom_point(size = 2) +
-  geom_ribbon(aes(ymin = fdp_lo, ymax = fdp_hi), alpha = 0.15, color = NA) +
-  geom_hline(yintercept = q_target, linetype = "dashed") +
-  scale_x_continuous(labels = scales::percent_format(accuracy = 0.1)) +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0,NA)) +
-  labs(
-    x = expression(pi~"(downsample / prevalence)"),
-    y = "FDP",
-    color = "Method",
-    fill  = "Method",
-    title = bquote("FDP vs " * pi * " at BH q = " * .(q_target) * " (N=" * .(N_total) * ", B=" * .(B) * ")")
-  ) +
-  theme_bw(base_size = 14)
-
-print(p_fdp_vs_pi_q01)
+```{r,fig.show='hold', fig.align='center', out.width='100%', echo=FALSE}
+make_roc_plot(results, "pass_qc_trt")
 ```
 
+
+```{r,fig.show='hold', fig.align='center', out.width='100%', echo=FALSE}
+make_roc_plot(results, "pass_qc_def")
+```
 
 
 ```{r, echo=FALSE}
 
-set.seed(1)
 
-q_target <- 0.1
-N_total  <- 50000
-pi_grid  <-  c(0.001, 0.002, 0.005, .0075, 0.01, 0.015)  
-B        <- 100
-p_floor  <- 1e-250
+make_trt_zero_plots <- function(results, qc_col=NULL, cols_to_drop=NULL) {
+  results_ = results
+  if(!is.null(qc_col)) {
+    results_ = results[results[,qc_col,drop=TRUE],]
+    title_ = paste0("All pairs with n_nonzero_trt = 0 (QC = ", qc_col, ")")
+  } else {
+    title_ = paste0("All pairs with n_nonzero_trt = 0 (no QC)")
+  }
+  if(!is.null(cols_to_drop)) {
+    results_ = dplyr::select(results_, -any_of(cols_to_drop))
+  }
+  
+  results_ |>
+    filter(n_nonzero_trt == 0) |> 
+    # mutate(
+    #   cntrl_is_pos = n_nonzero_cntrl > 0
+    # ) |>
+    dplyr::select(starts_with("p_value"), pair_type = pair_type) |>
+    pivot_longer(cols = !pair_type, names_to = "method", values_to = "p-value") |>
+    ggplot(aes(x = `p-value`, fill = method)) +
+    geom_histogram(bins=50) +
+    facet_wrap(method ~ pair_type, scales="free_y")+
+    theme_bw() +
+    labs(y ="count", title = title_)
+}
+
+make_trt_zero_plots(results, "pass_qc_75", "p_value_frpert")
+make_trt_zero_plots(results, cols_to_drop = "p_value_frpert")
 
 
-p_cols <- c(
-  p_value_scep   = "sceptre",
-  p_value_frpert = "FR-Perturb",
-  p_value_mix    = "MIXSCALE"
-)
 
-## ---- prep pools of p-values (pos/neg), long format ----
-p_cols_present <- p_cols[names(p_cols) %in% names(results)]
-stopifnot(length(p_cols_present) > 0)
-
-pools <- results %>%
-  filter(pass_qc,
-         pair_type %in% c("positive control", "negative control")) %>%
-  select(pair_type, all_of(names(p_cols_present))) %>%
-  pivot_longer(all_of(names(p_cols_present)),
-               names_to = "method_col",
-               values_to = "p") %>%
-  filter(!is.na(p)) %>%
-  mutate(
-    method = recode(method_col, !!!as.list(p_cols_present)),
-    p      = pmax(as.numeric(p), p_floor),
-    is_pos = pair_type == "positive control",
-    is_neg = pair_type == "negative control"
-  ) %>%
-  select(method, p, is_pos, is_neg)
-
-## ---- simulate FDP at q=0.1 across pi and methods ----
-bench <- tidyr::crossing(method = unique(pools$method), pi = pi_grid, b = seq_len(B)) %>%
-  group_by(method, pi, b) %>%
-  group_modify(~{
-    m  <- .y$method
-    pi <- .y$pi
-
-    pos_pool <- pools %>% filter(method == m, is_pos) %>% pull(p)
-    neg_pool <- pools %>% filter(method == m, is_neg) %>% pull(p)
-
-    N_pos <- floor(pi * N_total)
-    N_neg <- N_total - N_pos
-
-    # sample (use replacement only if needed)
-    if(N_pos > length(pos_pool)) {
-      stop("Trying to sample ", N_pos, "pos. pairs from ", length(pos_pool), " total.\n pi = ", round(pi, 4))
-    }
-    pos_samp <- sample(pos_pool, size = N_pos, replace = FALSE)#(N_pos > length(pos_pool)))
-    neg_samp <- sample(neg_pool, size = N_neg, replace = FALSE)#(N_neg > length(neg_pool)))
-
-    p_mix <- c(pos_samp, neg_samp)
-    lab   <- c(rep(TRUE, N_pos), rep(FALSE, N_neg))  # TRUE = positive control
-
-    p_adj <- p.adjust(p_mix, method = "BH")
-    disc  <- p_adj <= q_target
-
-    tp <- sum(disc &  lab)
-    fp <- sum(disc & !lab)
-    D  <- tp + fp
-
-    tibble(
-      discoveries = D,
-      tp = tp,
-      fp = fp,
-      fdp = ifelse(D == 0, 0, fp / D),
-      tpr = ifelse(N_pos == 0, NA_real_, tp / N_pos)
-    )
-  }) %>%
-  ungroup()
-
-bench_sum <- bench %>%
-  group_by(method, pi) %>%
-  summarise(
-    fdp_med = mean(fdp, na.rm = TRUE),
-    fdp_lo  = quantile(fdp, 0.25, na.rm = TRUE),
-    fdp_hi  = quantile(fdp, 0.75, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(method = fct_inorder(method))
-
-## ---- plot: FDP vs pi at q=0.1 ----
-p_fdp_vs_pi_q01 <- ggplot(bench_sum, aes(x = pi, y = fdp_med, color = method, fill = method)) +
-  geom_line(linewidth = 0.9) +
-  geom_point(size = 2) +
-  geom_ribbon(aes(ymin = fdp_lo, ymax = fdp_hi), alpha = 0.15, color = NA) +
-  geom_hline(yintercept = q_target, linetype = "dashed") +
-  scale_x_continuous(labels = scales::percent_format(accuracy = 0.1)) +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
-  labs(
-    x = expression(pi~"(downsample / prevalence)"),
-    y = "FDP",
-    color = "Method",
-    fill  = "Method",
-    title = bquote("FDP vs " * pi * " at BH q = " * .(q_target) * " (N=" * .(N_total) * ", B=" * .(B) * ")")
-  ) +
-  theme_bw(base_size = 14)
-
-print(p_fdp_vs_pi_q01)
 ```
 
 
 
 
+
 ```{r, echo=FALSE}
-df_long_no_zero_trt <- results %>%
-  filter(pass_qc) %>%
-  filter(pair_type %in% c("positive control", "negative control")) %>%
-  select(pair_type, p_value_scep, p_value_frpert, p_value_mix) %>%
-  pivot_longer(starts_with("p_value_"),
-               names_to = "method",
-               values_to = "p") %>%
-  filter(!is.na(p)) %>%
-  mutate(
-    method = recode(method,
-                    p_value_scep   = "sceptre",
-                    p_value_frpert = "FR-Perturb",
-                    p_value_mix    = "MIXSCALE"),
-    is_pos = pair_type == "positive control",
-    is_neg = pair_type == "negative control"
-  )
 
-df_long <- df_long_no_zero_trt
-# Choose a fixed total N for the synthetic benchmark
-N_total <- 50000
-
-# Prevalence grid (fraction positives)
-pi_grid <- c(0.001, 0.002, 0.005, .0075, 0.01, 0.015)  
-# this is the most we could get
-stopifnot(max(pi_grid) <= sum(results$pair_type == "positive control") / N_total)
-
-# q grid (same as above, or denser)
-q_grid <- c(1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1)
-
-B <- 100  # number of resamples per (pi, method)
-
-# Split long df into pos/neg pools per method
-pools <- df_long %>%
-  select(method, p, is_pos, is_neg)
-
-bench <- crossing(method = unique(pools$method),
-                  pi = pi_grid,
-                  b = seq_len(B)) %>%
-  group_by(method, pi, b) %>%
-  group_modify(~{
-    m <- .y$method
-    pi <- .y$pi
-
-    pos_pool <- pools %>% filter(method == m, is_pos) %>% pull(p)
-    neg_pool <- pools %>% filter(method == m, is_neg) %>% pull(p)
-
-    N_pos <- floor(pi * N_total)
-    N_neg <- N_total - N_pos
+make_fp_budget_plot <- function(
+    results, qc_col,
+    fp_budgets = c(0, 1,2,3,4,5,10,15,20,25,30),
+    p_floor = 1e-250
     
-    if(N_pos > length(pos_pool)) {
-      stop("cannot sample more pos pairs than there are.")
-    }
+    
+) {
+  
+  tp_at_fp <- function(df_m) {
+    n_pos <- sum(df_m$pair_type == pos_label)
+    n_neg <- sum(df_m$pair_type == neg_label)
+    
+    steps <- df_m %>%
+      mutate(is_pos = pair_type == pos_label,
+             is_neg = pair_type == neg_label) %>%
+      group_by(p_value) %>%
+      summarise(tp_step = sum(is_pos), fp_step = sum(is_neg), .groups = "drop") %>%
+      arrange(p_value) %>%
+      mutate(tp_cum = cumsum(tp_step),
+             fp_cum = cumsum(fp_step))
+    
+    idx <- findInterval(fp_budgets, steps$fp_cum)  # 0..nrow(steps)
+    
+    fp_actual <- integer(length(fp_budgets))
+    tp        <- integer(length(fp_budgets))
+    threshold <- rep(NA_real_, length(fp_budgets))
+    
+    ok <- idx > 0
+    fp_actual[ok] <- steps$fp_cum[idx[ok]]
+    tp[ok]        <- steps$tp_cum[idx[ok]]
+    threshold[ok] <- steps$p_value[idx[ok]]
+    
+    # if budget allows all negatives, set threshold=1 and recover all positives
+    big <- fp_budgets >= n_neg
+    fp_actual[big] <- n_neg
+    tp[big]        <- n_pos
+    threshold[big] <- 1
+    
+    tibble(
+      fp_budget = fp_budgets,
+      fp_actual = fp_actual,
+      threshold = threshold,
+      tp        = tp,
+      tpr       = if (n_pos > 0) tp / n_pos else NA_real_,
+      n_pos     = n_pos,
+      n_neg     = n_neg
+    )
+  }
+  
+  
+  results_in <- results %>% 
+    dplyr::filter(.data[[qc_col]])
+  
+  pair_col   <- "pair_type"
+  pos_label  <- "positive control"
+  neg_label  <- "negative control"
+  
+  # p_val_cols = names(results_in)[grepl("^p_value_", names(results_in))]
+  p_val_cols = names(results_in)[grepl("^p_value_", names(results_in))]
+  p_cols_present <- gsub("^p_value_", "", p_val_cols)
+  names(p_cols_present) <- p_val_cols
+  
+  stopifnot(length(p_cols_present) > 0, pair_col %in% names(results_in))
+  
+  long <- results_in %>%
+    select(all_of(c(pair_col, names(p_cols_present)))) %>%
+    pivot_longer(cols = all_of(names(p_cols_present)),
+                 names_to = "method_col",
+                 values_to = "p_value") %>%
+    mutate(
+      method    = recode(method_col, !!!as.list(p_cols_present)),
+      pair_type = .data[[pair_col]],
+      p_value   = pmax(as.numeric(p_value), p_floor)
+    ) %>%
+    filter(pair_type %in% c(pos_label, neg_label), !is.na(p_value)) %>%
+    select(method, pair_type, p_value)
+  
+  tp_fp_budget_tbl <- long %>%
+    group_by(method) %>%
+    group_modify(~ tp_at_fp(.x)) %>%
+    ungroup()
+  
+  
+  # pick what to plot on y: "tp" or "tpr"
+  y_var <- "tp"   # change to "tpr" if you want recall instead of counts
+  
+  plot_df <- tp_fp_budget_tbl %>%
+    arrange(method, fp_actual, fp_budget) %>%
+    group_by(method, fp_actual) %>%              # collapse duplicates from ties
+    summarise(
+      tp  = max(tp),
+      tpr = max(tpr),
+      .groups = "drop"
+    )
+  
+  p_tp_fp <- ggplot(plot_df, aes(x = fp_actual, y = .data[[y_var]], color = method)) +
+    geom_step(direction = "hv", linewidth = 1.1) +
+    geom_point(size = 2) +
+    scale_x_continuous(breaks = sort(unique(tp_fp_budget_tbl$fp_budget))) +
+    labs(
+      title = paste0(if (y_var == "tp") "#TP recovered vs #FP allowed" else "TPR vs #FP allowed", " (QC = ", qc_col, ")"),
+      x = "#FP (neg. controls called significant)",
+      y = if (y_var == "tp") "#TP (pos. controls recovered)" else "TPR (recall on positives)",
+      color = "Method"
+    ) +
+    theme_bw(base_size = 14)
+  p_tp_fp
+}
 
-    # sample with replacement if needed
-    pos_samp <- sample(pos_pool, size = N_pos, replace = FALSE)# N_pos > length(pos_pool))
-    neg_samp <- sample(neg_pool, size = N_neg, replace = FALSE)# N_neg > length(neg_pool))
+make_fp_budget_plot(results, "pass_qc_75")
+make_fp_budget_plot(results, "pass_qc_trt")
+make_fp_budget_plot(results, "pass_qc_def")
 
-    p_mix <- c(pos_samp, neg_samp)
-    lab   <- c(rep(TRUE, N_pos), rep(FALSE, N_neg))  # TRUE = positive
+```
 
-    p_adj <- p.adjust(p_mix, method = "BH")
+```{r, echo=FALSE,fig.align='center', out.width='85%'}
 
-    map_dfr(q_grid, function(q) {
-      discover <- p_adj <= q
-      tp <- sum(discover & lab)
-      fp <- sum(discover & !lab)
-      disc <- tp + fp
+make_bh_vs_pi_plot <- function(
+    results,
+    qc_col,
+    N_total,
+    pi_grid,
+    q_target = 0.1,
+    B        = 100,
+    p_floor  = 1e-250
+) {
+  
+  set.seed(1)
+  pair_col   <- "pair_type"
+  pos_label  <- "positive control"
+  neg_label  <- "negative control"
+  
+  p_val_cols = names(results)[grepl("^p_value_", names(results))]
+  p_cols_present <- gsub("^p_value_", "", p_val_cols)
+  names(p_cols_present) <- p_val_cols
+  
+  stopifnot(length(p_cols_present) > 0, pair_col %in% names(results))
+  
+  pools <- results %>%
+    filter(.data[[qc_col]],
+           pair_type %in% c("positive control", "negative control")) %>%
+    select(pair_type, all_of(names(p_cols_present))) %>%
+    pivot_longer(all_of(names(p_cols_present)),
+                 names_to = "method_col",
+                 values_to = "p") %>%
+    filter(!is.na(p)) %>%
+    mutate(
+      method = recode(method_col, !!!as.list(p_cols_present)),
+      p      = pmax(as.numeric(p), p_floor),
+      is_pos = pair_type == "positive control",
+      is_neg = pair_type == "negative control"
+    ) %>%
+    select(method, p, is_pos, is_neg)
+  
+  bench <- tidyr::crossing(method = unique(pools$method), pi = pi_grid, b = seq_len(B)) %>%
+    group_by(method, pi, b) %>%
+    group_modify(~{
+      m  <- .y$method
+      pi <- .y$pi
+      
+      pos_pool <- pools %>% filter(method == m, is_pos) %>% pull(p)
+      neg_pool <- pools %>% filter(method == m, is_neg) %>% pull(p)
+      
+      N_pos <- floor(pi * N_total)
+      N_neg <- N_total - N_pos
+      
+      # sample (use replacement only if needed)
+      if(N_pos > length(pos_pool)) {
+        stop("Trying to sample ", N_pos, "pos. pairs from ", length(pos_pool), " total.\n pi = ", round(pi, 4))
+      }
+      pos_samp <- sample(pos_pool, size = N_pos, replace = FALSE)#(N_pos > length(pos_pool)))
+      neg_samp <- sample(neg_pool, size = N_neg, replace = FALSE)#(N_neg > length(neg_pool)))
+      
+      p_mix <- c(pos_samp, neg_samp)
+      lab   <- c(rep(TRUE, N_pos), rep(FALSE, N_neg))  # TRUE = positive control
+      
+      p_adj <- p.adjust(p_mix, method = "BH")
+      disc  <- p_adj <= q_target
+      
+      tp <- sum(disc &  lab)
+      fp <- sum(disc & !lab)
+      D  <- tp + fp
+      
       tibble(
-        q = q,
+        discoveries = D,
         tp = tp,
         fp = fp,
-        discoveries = disc,
-        fdp = ifelse(disc == 0, 0, fp / disc),
+        fdp = ifelse(D == 0, 0, fp / D),
         tpr = ifelse(N_pos == 0, NA_real_, tp / N_pos)
       )
-    })
-  }) %>%
-  ungroup()
-
-# Summarise across resamples
-bench_sum <- bench %>%
-  group_by(method, pi, q) %>%
-  summarise(
-    fdp_med = mean(fdp, na.rm = TRUE),
-    fdp_lo  = quantile(fdp, 0.25, na.rm = TRUE),
-    fdp_hi  = quantile(fdp, 0.75, na.rm = TRUE),
-    tpr_med = mean(tpr, na.rm = TRUE),
-    tpr_lo  = quantile(tpr, 0.25, na.rm = TRUE),
-    tpr_hi  = quantile(tpr, 0.75, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Plot: FDP vs q, faceted by prevalence
-p_fdp_pi <- ggplot(bench_sum, aes(x = q, y = fdp_med, color = method)) +
-  geom_line(linewidth = 0.9) +
-  geom_ribbon(aes(ymin = fdp_lo, ymax = fdp_hi, fill = method),
-              alpha = 0.15, color = NA) +
-  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
-  scale_x_log10() +
-  scale_y_log10() +
-  facet_wrap(~ pi, labeller = label_bquote(pi == .(pi))) +
-  labs(
-    x = "BH target level (q)",
-    y = bquote("Observed FDP (mean across" ~ .(B) ~ "resamples)"),
-    color = "Method",
-    fill = "Method",
-    title = bquote("BH FDP vs q under different positive fractions (fixed total N =" ~ .(N_total/1000) * "k)")
-  ) +
-  theme_bw()
-
-p_fdp_pi
-
-```
-
-
-```{r, echo=FALSE}
-cor_mats = results |>
-  dplyr::filter(pass_qc) %>%
-  split(.$pair_type) |>
-  lapply(function(df) df |> dplyr::select(p_value_scep, p_value_mix, p_value_frpert) |>
-  cor(method="spearman") |> as.data.frame())
-
-cor_results = data.frame(
-  method1 = c("scep", "scep", "mix", "scep", "scep", "mix"),
-  method2 = c("mix", "frpert", "frpert", "mix", "frpert", "frpert"),
-  pair_type = rep(c("negative control", "positive control"), each = 3)
-) |>
-  mutate(
-    method1 = paste0("p_value_", method1), method2 = paste0("p_value_", method2),
-    spearman=0
-  )
-for(i in 1:nrow(cor_results)) {
-  cor_results$spearman[i] = cor_mats[[cor_results$pair_type[i]]][cor_results$method1[i], cor_results$method2[i]]
+    }) %>%
+    ungroup()
+  
+  
+  bench_sum <- bench %>%
+    group_by(method, pi) %>%
+    summarise(
+      fdp_med = mean(fdp, na.rm = TRUE),
+      fdp_lo  = quantile(fdp, 0.25, na.rm = TRUE),
+      fdp_hi  = quantile(fdp, 0.75, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(method = fct_inorder(method))
+  
+  p_fdp_vs_pi_q01 <- ggplot(bench_sum, aes(x = pi, y = fdp_med, color = method, fill = method)) +
+    geom_line(linewidth = 0.9) +
+    geom_point(size = 2) +
+    geom_ribbon(aes(ymin = fdp_lo, ymax = fdp_hi), alpha = 0.15, color = NA) +
+    geom_hline(yintercept = q_target, linetype = "dashed") +
+    scale_x_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0,NA)) +
+    labs(
+      x = expression(pi~"(downsample / prevalence)"),
+      y = "FDP",
+      color = "Method",
+      fill  = "Method",
+      title = bquote("BH q = " * .(q_target) * " (N=" * .(N_total) * ", B=" * .(B) * ", QC =" ~ .(qc_col) * ")")
+    ) +
+    theme_bw(base_size = 14)
+  p_fdp_vs_pi_q01
 }
-cor_results$spearman = round(cor_results$spearman, 2)
-print(as_tibble(cor_results))
-```
 
-
-```{r, echo=FALSE}
-# idea: make pairwise scatter plots of pos and neg p-values
-
-num_negs = 20000
-
-
-results_downsamp <- results %>%
-  dplyr::filter(pass_qc) %>%
-  group_by(pair_type) %>%
-  group_modify(~ {if (.y$pair_type == "negative control") slice_sample(.x, n = num_negs) else .x}) %>%
-  ungroup() |>
-  dplyr::select(pair_type, p_value_scep, p_value_frpert, p_value_mix) 
-
-df <- results_downsamp %>%
-  mutate(
-    across(starts_with("p_value_"), ~ -log10(.x))
-  )
-
-pairs <- list(
-  c("p_value_scep",   "p_value_frpert"),
-  c("p_value_scep",   "p_value_mix"),
-  c("p_value_frpert", "p_value_mix")
+make_bh_vs_pi_plot(
+  results, "pass_qc_75",
+  q_target = 0.1,
+  N_total  = 5000,
+  pi_grid  = c(.01, .02, .05, .075, .1, .15, .2)
+)
+make_bh_vs_pi_plot(
+  results, "pass_qc_trt",
+  q_target = 0.1,
+  N_total  = 5000,
+  pi_grid  = c(.01, .02, .05, .075, .1, .15, .2)
+)
+make_bh_vs_pi_plot(
+  results, "pass_qc_def",
+  q_target = 0.1,
+  N_total  = 4000,
+  pi_grid  = c(.01, .02, .05, .075, .1, .15)
 )
 
-# 3) build plotting data: one row per observation per pair
-pair_df <- map_dfr(pairs, \(cols) {
-  x_col <- cols[1]
-  y_col <- cols[2]
-  tibble(
-    pair_type = df$pair_type,
-    x = df[[x_col]],
-    y = df[[y_col]],
-    pair = paste("x =", sub("^p_value_", "", x_col), " y =", sub("^p_value_", "", y_col))
-  )
-})
+```
 
-# 4) plot: 3 rows (pairs) x 2 cols (pair_type)
-ggplot(pair_df, aes(x = x, y = y)) +
-  geom_point(alpha = 0.25, size = 0.6) +
-  # coord_equal() +
-  facet_wrap(pair_type ~ pair, scales = "free") +
-  labs(
-    x = expression(-log[10](p)~"(method 1)"),
-    y = expression(-log[10](p)~"(method 2)")
-  ) +
-  theme_bw(base_size = 14) +
-  ggtitle("Comparisons of p-values by method and pair type")
+
+
+```{r, echo=FALSE,fig.align='center', out.width='85%'}
+
+make_bh_vs_pi_plot(
+  results, "pass_qc_75",
+  q_target = 0.1,
+  N_total  = 50000,
+  pi_grid  = c(0.001, 0.002, 0.005, .0075, 0.01, 0.015)
+)
+make_bh_vs_pi_plot(
+  results, "pass_qc_trt",
+  q_target = 0.1,
+  N_total  = 50000,
+  pi_grid  = c(0.001, 0.002, 0.005, .0075, 0.01, 0.015)
+)
+make_bh_vs_pi_plot(
+  results, "pass_qc_def",
+  q_target = 0.1,
+  N_total  = 50000,
+  pi_grid  = c(0.001, 0.002, 0.005, .0075, 0.01)
+)
+
+```
+
+
+
+
+```{r, echo=FALSE}
+
+
+
+
+make_bh_pi_panel_plot <- function(
+    results, qc_col,
+    pi_grid,
+    q_grid,
+    N_total,
+    B = 100
+) {
+  
+  
+  df_long <- results %>%
+    filter(.data[[qc_col]]) %>%
+    filter(pair_type %in% c("positive control", "negative control")) %>%
+    dplyr::select(pair_type, starts_with("p_value")) %>%
+    pivot_longer(starts_with("p_value_"),
+                 names_to = "method",
+                 values_to = "p") %>%
+    filter(!is.na(p)) %>%
+    mutate(
+      # method = recode(method,
+      #                 p_value_scep   = "sceptre",
+      #                 p_value_frpert = "FR-Perturb",
+      #                 p_value_mix    = "MIXSCALE"),
+      is_pos = pair_type == "positive control",
+      is_neg = pair_type == "negative control"
+    )
+  
+  stopifnot(max(pi_grid) <= sum(results$pair_type == "positive control") / N_total)
+  
+  pools <- df_long %>%
+    select(method, p, is_pos, is_neg)
+  
+  bench <- crossing(method = unique(pools$method),
+                    pi = pi_grid,
+                    b = seq_len(B)) %>%
+    group_by(method, pi, b) %>%
+    group_modify(~{
+      m <- .y$method
+      pi <- .y$pi
+      
+      pos_pool <- pools %>% filter(method == m, is_pos) %>% pull(p)
+      neg_pool <- pools %>% filter(method == m, is_neg) %>% pull(p)
+      
+      N_pos <- floor(pi * N_total)
+      N_neg <- N_total - N_pos
+      
+      if(N_pos > length(pos_pool)) {
+        stop("cannot sample more pos pairs than there are.")
+      }
+      
+      # sample with replacement if needed
+      pos_samp <- sample(pos_pool, size = N_pos, replace = FALSE)# N_pos > length(pos_pool))
+      neg_samp <- sample(neg_pool, size = N_neg, replace = FALSE)# N_neg > length(neg_pool))
+      
+      p_mix <- c(pos_samp, neg_samp)
+      lab   <- c(rep(TRUE, N_pos), rep(FALSE, N_neg))  # TRUE = positive
+      
+      p_adj <- p.adjust(p_mix, method = "BH")
+      
+      map_dfr(q_grid, function(q) {
+        discover <- p_adj <= q
+        tp <- sum(discover & lab)
+        fp <- sum(discover & !lab)
+        disc <- tp + fp
+        tibble(
+          q = q,
+          tp = tp,
+          fp = fp,
+          discoveries = disc,
+          fdp = ifelse(disc == 0, 0, fp / disc),
+          tpr = ifelse(N_pos == 0, NA_real_, tp / N_pos)
+        )
+      })
+    }) %>%
+    ungroup()
+  
+  # Summarise across resamples
+  bench_sum <- bench %>%
+    group_by(method, pi, q) %>%
+    summarise(
+      fdp_med = mean(fdp, na.rm = TRUE),
+      fdp_lo  = quantile(fdp, 0.25, na.rm = TRUE),
+      fdp_hi  = quantile(fdp, 0.75, na.rm = TRUE),
+      tpr_med = mean(tpr, na.rm = TRUE),
+      tpr_lo  = quantile(tpr, 0.25, na.rm = TRUE),
+      tpr_hi  = quantile(tpr, 0.75, na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  # Plot: FDP vs q, faceted by prevalence
+  p_fdp_pi <- ggplot(bench_sum, aes(x = q, y = fdp_med, color = method)) +
+    geom_line(linewidth = 0.9) +
+    geom_ribbon(aes(ymin = fdp_lo, ymax = fdp_hi, fill = method),
+                alpha = 0.15, color = NA) +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+    scale_x_log10() +
+    scale_y_log10() +
+    facet_wrap(~ pi, labeller = label_bquote(pi == .(pi))) +
+    labs(
+      x = "BH target level (q)",
+      y = bquote("Observed FDP (mean across" ~ .(B) ~ "resamples)"),
+      color = "Method",
+      fill = "Method",
+      title = bquote("BH FDP vs q (N =" ~ .(N_total/1000) * "k, QC =" ~ .(qc_col) *")")
+    ) +
+    theme_bw()
+  p_fdp_pi
+}
+
+make_bh_pi_panel_plot(
+  results,
+  "pass_qc_75",
+      pi_grid = c(0.001, 0.002, 0.005, .0075, 0.01, 0.015),
+    q_grid = c(1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1),
+    N_total = 50000
+)
+make_bh_pi_panel_plot(
+  results,
+  "pass_qc_trt",
+      pi_grid = c(0.001, 0.002, 0.005, .0075, 0.01, 0.015),
+    q_grid = c(1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1),
+    N_total = 50000
+)
+make_bh_pi_panel_plot(
+  results,
+  "pass_qc_def",
+      pi_grid = c(0.001, 0.002, 0.005, .0075, 0.01),
+    q_grid = c(1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1),
+    N_total = 50000
+)
 
 ```
 
 
 ```{r, echo=FALSE}
 
-results_long <- results |>
-  dplyr::filter(
-    pass_qc, 
-    pair_type == "positive control"
+make_cor_df_replogle <- function(results, qc_col) {
+  cor_mats = results %>%
+    dplyr::filter(.data[[qc_col]]) %>%
+    split(.$pair_type) |>
+    lapply(function(df) df |> dplyr::select(p_value_scep, p_value_mix, p_value_frpert) |>
+             cor(method="spearman", use = "complete.obs") |> as.data.frame())
+  
+  cor_results = data.frame(
+    method1 = c("scep", "scep", "mix", "scep", "scep", "mix"),
+    method2 = c("mix", "frpert", "frpert", "mix", "frpert", "frpert"),
+    pair_type = rep(c("negative control", "positive control"), each = 3)
   ) |>
-  dplyr::select(p_value_scep, p_value_frpert, p_value_mix, num_expressed_cells, gene) |>
-  pivot_longer(
-    cols = starts_with("p_value"), names_to = "method", values_to = "p_value"
-  ) |>
-  mutate(
-    method = gsub("p_value_", "", method),
-    neglog10 = -log10(p_value)
+    mutate(
+      method1 = paste0("p_value_", method1), method2 = paste0("p_value_", method2),
+      spearman=0
+    )
+  for(i in 1:nrow(cor_results)) {
+    cor_results$spearman[i] = cor_mats[[cor_results$pair_type[i]]][cor_results$method1[i], cor_results$method2[i]]
+  }
+  cor_results$spearman = round(cor_results$spearman, 2)
+  cor_results["qc"] = qc_col
+  cor_results
+}
+bind_rows(make_cor_df_replogle(results, "pass_qc_75"),
+make_cor_df_replogle(results, "pass_qc_trt"),
+make_cor_df_replogle(results, "pass_qc_def"))
+
+```
+
+
+```{r, echo=FALSE}
+
+
+make_scatter_plots_replogle <- function(results, qc_col, num_negs=20000) {
+  results_downsamp <- results %>%
+    dplyr::filter(.data[[qc_col]]) %>%
+    group_by(pair_type) %>%
+    group_modify(~ {if (.y$pair_type == "negative control") slice_sample(.x, n = num_negs) else .x}) %>%
+    ungroup() |>
+    dplyr::select(pair_type, p_value_scep, p_value_frpert, p_value_mix) 
+  
+  df <- results_downsamp %>%
+    mutate(
+      across(starts_with("p_value_"), ~ -log10(.x))
+    )
+  
+  pairs <- list(
+    c("p_value_scep",   "p_value_frpert"),
+    c("p_value_scep",   "p_value_mix"),
+    c("p_value_frpert", "p_value_mix")
   )
+  
+  # 3) build plotting data: one row per observation per pair
+  pair_df <- map_dfr(pairs, \(cols) {
+    x_col <- cols[1]
+    y_col <- cols[2]
+    tibble(
+      pair_type = df$pair_type,
+      x = df[[x_col]],
+      y = df[[y_col]],
+      pair = paste("x =", sub("^p_value_", "", x_col), " y =", sub("^p_value_", "", y_col))
+    )
+  })
+  
+  # 4) plot: 3 rows (pairs) x 2 cols (pair_type)
+  ggplot(pair_df, aes(x = x, y = y)) +
+    geom_point(alpha = 0.25, size = 0.6) +
+    # coord_equal() +
+    facet_wrap(pair_type ~ pair, scales = "free") +
+    labs(
+      x = expression(-log[10](p)~"(method 1)"),
+      y = expression(-log[10](p)~"(method 2)")
+    ) +
+    theme_bw(base_size = 14) +
+    ggtitle(paste0("Comparisons of p-values (QC =", qc_col, " )"))
+}
+make_scatter_plots_replogle(results, "pass_qc_75")
+make_scatter_plots_replogle(results, "pass_qc_trt")
+make_scatter_plots_replogle(results, "pass_qc_def")
 
 
-# Single plot with all methods + LOESS per method
-ggplot(results_long, aes(x = num_expressed_cells, y = neglog10, color = method)) +
-  geom_point(alpha = 0.25, size = 0.7) +
-  geom_smooth(method = "loess", se = FALSE, linewidth = 0.9, formula = y~x) +
-  scale_x_continuous(trans = "log10") +   # comment out if you want raw n
-  labs(
-    title = "Replogle on-targets: -log10(p-value) vs num. expressed cells",
-    x = "Number of on-target cells (log10 scale)",
-    y = expression(-log[10](p)),
-    color = NULL
-  ) +
-  theme_bw() +
-  theme(panel.grid.minor = element_blank())
+
+```
+
+
+```{r, echo=FALSE}
+
+
+make_on_target_sample_size_curve <- function(results, qc_col, dataset_name) {
+  results_long <- results |>
+    dplyr::filter(
+      .data[[qc_col]], 
+      pair_type == "positive control"
+    ) |>
+    dplyr::select(starts_with("p_value"), num_expressed_cells, gene) |>
+    pivot_longer(
+      cols = starts_with("p_value"), names_to = "method", values_to = "p_value"
+    ) |>
+    mutate(
+      method = gsub("p_value_", "", method),
+      neglog10 = -log10(p_value)
+    )
+  ggplot(results_long, aes(x = num_expressed_cells, y = neglog10, color = method)) +
+    geom_point(alpha = 0.25, size = 0.7) +
+    geom_smooth(method = "loess", se = FALSE, linewidth = 0.9, formula = y~x) +
+    scale_x_continuous(trans = "log10") +   # comment out if you want raw n
+    labs(
+      title = paste0(dataset_name, " on-targets: -log10(p-value) vs #cells (QC = ", qc_col, ")"),
+      x = "Number of on-target cells (log10 scale)",
+      y = expression(-log[10](p)),
+      color = NULL
+    ) +
+    theme_bw() +
+    theme(panel.grid.minor = element_blank())
+}
+make_on_target_sample_size_curve(results, "pass_qc_75", "Replogle")
+make_on_target_sample_size_curve(results, "pass_qc_trt", "Replogle")
+make_on_target_sample_size_curve(results, "pass_qc_def", "Replogle")
+
 ```
 
 
