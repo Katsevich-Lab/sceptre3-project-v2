@@ -25,6 +25,8 @@ sceptre_object_fp=$assoc_input_dir"sceptre_object.rds"
 response_odm_fp=$data_dir"response.odm"
 grna_odm_fp=$data_dir"grna.odm"
 
+cells_to_remove_fp=$assoc_input_dir"cells_to_remove.csv"
+
 
 output_fp=$LOCAL_BENCHMARKING_DIR"association/computational/outputs/sceptre-pipeline/"$assoc_dataset_name
 mkdir -p $output_fp
@@ -33,13 +35,14 @@ mkdir -p $output_fp
 #################
 # Invoke pipeline
 #################
-nextflow run timothy-barry/sceptre-pipeline -r main \
+nextflow run jdeu1023/sceptre-pipeline -r main \
  --sceptre_object_fp $sceptre_object_fp \
  --response_odm_fp $response_odm_fp \
  --grna_odm_fp $grna_odm_fp \
  --output_directory $output_fp \
  --grna_assignment_method mixture \
  --pair_pod_size 5000 \
+ --additional_cells_to_remove $cells_to_remove_fp \
   --assign_grnas_memory "2GB" \
   -with-trace "$output_fp/tracing/trace.tsv" \
   -with-report "$output_fp/tracing/report.html" \
