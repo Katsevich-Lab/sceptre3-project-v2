@@ -25,7 +25,7 @@ library(sceptre)
 
 dataset <- "replogle-rd7"
 # this would be pulled from a _config.csv
-assoc_dataset_name <- 'replogle-rd7_comp_ngenes=100_ntargets=100_ncells=50k_n_nonzero_p=0.75'
+assoc_dataset_name <- "replogle-rd7_comp_ngenes=560_ntargets=225_ncells=90k_n_nonzero_p=0.75"
 
 if(!grepl(dataset, assoc_dataset_name)) {
   stop("`dataset` and `assoc_dataset_name` do not seem to match.")

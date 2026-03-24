@@ -14,7 +14,8 @@ nextflow pull timothy-barry/sceptre-pipeline
 ##########################
 
 data_name="replogle-rd7"
-assoc_dataset_name="replogle-rd7_comp_ngenes=100_ntargets=100_ncells=50k_n_nonzero_p=0.75"
+assoc_dataset_name="replogle-rd7_comp_ngenes=560_ntargets=225_ncells=90k_n_nonzero_p=0.75"
+# CHANGE --pair_pod_size ??
 
 data_dir=$LOCAL_BENCHMARKING_DIR"guide_assignment/input_data/"$data_name"/sceptre-pipeline/"
 assoc_input_dir=$LOCAL_BENCHMARKING_DIR"association/computational/input_data/"$assoc_dataset_name"/sceptre-pipeline/"
@@ -38,6 +39,7 @@ nextflow run timothy-barry/sceptre-pipeline -r main \
  --grna_odm_fp $grna_odm_fp \
  --output_directory $output_fp \
  --grna_assignment_method mixture \
+ --pair_pod_size 5000 \
   --assign_grnas_memory "2GB" \
   -with-trace "$output_fp/tracing/trace.tsv" \
   -with-report "$output_fp/tracing/report.html" \
