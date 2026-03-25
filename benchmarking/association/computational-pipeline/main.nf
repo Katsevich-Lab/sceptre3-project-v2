@@ -4,6 +4,7 @@ nextflow.enable.dsl = 2
 
 // Import method modules
 include { SCEPTRE_COMPUTATIONAL } from './modules/sceptre'
+include { SCEPTREGAMPOI_COMPUTATIONAL } from './modules/sceptregampoi'
 include { MIXSCALE_COMPUTATIONAL } from './modules/mixscale'
 include { FRPERTURB_COMPUTATIONAL } from './modules/frperturb'
 
@@ -30,7 +31,8 @@ workflow {
         .map { resource_row ->
             def dataset_id = resource_row.dataset
             def method = resource_row.method
-            def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${method}")
+            def data_method = (method == 'sceptregampoi') ? 'sceptre' : method
+            def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${data_method}")
             def resources = [
                 cpus: resource_row.cpus,
                 memory: resource_row.memory
@@ -42,12 +44,16 @@ workflow {
     // Route to appropriate method based on method name
     branched_ch = dataset_method_ch.branch {
         sceptre: it[2] == 'sceptre'
+        sceptregampoi: it[2] == 'sceptregampoi'
         mixscale: it[2] == 'mixscale'
         frperturb: it[2] == 'frperturb'
     }
 
     // Run sceptre computational benchmarking
     sceptre_results = SCEPTRE_COMPUTATIONAL(branched_ch.sceptre, outdir)
+
+    // Run sceptregampoi computational benchmarking
+    sceptregampoi_results = SCEPTREGAMPOI_COMPUTATIONAL(branched_ch.sceptregampoi, outdir)
 
     // Run mixscale computational benchmarking
     mixscale_results = MIXSCALE_COMPUTATIONAL(branched_ch.mixscale, outdir)

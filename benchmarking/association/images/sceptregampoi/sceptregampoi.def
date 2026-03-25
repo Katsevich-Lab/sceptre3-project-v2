@@ -1,0 +1,61 @@
+Bootstrap: docker
+From: rocker/r-ver:4.4.3
+
+%labels
+    Author Josep Deutsch
+    Description sceptregampoi — sceptre fork with glmGamPoi experiment (jdeu1023/sceptre@glmgampoi-experiment)
+    Version 1.0
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    # System deps (+ procps for `ps`, + libhdf5-dev for glmGamPoi/HDF5Array)
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        procps \
+        build-essential \
+        cmake \
+        curl \
+        git \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libxml2-dev \
+        zlib1g-dev \
+        libfontconfig1-dev \
+        libfreetype6-dev \
+        libfribidi-dev \
+        libharfbuzz-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libtiff5-dev \
+        libhdf5-dev \
+        pkg-config
+    rm -rf /var/lib/apt/lists/*
+
+    # Install remotes and BiocManager
+    R --slave -e 'install.packages(c("remotes", "BiocManager"), repos="https://cran.r-project.org")'
+
+    # Pre-install glmGamPoi via BiocManager (Bioconductor package with C++ deps)
+    R --slave -e 'BiocManager::install("glmGamPoi", ask=FALSE, update=FALSE)'
+
+    # Install sceptre fork from GitHub (with remaining dependencies)
+    R --slave -e 'remotes::install_github("jdeu1023/sceptre@glmgampoi-experiment", dependencies=TRUE, upgrade="never")'
+
+    mkdir -p /opt/sceptregampoi
+
+%runscript
+    # Pass-through so `ps`, `bash`, `Rscript`, etc. all work with `apptainer run`
+    exec "$@"
+
+%environment
+    export LC_ALL=C
+    export PATH=/usr/local/bin:$PATH
+    # Avoid reading host user libraries when using --cleanenv
+    export R_LIBS_USER=
+
+%test
+    which ps
+    ps -o pid,comm | head -n 2
+    R --quiet -e 'suppressPackageStartupMessages(library(glmGamPoi)); cat("glmGamPoi ", as.character(packageVersion("glmGamPoi")), " OK\n", sep="")'
+    R --quiet -e 'suppressPackageStartupMessages(library(sceptre)); cat("sceptregampoi ", as.character(packageVersion("sceptre")), " OK\n", sep="")'
