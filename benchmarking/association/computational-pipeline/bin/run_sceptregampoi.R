@@ -33,7 +33,7 @@ formula_string <- readRDS(file.path(dataset_dir, "formula_object.rds"))
 formula_object <- as.formula(formula_string)
 discovery_pairs <- readRDS(file.path(dataset_dir, "discovery_pairs.rds"))
 
-n_nonzero_thresh <- 20L # if the total number of non-zero expressions is less than this, use glmGamPoi
+n_nonzero_thresh <- 15L # if the total number of non-zero expressions is less than this, use glmGamPoi
 
 cat("Data loaded:\n")
 cat("  Response matrix:", nrow(response_matrix), "genes x", ncol(response_matrix), "cells\n")
