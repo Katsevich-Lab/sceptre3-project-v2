@@ -33,7 +33,7 @@ formula_string <- readRDS(file.path(dataset_dir, "formula_object.rds"))
 formula_object <- as.formula(formula_string)
 discovery_pairs <- readRDS(file.path(dataset_dir, "discovery_pairs.rds"))
 
-n_nonzero_thresh <- 20L # if the total number of non-zero expressions is less than this, use glmGamPoi
+use_gampoi_below_this <- 20L # if the total number of non-zero expressions is less than this, use glmGamPoi
 
 cat("Data loaded:\n")
 cat("  Response matrix:", nrow(response_matrix), "genes x", ncol(response_matrix), "cells\n")
@@ -42,7 +42,7 @@ cat("  gRNA targets:", nrow(grna_target_df), "mappings\n")
 cat("  Cell covariates:", nrow(cell_covariates), "cells x", ncol(cell_covariates), "covariates\n")
 cat("  Discovery pairs:", nrow(discovery_pairs), "\n")
 cat("  Formula loaded from file:", formula_string, "\n")
-cat("  n_nonzero_thresh =", n_nonzero_thresh, "\n")
+cat("  use_gampoi_below_this =", use_gampoi_below_this, "\n")
 
 # Determine which dataset this is (for MOI)
 DATASET_NAMES <- c("gasperini", "replogle")
@@ -76,7 +76,7 @@ scep <- set_analysis_parameters(
   discovery_pairs = discovery_pairs,
   formula_object = formula_object
 )
-scep@n_nonzero_thresh <- n_nonzero_thresh
+scep@use_gampoi_below_this <- use_gampoi_below_this
 
 
 scep <- assign_grnas(
