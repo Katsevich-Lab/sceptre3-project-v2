@@ -96,6 +96,9 @@ scep <- run_qc(
 
 cat("Running discovery analysis...\n")
 
+cat("SETTING B3=100!!\n")
+scep@B3=100L
+
 start_time <- Sys.time()
 scep <- run_discovery_analysis(
   sceptre_object = scep,
