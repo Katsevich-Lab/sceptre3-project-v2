@@ -44,7 +44,7 @@ discovery_pairs <-  file.path(
   assoc_dataset_name,
   "sceptre/discovery_pairs.rds"
 ) |>
-readRDS()
+  readRDS()
 
 # making the directory just for this run
 write_dir = file.path(
@@ -55,20 +55,14 @@ write_dir = file.path(
 )
 dir.create(write_dir, showWarnings = FALSE, recursive = TRUE)
 
-
-
 sceptre_object <- read_ondisc_backed_sceptre_object(sceptre_object_fp = paste0(data_dir, "sceptre_object_initial.rds"),
                                                     response_odm_file_fp = paste0(data_dir, "response.odm"),
                                                     grna_odm_file_fp = paste0(data_dir, "grna.odm"))
 
-# the empty one `set_analysis_parameters()` uses by default
-positive_control_pairs = data.frame(grna_target = character(0), response_id =
-    character(0))
 
 sceptre_object <- set_analysis_parameters(
   sceptre_object = sceptre_object,
   discovery_pairs = discovery_pairs,
-  positive_control_pairs = positive_control_pairs,
   formula_object = formula(~ log(response_n_nonzero + 1) + log(response_n_umis + 1) +
                              log(grna_n_nonzero + 1) + log(grna_n_umis + 1)),
   resampling_mechanism = "permutations"
