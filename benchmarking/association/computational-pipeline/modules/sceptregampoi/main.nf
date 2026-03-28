@@ -4,13 +4,13 @@ process SCEPTREGAMPOI_COMPUTATIONAL {
 
   container "${params.sceptregampoi_sif}"
 
-  cpus   { num_cpus }
-  memory { mem_str }
+  cpus { resources.cpus }
+  memory { resources.memory }
 
   stageInMode 'symlink'
 
   input:
-  tuple val(dataset_id), path(dataset_dir), val(method), val(mem_str), val(num_cpus)
+  tuple val(dataset_id), path(dataset_dir), val(method), val(resources)
   val outdir
 
   output:

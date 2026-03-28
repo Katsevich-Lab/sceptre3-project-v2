@@ -33,10 +33,12 @@ workflow {
             def method = resource_row.method
             def data_method = (method == 'sceptregampoi') ? 'sceptre' : method
             def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${data_method}")
-            def mem_str  = resource_row.memory
-            def num_cpus = resource_row.cpus as int
+            def resources = [
+                cpus: resource_row.cpus,
+                memory: resource_row.memory
+            ]
 
-            [dataset_id, dataset_dir, method, mem_str, num_cpus]
+            [dataset_id, dataset_dir, method, resources]
         }
 
     // Route to appropriate method based on method name
