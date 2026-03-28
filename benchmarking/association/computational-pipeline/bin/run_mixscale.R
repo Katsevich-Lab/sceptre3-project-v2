@@ -69,7 +69,7 @@ DefaultAssay(seu) <- "RNA"
 seu <- seu |>
   NormalizeData() |>
   FindVariableFeatures() |> # only 2000 most variable genes get scaled and used for perturb scores
-  ScaleData() |>
+  ScaleData(features = VariableFeatures(seu)) |>
   RunPCA(verbose = FALSE)
 
 cat("  Preprocessing complete\n")
