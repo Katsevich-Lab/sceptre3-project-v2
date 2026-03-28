@@ -23,9 +23,11 @@
 source("~/.Rprofile")
 library(sceptre)
 
-dataset <- "replogle-rd7"
-# this would be pulled from a _config.csv
-assoc_dataset_name <- "replogle-rd7_comp_ngenes=560_ntargets=225_ncells=90k_n_nonzero_p=0.75"
+dataset <- Sys.getenv("DATA_NAME")
+if (dataset == "") stop("DATA_NAME environment variable not set.")
+
+assoc_dataset_name <- Sys.getenv("ASSOC_DATASET_NAME")
+if (assoc_dataset_name == "") stop("ASSOC_DATASET_NAME environment variable not set.")
 
 if(!grepl(dataset, assoc_dataset_name)) {
   stop("`dataset` and `assoc_dataset_name` do not seem to match.")
