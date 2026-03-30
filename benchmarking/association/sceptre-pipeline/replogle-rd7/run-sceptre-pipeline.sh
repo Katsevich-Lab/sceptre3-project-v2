@@ -50,7 +50,8 @@ nextflow run jdeu1023/sceptre-pipeline -r main \
  --pair_pod_size 5000 \
  --n_calibration_pairs 0 \
  --additional_cells_to_remove $cells_to_remove_fp \
-  --assign_grnas_memory "4GB" \
+  --assign_grnas_memory "2GB" \
+  --assign_grnas_time_per_grna = "10s" \
   -with-trace "$output_fp/tracing/trace.tsv" \
   -with-report "$output_fp/tracing/report.html" \
   -with-timeline "$output_fp/tracing/timeline.html" \
