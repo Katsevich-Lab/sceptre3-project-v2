@@ -30,11 +30,17 @@ cells_to_remove_fp=$assoc_input_dir"cells_to_remove.csv"
 output_fp=$LOCAL_BENCHMARKING_DIR"association/computational/outputs/sceptre-pipeline/"$assoc_dataset_name
 mkdir -p $output_fp
 
+# Capture config path before cd-ing away from the script directory
+config_fp="$(pwd)/nextflow.config"
+
+# cd into output dir so .nextflow/ cache and .nextflow.log are isolated per dataset
+cd $output_fp
 
 #################
 # Invoke pipeline
 #################
 nextflow run jdeu1023/sceptre-pipeline -r main \
+ -c $config_fp \
  --sceptre_object_fp $sceptre_object_fp \
  --response_odm_fp $response_odm_fp \
  --grna_odm_fp $grna_odm_fp \
