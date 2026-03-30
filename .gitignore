@@ -10,6 +10,9 @@ work/
 
 # ignore the many benchmarking configs by default
 benchmarking/guide-assignment/guide-assignment-pipeline/configs/*_config.csv
+benchmarking/association/neg-control-pipeline/configs/
+benchmarking/association/pos-control-pipeline/configs/
+benchmarking/association/computational-pipeline/configs/
 
 # HPC qsub logs like <name>.o123456 (and array tasks like .o123456.1)
 *.o[0-9]*
