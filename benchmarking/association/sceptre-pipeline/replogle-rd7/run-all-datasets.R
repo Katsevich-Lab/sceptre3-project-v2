@@ -30,7 +30,7 @@ for (i in seq_len(nrow(config))) {
   )
   set_out <- system2("qsub", args = set_args, stdout = TRUE)
   cat("  qsub output:", set_out, "\n")
-  set_job_id <- regmatches(set_out, regexpr("[0-9]+", set_out))
+  set_job_id <- sub(".*Your job ([0-9]+).*", "\\1", paste(set_out, collapse = " "))
   cat("  set-analysis job:", set_job_id, "\n")
 
   # Submit pipeline job, holding on set-analysis
@@ -41,7 +41,7 @@ for (i in seq_len(nrow(config))) {
   )
   pipe_out <- system2("qsub", args = pipe_args, stdout = TRUE)
   cat("  qsub output:", pipe_out, "\n")
-  prev_job_id <- regmatches(pipe_out, regexpr("[0-9]+", pipe_out))
+  prev_job_id <- sub(".*Your job ([0-9]+).*", "\\1", paste(pipe_out, collapse = " "))
   cat("  pipeline job:", prev_job_id, "\n")
 }
 

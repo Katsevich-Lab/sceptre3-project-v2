@@ -7,7 +7,7 @@
 export NXF_OPTS="-Xms500M -Xmx4G"
 
 source $HOME/.research_config
-nextflow pull timothy-barry/sceptre-pipeline
+nextflow pull jdeu1023/sceptre-pipeline
 
 ##########################
 # REQUIRED INPUT ARGUMENTS
