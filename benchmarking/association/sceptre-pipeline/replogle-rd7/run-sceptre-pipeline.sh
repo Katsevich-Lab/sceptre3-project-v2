@@ -2,7 +2,6 @@
 #$ -N scep-pipe_assoc_replogle
 #$ -cwd
 #$ -j y
-#$ -pe openmp 2
 #$ -l m_mem_free=2G
 export NXF_OPTS="-Xms500M -Xmx4G"
 
@@ -51,7 +50,7 @@ nextflow run jdeu1023/sceptre-pipeline -r main \
  --n_calibration_pairs 0 \
  --additional_cells_to_remove $cells_to_remove_fp \
   --assign_grnas_memory "2GB" \
-  --assign_grnas_time_per_grna = "10s" \
+  --assign_grnas_time_per_grna "10s" \
   -with-trace "$output_fp/tracing/trace.tsv" \
   -with-report "$output_fp/tracing/report.html" \
   -with-timeline "$output_fp/tracing/timeline.html" \
