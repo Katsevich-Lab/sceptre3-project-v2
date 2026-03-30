@@ -2,7 +2,6 @@
 #$ -N scep-pipe_assoc_replogle
 #$ -cwd
 #$ -j y
-#$ -q 16xl.q
 #$ -pe openmp 2
 #$ -l m_mem_free=2G
 export NXF_OPTS="-Xms500M -Xmx4G"
