@@ -41,6 +41,7 @@ cd $output_fp
 #################
 nextflow run jdeu1023/sceptre-pipeline -r main \
  -c $config_fp \
+ -profile profile_16xl \
  --sceptre_object_fp $sceptre_object_fp \
  --response_odm_fp $response_odm_fp \
  --grna_odm_fp $grna_odm_fp \
