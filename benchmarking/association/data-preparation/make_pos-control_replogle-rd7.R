@@ -1,10 +1,178 @@
 rm(list=ls())
 source("~/.Rprofile")
 
-library(Matrix)
 library(tidyverse)
 
+script_dir <- dirname(sys.frame(1)$ofile)
+source(file.path(script_dir, "utils_data_prep.R"))
+source(file.path(script_dir, "neg_control_functions.R"))
+source(file.path(script_dir, "computational_benchmarking_functions.R"))
+
+make_pos_control_replogle_rd7 <- function(
+    dataset_name,
+    response_odm,
+    grna_odm,
+    cell_covariates,
+    scep_assn_mat,
+    grna_target_df,
+    genes_passing_qc,
+    num_targets,
+    max_num_cells,
+    only_consider_targets_with_this_many_cells,
+    nt_name = "non-targeting",
+    random_seed = 34534) {
+
+  set.seed(random_seed)
+  cat("Random seed set to", random_seed, "\n")
+  
+  # 1. get all on-targets that pass QC and have enough cells, and sample from there
+  all_on_targets <- intersect(
+    grna_target_df$grna_target,
+    genes_passing_qc
+  )
+  all_on_target_guides = grna_target_df$grna_id[grna_target_df$grna_target %in% all_on_targets]
+  
+  # because we will likely be downsampling to get enough on-targets, 
+  # we want to only take ones with enough cells to survive this downsampling
+  on_targets_with_enough_cells <- data.frame(
+    grna_id = all_on_target_guides,
+    cells_per_guide = Matrix::rowSums(scep_assn_mat[all_on_target_guides,]),
+    stringsAsFactors = FALSE
+  ) |>
+    left_join(dplyr::select(grna_target_df, -grna_group), by = "grna_id") |>
+    group_by(grna_target) |>
+    summarize(cells_per_target = sum(cells_per_guide)) |>
+    dplyr::filter(cells_per_target >= only_consider_targets_with_this_many_cells)
+  if(nrow(on_targets_with_enough_cells) < num_targets) {
+    stop("Not enough on-targets have enough cells per target.")
+  }
+  
+  targets <- sample(on_targets_with_enough_cells$grna_target, num_targets)
+  genes = targets # the same for on-target
+  cat("There are", length(all_on_targets), "on-targets.\n")
+  cat("   ", nrow(on_targets_with_enough_cells), "have at least", only_consider_targets_with_this_many_cells, "cells.\n")
+  cat("   ", length(targets), "on-targets sampled.\n")
+  
+  # 2. get all guides for these targets, and all cells expressing these guides
+  guides = grna_target_df$grna_id[grna_target_df$grna_target %in% c(targets, nt_name)]
+  candidate_cells = which(Matrix::colSums(scep_assn_mat[guides,]) > 0)
+  
+  cat("Initially", length(candidate_cells), "cells found.\n")
+  if(length(candidate_cells) >= max_num_cells) {
+    cat("Downsampling to", max_num_cells, "cells.\n")
+    candidate_cells <- sample(candidate_cells, max_num_cells)
+  } else {
+    stop("Not enough cells for these parameters.")
+  }
+  
+  # 3. get the response matrix subset, and remove any cells with all-0 response
+  response_subset = odm_to_sparse_matrix(response_odm, genes, candidate_cells)
+  # remove any cells that have all 0 expression
+  non_zero_cells = Matrix::colSums(response_subset) > 0
+  response_subset = response_subset[, non_zero_cells]
+  cell_idx = candidate_cells[non_zero_cells]
+  cat("Response matrix created.", length(cell_idx), "cells remain after removing all-0 expression cells.\n")
+  
+  # 4. make dummy grna matrix and enforce low MOI
+  grna_indicator = (scep_assn_mat[guides, cell_idx] + 0) |> # +0 converts to integer from logical
+    enforce_single_guide_per_cell(random_seed = random_seed)
+  cat("grna indicator matrix made and low moi enforced.\n")
+  
+  # 5. prepare metadata and the final necessary pieces 
+  metadata = prepare_cell_metadata_low_moi(grna_indicator, grna_target_df, cell_covariates, cell_idx)
+  
+  cell_info <- metadata$cell_info
+  cell_covariates_subset = metadata$cell_covariates_subset |>
+    dplyr::select(-batch)
+  
+  grna_target_df_subset = grna_target_df[grna_target_df$grna_id %in% rownames(grna_indicator), ]
+  
+  stopifnot(nrow(cell_covariates_subset) == ncol(response_subset))
+  
+  # what's the least sample size for an on-target?
+  num_cells_per_target <- cell_info |>
+    group_by(grna_target) |>
+    summarize(n=n()) |>
+    pull(n) |>
+    sort()
+  cat("Smallest num. cells per target:", paste0(num_cells_per_target[1:5], collapse=", "), "\n")
+  plt <- data.frame(num_cells_per_target = num_cells_per_target) |>
+    ggplot(aes(x = num_cells_per_target)) +
+    geom_histogram(bins=60) +
+    scale_y_log10() +
+    theme_bw() +
+    labs(x = "num. cells for each on-target",
+         title = "Sample size for on-targets")
+  print(plt)
+  
+  
+  # 6: Write outputs
+  write_fp <- file.path(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "association/pos-control/input_data", dataset_name
+  )
+  dir.create(write_fp, showWarnings = FALSE, recursive = TRUE)
+
+  # Write shared metadata files
+  write.csv(cell_info, file.path(write_fp, "cell_info.csv"), row.names = FALSE)
+  cat("   `cell_info.csv` written.\n")
+
+  write.csv(cell_covariates_subset, file.path(write_fp, "cell_covariates.csv"),
+            row.names = FALSE)
+  cat("   `cell_covariates.csv` written.\n")
+
+  # Formula object
+  formula_string <- "~ 1 + log(response_n_nonzero_full + 1) + log(response_n_umis_full + 1) + log(grna_n_nonzero_full + 1) + log(grna_n_umis_full + 1)"
+
+  # Write SCEPTRE format
+  write_sceptre_output(
+    response_matrix = response_subset,
+    grna_matrix = grna_indicator,
+    cell_covariates = cell_covariates_subset,
+    grna_target_df = grna_target_df_subset,
+    discovery_pairs = NULL, # not needed for pos control
+    formula_object = formula_string,
+    output_path = file.path(write_fp, "sceptre")
+  )
+
+  # Write Mixscale format
+  write_mixscale_output(
+    response_matrix = response_subset,
+    cell_info = cell_info,
+    output_path = file.path(write_fp, "mixscale")
+  )
+
+  # Prepare FR-Perturb covariates (Replogle: log1p all covariates)
+  # regardless of whether batch is used, do not log it
+  covariates_to_log1p <- setdiff(names(cell_covariates_subset), "batch")
+  cell_covariates_frpert_with_perturbation <- prepare_frperturb_covariates(
+    cell_covariates = cell_covariates_subset,
+    grna_targets = cell_info$grna_target,
+    covariates_to_log1p = covariates_to_log1p
+  )
+
+  write_frperturb_output(
+    response_matrix = response_subset,
+    cell_names =  paste0("cell_idx_", cell_info$cell_idx),
+    cell_covariates_frpert = cell_covariates_frpert_with_perturbation,
+    output_path = file.path(write_fp, "frperturb")
+  )
+
+  cat("\n Positive control dataset creation complete!\n")
+  cat("Output directory:", write_fp, "\n")
+}
+
+
+
 source_data <- "replogle-rd7"
+num_targets = 1500
+max_num_cells = 100000
+gene_qc_thresh = 7
+# almost 500k cells initially are selected, so we will be downsampling to ~20%
+only_consider_targets_with_this_many_cells = 150 
+random_seed = 876567
+
+dataset_name = paste0(source_data, "_pos_ctrl_ntargets=", num_targets, "_ncells=", max_num_cells / 1000, "k_gene_thresh=",gene_qc_thresh)
 
 input_fp <- file.path(
   .get_config_path("LOCAL_BENCHMARKING_DIR"),
@@ -21,376 +189,46 @@ scep <- sceptre::read_ondisc_backed_sceptre_object(
   grna_odm_file_fp = paste0(input_fp, "grna.odm")
 )
 
-
-# # inputs
-# num_pc_cells = 20000
-# num_nt_cells = 1000
-# response_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "response.odm"))
-# grna_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "grna.odm"))
-# grna_assign_mat = readRDS(file.path(output_fp, "grna_assignment_matrix.rds"))
-# grna_target_df = scep@grna_target_data_frame
-# cell_covariates = scep@covariate_data_frame
-# NT_name = "non-targeting"
-# dataset_name = paste0(source_data, "_", "large")
-# min_num_cells_per_target = 200
-
-
-odm_to_sparse_matrix <- function(odm, genes, cell_idx) {
-  ilist <- jlist <- xlist <- vector("list", length(genes))
-  for(i in seq_along(genes)) {
-    curr_umis <- odm[genes[i], ][cell_idx]
-    is_positive <- curr_umis > 0
-    num_entries <- sum(is_positive)
-    if(num_entries > 0) {
-      ilist[[i]] <- rep(i, num_entries)
-      jlist[[i]] <- which(is_positive)
-      xlist[[i]] <- curr_umis[is_positive]
-    }
-  }
-  sparseMatrix(i = unlist(ilist), j = unlist(jlist), x = unlist(xlist),
-              dims = c(length(genes), length(cell_idx)))
-}
-
-# num_pc_cells = 50000
-# num_nt_cells = 5000
-# min_num_cells_per_target = 300
-# dataset_name = paste0(source_data, "_", "medium")
-# response_odm = response_odm
-# grna_odm = grna_odm
-# grna_assign_mat = grna_assign_mat
-# grna_target_df = grna_target_df
-# cell_covariates = cell_covariates
-# NT_name = NT_name
-
-
-# NOTE
-# this has low MOI pretty hard-coded in, since we only take the 
-# cells expressing exactly one gRNA
-make_pos_control_replogle_rd7 <- function(num_pc_cells, num_nt_cells, min_num_cells_per_target,
-                              dataset_name, response_odm,
-                              grna_odm, grna_assign_mat, grna_target_df,
-                              cell_covariates, NT_name, seed=452) {
-  
-  ## 0. determining which cells express exactly one gRNA. 
-  ##    This is the population we subsample from.
-  if(!is.null(seed)) {
-    set.seed(seed)
-  }
-  
-  num_grnas_expressed_per_cell <- Matrix::colSums(grna_assign_mat) # potentially big operation
-  expresses_exactly_one_grna <- which(num_grnas_expressed_per_cell == 1)
-  grna_assign_mat_to_use <- grna_assign_mat[,expresses_exactly_one_grna]
-  
-  ## 1. getting  pos control cells ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  # key idea: for each response gene name, in the order 
-  # they appear in the data, get the cells expressing any gRNA
-  # targeting that gene. Keep doing this until we have at least
-  # `num_pc_cells` many cells.
-  all_response_gene_names <- rownames(response_odm) |> sample()
-  target_to_grna_ids <- split(grna_target_df$grna_id, grna_target_df$grna_target)
-  num_cells_per_grna <- c()
-  cells_per_grna <- list()
-  genes_kept <- c()
-  for(gene in all_response_gene_names) {
-
-    # a. get the corresponding guide rnas
-    curr_grna_ids <- target_to_grna_ids[[gene]]
-    if(is.null(curr_grna_ids)) {
-      next  # skip this gene if it's not a target
-    } 
-    
-    # b. get the cells that express each of these gRNAs
-    
-    # now we see how many cells for this grna_target
-    # we only want targets with above our threshold number of cells
-    # so we need to see how big it is first
-    
-    curr_cells_per_grna <- list()
-    curr_num_cells_per_grna <- c()
-    for(grna in curr_grna_ids) {
-      curr_cells_per_grna[[grna]] <- expresses_exactly_one_grna[which(grna_assign_mat_to_use[grna, ])]
-      curr_num_cells_per_grna <- c(curr_num_cells_per_grna, length(curr_cells_per_grna[[grna]]))
-    }
-    if(sum(curr_num_cells_per_grna) < min_num_cells_per_target) {
-      next
-    }
-    # now we know we are keeping this cell
-    # so we update our tracking
-    
-    genes_kept <- c(genes_kept, gene)
-    cells_per_grna <- c(cells_per_grna, curr_cells_per_grna)
-    num_cells_per_grna <- c(num_cells_per_grna, curr_num_cells_per_grna)
-
-    # break once we've saved enough cells
-    if(sum(num_cells_per_grna) >= num_pc_cells) {
-      break
-    }
-  }
-  
-  
-  ## 2. adding in the NT cells
-  nt_grna_ids <- target_to_grna_ids[[NT_name]]
-  num_nt_so_far <- 0
-  for(grna in nt_grna_ids) {
-    cells_per_grna[[grna]] <- expresses_exactly_one_grna[which(grna_assign_mat_to_use[grna, ])]
-    num_cells_per_grna <- c(num_cells_per_grna, length(cells_per_grna[[grna]]))
-    num_nt_so_far <- num_nt_so_far + length(cells_per_grna[[grna]])
-    if(num_nt_so_far >= num_nt_cells) {
-      break
-    }
-  }
-  
-  
-  
-  ## 3. making cell info dataframe 
-  all_cell_idx <- unlist(cells_per_grna) |> setNames(NULL)
-  cell_info <- data.frame(stringsAsFactors = FALSE,
-                          cell_idx = all_cell_idx,
-                          grna_id = rep(names(cells_per_grna), sapply(cells_per_grna, length))
-  ) |>
-    dplyr::left_join(grna_target_df, by = "grna_id")
-
-  cell_covariates <- cell_covariates[all_cell_idx, ] |>
-    setNames(paste0(names(cell_covariates), "_full"))
-  
-  ## 4. getting the final data and writing
-  cat("Starting to read `response_odm`...")
-  t0 <- Sys.time()
-  response_mat <- odm_to_sparse_matrix(response_odm, genes_kept, all_cell_idx) |>
-    `rownames<-`(genes_kept)
-  t1 <- Sys.time()
-  cat(" read in", round(t1-t0, 2), units(t1-t0), "\n")
-  
-  
-  # remove any cells that didn't have any non-zero gene UMIs
-  total_cell_expressions <- Matrix::colSums(response_mat)
-  cells_without_expression <- total_cell_expressions == 0
-  if(any(cells_without_expression)) {
-    num_removed <- sum(cells_without_expression)
-    # cat("  Removing", num_removed, "cells with zero expression across all genes\n")
-
-    # Keep only cells with expression
-    cells_to_keep <- !cells_without_expression
-
-    # Update response_mat: remove columns
-    response_mat <- response_mat[, cells_to_keep, drop = FALSE]
-
-    # Update cell_info and cell_covariates: remove rows
-    cell_info <- cell_info[cells_to_keep, ]
-    cell_covariates <- cell_covariates[cells_to_keep, ]
-
-    # Update all_cell_idx: remove elements
-    removed_cell_indices <- all_cell_idx[cells_without_expression]
-    all_cell_idx <- all_cell_idx[cells_to_keep]
-
-    # Update cells_per_grna: remove filtered cell indices from each gRNA's list
-    cells_per_grna <- lapply(cells_per_grna, function(cells) {
-      setdiff(cells, removed_cell_indices)
-    })
-
-    # Recalculate num_cells_per_grna after filtering
-    num_cells_per_grna <- sapply(cells_per_grna, length)
-
-    # Remove gRNAs with no cells after filtering
-    empty_grnas <- num_cells_per_grna == 0
-    if(any(empty_grnas)) {
-      num_empty <- sum(empty_grnas)
-      cat("  Removing", num_empty, "gRNAs with no cells after expression filtering\n")
-      cells_per_grna <- cells_per_grna[!empty_grnas]
-      num_cells_per_grna <- num_cells_per_grna[!empty_grnas]
-    }
-  }
-
-  cat("Getting ready to write", dataset_name, "\b...\n")
-  
-  write_fp <- file.path(
-    .get_config_path("LOCAL_BENCHMARKING_DIR"),
-    "association/pos-control/input_data", dataset_name
-  )
-  dir.create(write_fp, showWarnings = FALSE, recursive = TRUE)
-  write.csv(cell_info, file.path(write_fp, "cell_info.csv"), row.names = FALSE)
-  cat("   `cell_info.csv` written.\n")
-  
-  write.csv(cell_covariates, file.path(write_fp, "cell_covariates.csv"), row.names = FALSE)
-  cat("   `cell_covariates.csv` written.\n")
-  
-  ## 4a. sceptre -----------------------------------------------------
-  write_sceptre_fp <- file.path(write_fp, "sceptre")
-  dir.create(write_sceptre_fp, showWarnings = FALSE, recursive = TRUE)
-
-  grna_target_df_kept <- grna_target_df |>
-    dplyr::filter(grna_id %in% cell_info$grna_id)
-
-  # Create binary assignment indicator matrix (not UMI counts)
-  # grna_indicator_matrix[grna, cell] = 1 if cell is assigned to grna, 0 otherwise
-  locs <- lapply(seq_along(cells_per_grna), function(i) {
-    grna <- names(cells_per_grna)[i]
-    assigned_cells <- cells_per_grna[[grna]]
-    list(
-      i = rep(i, length(assigned_cells)),
-      j = match(assigned_cells, all_cell_idx),
-      x = rep(1, length(assigned_cells))
-    )
-  })
-  grna_indicator_matrix <- sparseMatrix(
-    i = lapply(locs, `[[`, "i") |> unlist(),
-    j = lapply(locs, `[[`, "j") |> unlist(),
-    x = lapply(locs, `[[`, "x") |> unlist(),
-    dims = c(length(cells_per_grna), length(all_cell_idx))
-  )|>
-    `rownames<-`(names(cells_per_grna))
-
-  # Compute sceptre-specific covariates from the subsetted gRNA UMI data
-  # Extract actual UMI counts from grna_odm for this subset of gRNAs and cells
-  grna_matrix_subset <- odm_to_sparse_matrix(grna_odm, names(cells_per_grna), all_cell_idx)
-  
-
-  # Compute covariates from the UMI subset (not from binary grna_indicator_matrix)
-  grna_n_nonzero_subset <- Matrix::colSums(grna_matrix_subset != 0)
-  grna_n_umis_subset <- Matrix::colSums(grna_matrix_subset)
-
-  # Create sceptre-specific cell covariates with subset-based gRNA metrics
-  cell_covariates_sceptre <- cbind(
-    cell_covariates,
-    data.frame(
-      grna_n_nonzero_subset = grna_n_nonzero_subset,
-      grna_n_umis_subset = grna_n_umis_subset
-    )
-  )
-
-  saveRDS(response_mat, file.path(write_sceptre_fp, "response_matrix.rds"))
-  saveRDS(grna_indicator_matrix, file.path(write_sceptre_fp, "grna_matrix.rds"))
-  write.csv(cell_covariates_sceptre, file.path(write_sceptre_fp, "cell_covariates.csv"), row.names = FALSE)
-  write.csv(grna_target_df_kept, file.path(write_sceptre_fp, "grna_target_data_frame.csv"), row.names = FALSE)
-  cat("   sceptre written.\n")
-  
-  ## 4b. Mixscale -----------------------------------------------------
-  write_mixscale_fp <- file.path(write_fp, "mixscale")
-  dir.create(write_mixscale_fp, showWarnings = FALSE, recursive = TRUE)
-  cell_names <- paste0("CELL_", cell_info$cell_idx)
-  
-  saveRDS(response_mat |> `colnames<-`(cell_names),
-          file.path(write_mixscale_fp, "response_matrix.rds"))
-  saveRDS(setNames(cell_info$grna_target, cell_names),
-          file.path(write_mixscale_fp, "assignments.rds"))
-  cat("   mixscale written.\n")
-  
-  ## 4c. FR-Perturb -----------------------------------------------------
-  write_frperturb_fp <- file.path(write_fp, "frperturb")
-  dir.create(write_frperturb_fp, showWarnings = FALSE, recursive = TRUE)
-  
-  library(reticulate)
-  library(SingleCellExperiment)
-  library(zellkonverter)
-  env_name <- "r-anndata"
-  curr_envs <- conda_list()$name
-  if(!env_name %in% curr_envs) {
-    conda_create("r-anndata", packages = c("python=3.12"))
-    py_install(c("numpy", "scipy", "h5py", "anndata"),
-               envname = "r-anndata", pip = TRUE)
-  }
-  use_condaenv("r-anndata", required = TRUE)
-  py_config()
-  
-  # actually writing
-  # see here for input specifications: https://github.com/douglasyao/FR-Perturb
-  # using Option 2 from here
-  # this is low MOI so the perturbation column is simple
-  response_mat_frpert <- response_mat |> `colnames<-`(cell_names)
-
-  # these get added to .obs of the anndata object
-  # Using *_full covariates (not *_subset) for FR-Perturb
-  cell_covs_frpert <- dplyr::select(cell_covariates,
-                                    response_n_nonzero_full, response_n_umis_full,
-                                    grna_n_nonzero_full, grna_n_umis_full, response_p_mito_full) |>
-    mutate(
-      # Log1p-transform numeric covariates for FR-Perturb (FR-Perturb doesn't take logs)
-      log_response_n_nonzero_full = log1p(response_n_nonzero_full),
-      log_response_n_umis_full = log1p(response_n_umis_full),
-      log_grna_n_nonzero_full = log1p(grna_n_nonzero_full),
-      log_grna_n_umis_full = log1p(grna_n_umis_full),
-      perturbation = cell_info$grna_target
-    )
-  
-  sce <- SingleCellExperiment(
-    assays  = list(counts = response_mat_frpert),
-    colData = cell_covs_frpert   # -> AnnData .obs
-  )
-  
-  writeH5AD(
-    sce,
-    file = file.path(write_frperturb_fp, "response_matrix.h5ad"),
-    X_name = "counts" # the name of the actual data in my `sce`
-  )
-  cat("   FR-perturb written.\n")
-
-  cat(dataset_name, "finished.\n\n")
-}
-
 response_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "response.odm"))
 grna_odm = ondisc::initialize_odm_from_backing_file(paste0(input_fp, "grna.odm"))
-grna_assign_mat = readRDS(file.path(output_fp, "grna_assignment_matrix.rds"))
+scep_assn_mat = readRDS(file.path(output_fp, "grna_assignment_matrix.rds"))
 grna_target_df = scep@grna_target_data_frame
 cell_covariates = scep@covariate_data_frame
 
+moi_observed <- Matrix::colSums(scep_assn_mat) |> mean()
 
-# make_pos_control_replogle_rd7(
-#   num_pc_cells = 10000, num_nt_cells = 2000, min_num_cells_per_target = 100,
-#   dataset_name = paste0(source_data, "_", "small"),
-#   response_odm = response_odm, grna_odm = grna_odm,
-#   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
-#   cell_covariates = cell_covariates, NT_name = NT_name
-# )
-# 
-# make_pos_control_replogle_rd7(
-  # num_pc_cells = 50000, num_nt_cells = 5000, min_num_cells_per_target = 300,
-  # dataset_name = paste0(source_data, "_", "medium"),
-  # response_odm = response_odm, grna_odm = grna_odm,
-  # grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
-  # cell_covariates = cell_covariates, NT_name = NT_name
-# )
+total_num_guides <- grna_target_df |>
+  filter(! grna_target %in% c("nt_off_target", "unknown")) |>
+  pull(grna_id) |>
+  unique() |>
+  length()
 
-# make_pos_control_replogle_rd7(
-#   num_pc_cells = 50000, num_nt_cells = 5000, min_num_cells_per_target = 300,
-#   dataset_name = paste0(source_data, "_", "medium_v2"),
-#   response_odm = response_odm, grna_odm = grna_odm,
-#   grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
-#   cell_covariates = cell_covariates, NT_name = NT_name
-# )
+avg_num_guides_per_target <- grna_target_df |>
+  filter(! grna_target %in% c("nt_off_target", "unknown")) |>
+  group_by(grna_target) |>
+  summarize(n=n()) |>
+  pull(n) |>
+  mean()
 
+gene_summary_stats = read_csv(file.path(input_fp, "gene_summary_stats.csv"), show_col_types = FALSE)
 
+genes_passing_qc <- gene_summary_stats |>
+  filter(gene_n_nonzero * moi_observed / total_num_guides * avg_num_guides_per_target >= gene_qc_thresh) |>
+  pull(gene)
+
+cat("There are", length(genes_passing_qc), "genes passing QC.\n")
 
 make_pos_control_replogle_rd7(
-  num_pc_cells = 200000, num_nt_cells = 10000, min_num_cells_per_target = 20,
-  dataset_name = paste0(source_data, "_", "large"),
-  response_odm = response_odm, grna_odm = grna_odm,
-  grna_assign_mat = grna_assign_mat, grna_target_df = grna_target_df,
-  cell_covariates = cell_covariates, NT_name = "non-targeting"
+  dataset_name = dataset_name,
+  response_odm = response_odm,
+  grna_odm = grna_odm,
+  cell_covariates = cell_covariates,
+  scep_assn_mat = scep_assn_mat,
+  grna_target_df = grna_target_df,
+  genes_passing_qc = genes_passing_qc,
+  num_targets = num_targets,
+  max_num_cells = max_num_cells,
+  only_consider_targets_with_this_many_cells = only_consider_targets_with_this_many_cells,
+  nt_name = "non-targeting",
+  random_seed = random_seed
 )
-
-
-
-
-
-## some testing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# fp1 <- "~/data/projects/sceptre3/benchmarking/association/pos-control/input_data/replogle-rd7_medium/"
-# fp2 <- "~/data/projects/sceptre3/benchmarking/association/pos-control/input_data/replogle-rd7_medium_v2/"
-# fps <- c(fp1, fp2)
-# 
-# cc <- lapply(fps, function(fp) read.csv(file.path(fp, "cell_info.csv")))
-# stopifnot(identical(cc[[1]], cc[[2]]))
-# 
-# cc <- lapply(fps, function(fp) read.csv(file.path(fp, "cell_covariates.csv")))
-# stopifnot(identical(cc[[1]], cc[[2]]))
-# 
-# cc <- lapply(fps, function(fp) read.csv(file.path(fp, "cell_covariates.csv")))
-# stopifnot(identical(cc[[1]], cc[[2]]))
-# 
-# cc <- lapply(fps, function(fp) readRDS(file.path(fp, "/sceptre/grna_matrix.rds")))
-# stopifnot(identical(cc[[1]], cc[[2]]))
-# 
-# cc <- lapply(fps, function(fp) readRDS(file.path(fp, "/sceptre/response_matrix.rds")))
-# stopifnot(identical(cc[[1]], cc[[2]]))
-# 
-# cc <- lapply(fps, function(fp) read.csv(file.path(fp, "/sceptre/grna_target_data_frame.csv")))
-# stopifnot(identical(cc[[1]], cc[[2]]))
