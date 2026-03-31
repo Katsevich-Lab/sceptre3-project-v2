@@ -1,1 +1,10 @@
 dataset,npairs
+gasperini_comp_ngenes=250_ntargets=200_ncells=50k_gene_thresh=7,50000
+gasperini_comp_ngenes=250_ntargets=200_ncells=75k_gene_thresh=7,50000
+gasperini_comp_ngenes=250_ntargets=200_ncells=100k_gene_thresh=7,50000
+gasperini_comp_ngenes=375_ntargets=200_ncells=50k_gene_thresh=7,75000
+gasperini_comp_ngenes=375_ntargets=200_ncells=75k_gene_thresh=7,75000
+gasperini_comp_ngenes=375_ntargets=200_ncells=100k_gene_thresh=7,75000
+gasperini_comp_ngenes=500_ntargets=200_ncells=50k_gene_thresh=7,100000
+gasperini_comp_ngenes=500_ntargets=200_ncells=75k_gene_thresh=7,100000
+gasperini_comp_ngenes=500_ntargets=200_ncells=100k_gene_thresh=7,100000
