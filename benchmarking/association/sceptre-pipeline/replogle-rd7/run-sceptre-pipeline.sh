@@ -18,7 +18,7 @@ nextflow pull jdeu1023/sceptre-pipeline
 data_name="${DATA_NAME:?DATA_NAME must be set}"
 assoc_dataset_name="${ASSOC_DATASET_NAME:?ASSOC_DATASET_NAME must be set}"
 npairs="${NPAIRS:?NPAIRS must be set}"
-pair_pod_size=$(( npairs / 15 ))
+pair_pod_size=$(( (npairs + 14) / 15 ))
 
 data_dir="${LOCAL_BENCHMARKING_DIR}guide_assignment/input_data/${data_name}/sceptre-pipeline/"
 assoc_input_dir="${LOCAL_BENCHMARKING_DIR}association/computational/input_data/${assoc_dataset_name}/sceptre-pipeline/"
