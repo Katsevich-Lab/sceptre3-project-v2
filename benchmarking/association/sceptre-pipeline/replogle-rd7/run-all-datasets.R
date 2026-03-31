@@ -61,9 +61,12 @@ for (batch_start in seq(1, nrow(config), by = batch_size)) {
 
     cat(sprintf("  [%d/%d] %s\n", i, nrow(config), assoc_dataset_name))
 
+    npairs <- config$npairs[i]
+
     env_vars <- c(
       paste0("DATA_NAME=", data_name),
-      paste0("ASSOC_DATASET_NAME=", assoc_dataset_name)
+      paste0("ASSOC_DATASET_NAME=", assoc_dataset_name),
+      paste0("NPAIRS=", npairs)
     )
 
     # Submit set-analysis job.
@@ -88,6 +91,7 @@ for (batch_start in seq(1, nrow(config), by = batch_size)) {
       "-hold_jid", set_res$job_id,
       "-v", env_vars[1],
       "-v", env_vars[2],
+      "-v", env_vars[3],
       "run-sceptre-pipeline.sh"
     )
 

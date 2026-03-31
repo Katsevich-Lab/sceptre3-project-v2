@@ -17,6 +17,8 @@ nextflow pull jdeu1023/sceptre-pipeline
 
 data_name="${DATA_NAME:?DATA_NAME must be set}"
 assoc_dataset_name="${ASSOC_DATASET_NAME:?ASSOC_DATASET_NAME must be set}"
+npairs="${NPAIRS:?NPAIRS must be set}"
+pair_pod_size=$(( npairs / 15 ))
 
 data_dir="${LOCAL_BENCHMARKING_DIR}guide_assignment/input_data/${data_name}/sceptre-pipeline/"
 assoc_input_dir="${LOCAL_BENCHMARKING_DIR}association/computational/input_data/${assoc_dataset_name}/sceptre-pipeline/"
@@ -46,7 +48,7 @@ nextflow run jdeu1023/sceptre-pipeline -r main \
   --grna_odm_fp "${grna_odm_fp}" \
   --output_directory "${output_fp}" \
   --grna_assignment_method mixture \
-  --pair_pod_size 5000 \
+  --pair_pod_size "${pair_pod_size}" \
   --n_calibration_pairs 0 \
   --additional_cells_to_remove "${cells_to_remove_fp}" \
   --assign_grnas_memory "2GB" \
