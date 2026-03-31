@@ -138,9 +138,9 @@ de_res <- Run_wmvRegDE(
   labels          = "gene",
   nt.class.name   = "non-targeting",
   PRTB_list       = my_perturbations,
-  logfc.threshold = 0,
-  min.cells.group = 0,
-  min.pct         = 0,
+  # logfc.threshold = 0,
+  # min.cells.group = 0,
+  # min.pct         = 0,
   verbose         = FALSE
 )
 
