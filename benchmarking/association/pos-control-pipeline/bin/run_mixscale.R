@@ -33,6 +33,11 @@ cat("Loading data...\n")
 response_mat <- readRDS(file.path(dataset_dir, "response_matrix.rds"))
 assign_vec <- readRDS(file.path(dataset_dir, "assignments.rds"))
 
+NT_NAME = "non-targeting"
+if(! NT_NAME %in% assign_vec) {
+  stop("'non-targeting' is not present in 'assignments.rds'!")
+}
+
 cat("  Response matrix:", nrow(response_mat), "genes x", ncol(response_mat), "cells\n")
 cat("  Assignments:", length(assign_vec), "cells\n")
 
@@ -65,7 +70,7 @@ cat("  Unique perturbations:", length(unique(seu$gene)), "\n")
 cat("Running preprocessing...\n")
 seu <- NormalizeData(seu)
 seu <- FindVariableFeatures(seu)
-seu <- ScaleData(seu)
+seu <- ScaleData(seu, features = VariableFeatures(seu))
 seu <- RunPCA(seu, verbose=FALSE)
 
 # Step 4: Calculate perturbation signatures
@@ -93,7 +98,7 @@ seu <- RunMixscale(
   max.de.genes    = 100,
   new.class.name  = "mixscale_score",
   fine.mode       = FALSE,
-  verbose         = TRUE
+  verbose         = FALSE
 )
 
 # Check how many targets got mixscale scores
@@ -132,7 +137,11 @@ de_res <- Run_wmvRegDE(
   slot            = "counts",
   labels          = "gene",
   nt.class.name   = "non-targeting",
-  PRTB_list       = my_perturbations
+  PRTB_list       = my_perturbations,
+  logfc.threshold = 0,
+  min.cells.group = 0,
+  min.pct         = 0,
+  verbose         = FALSE
 )
 
 results <- lapply(my_perturbations, function(gene) de_res[[gene]][gene,]) |>

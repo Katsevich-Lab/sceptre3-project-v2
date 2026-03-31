@@ -44,8 +44,8 @@ input_h5ad = os.path.join(dataset_dir, "response_matrix.h5ad")
 # Set covariates based on dataset
 # Using *_full covariates (not *_subset)
 covariates_lookup = {
-    "replogle": "log_response_n_nonzero_full,log_response_n_umis_full,log_grna_n_nonzero_full,log_grna_n_umis_full",
-    "gasperini": "log_response_n_nonzero_full,log_response_n_umis_full,log_grna_n_nonzero_full,log_grna_n_umis_full,prep_batch"
+    "replogle": "response_n_nonzero_full_log1p,response_n_umis_full_log1p,grna_n_nonzero_full_log1p,grna_n_umis_full_log1p",
+    "gasperini": "response_n_nonzero_full_log1p,response_n_umis_full_log1p,grna_n_nonzero_full_log1p,grna_n_umis_full_log1p,prep_batch"
 }
 covariates = covariates_lookup[dataset_name]
 print(f"Covariates: {covariates}", flush=True)
@@ -56,7 +56,7 @@ moi_lookup = {
 }
 moi = moi_lookup[dataset_name]
 
-use_skew_t = True # Set to True to enable --fit-zero-pval
+use_skew_t = False # Set to True to enable --fit-zero-pval
 num_resamps = 2000
 print(f"Use skew_t: {use_skew_t}", flush=True)
 if not use_skew_t:
