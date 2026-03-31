@@ -96,7 +96,7 @@ enforce_single_guide_per_cell <- function(grna_indicator_matrix, random_seed = N
 #' @param grna_matrix Sparse binary matrix (guides × cells)
 #' @param cell_covariates Data frame of cell-level covariates
 #' @param grna_target_df Data frame with columns: grna_id, grna_target
-#' @param discovery_pairs Data frame with columns: grna_target, response_id
+#' @param discovery_pairs Data frame with columns: grna_target, response_id; skipped if NULL
 #' @param formula_object Formula string for SCEPTRE model
 #' @param output_path Directory path to write outputs
 write_sceptre_output <- function(
@@ -119,10 +119,15 @@ write_sceptre_output <- function(
   write.csv(grna_target_df, file.path(output_path, "grna_target_data_frame.csv"),
             row.names = FALSE)
   saveRDS(formula_object, file.path(output_path, "formula_object.rds"))
-  saveRDS(discovery_pairs, file.path(output_path, "discovery_pairs.rds"))
+  if(!is.null(discovery_pairs)) {
+    saveRDS(discovery_pairs, file.path(output_path, "discovery_pairs.rds"))
+  }
+  
 
   cat("   SCEPTRE format written to:", output_path, "\n")
-  cat("   Discovery pairs:", nrow(discovery_pairs), "\n")
+  if(!is.null(discovery_pairs)) {
+    cat("   Discovery pairs:", nrow(discovery_pairs), "\n")
+  }
 }
 
 

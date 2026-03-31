@@ -142,7 +142,8 @@ make_computational_replogle <- function(
     # cat("Fewer than", max_num_cells, "cells; randomly sampling more.\n")
     # all_other_cells = setdiff(1:ncol(scep_assn_mat), candidate_cells)
     # candidate_cells <- c(candidate_cells, sample(all_other_cells, max_num_cells - length(candidate_cells)))
-    cat("Fewer than", max_num_cells, "cells; all kept.\n")
+    # cat("Fewer than", max_num_cells, "cells; all kept.\n")
+    stop("Not enough cells for these parameters.")
   }
   
   # 3. use the provided genes, or sample genes and only keep genes that have some umi counts
