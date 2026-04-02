@@ -49,6 +49,7 @@ nextflow run jdeu1023/sceptre-pipeline -r main \
   --output_directory "${output_fp}" \
   --grna_assignment_method mixture \
   --pair_pod_size "${pair_pod_size}" \
+  --grna_pod_size 425 \
   --n_calibration_pairs 0 \
   --additional_cells_to_remove "${cells_to_remove_fp}" \
   --assign_grnas_memory "2GB" \
