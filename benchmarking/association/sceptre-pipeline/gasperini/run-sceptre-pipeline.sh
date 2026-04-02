@@ -2,6 +2,7 @@
 #$ -N scep-pipe_assoc_gasperini
 #$ -cwd
 #$ -j y
+#$ -q 16xl.q
 #$ -l m_mem_free=2G
 
 set -euo pipefail
@@ -43,6 +44,7 @@ cd "${output_fp}"
 #################
 nextflow run jdeu1023/sceptre-pipeline -r main \
   -c "${config_fp}" \
+  -profile profile_16xl \
   --sceptre_object_fp "${sceptre_object_fp}" \
   --response_odm_fp "${response_odm_fp}" \
   --grna_odm_fp "${grna_odm_fp}" \
