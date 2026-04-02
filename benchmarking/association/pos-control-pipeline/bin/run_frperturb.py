@@ -56,8 +56,8 @@ moi_lookup = {
 }
 moi = moi_lookup[dataset_name]
 
-use_skew_t = False # Set to True to enable --fit-zero-pval
-num_resamps = 2000
+use_skew_t = True # Set to True to enable --fit-zero-pval
+num_resamps = 1000
 print(f"Use skew_t: {use_skew_t}", flush=True)
 if not use_skew_t:
     print(f'num_resamps = {num_resamps}', flush=True)
