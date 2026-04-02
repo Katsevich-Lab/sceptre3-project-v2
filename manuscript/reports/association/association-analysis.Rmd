@@ -1,0 +1,383 @@
+---
+title: "association-analysis"
+output:
+  pdf_document: default
+  html_document: default
+date: "2026-04-02"
+---
+
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+rm(list = ls())
+
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+options(scipen=10)
+
+suppressPackageStartupMessages({
+  library(Matrix)
+  
+  library(dplyr)
+  library(stringr)
+  library(ggplot2)
+  library(readr)
+  library(tidyr)
+  library(purrr)
+  
+  library(scales)
+  library(pROC)
+  library(forcats)
+})
+
+source("~/.Rprofile")
+source("association-analysis-functions.R")
+```
+
+# REPLOGLE
+
+## STATISTICAL
+
+
+```{r, echo=FALSE}
+source_data = "replogle-rd7"
+
+run_name_neg <- "run_repl_1000genes_with_gene_qc_with_frpert_rerun" # "run_repl_1000genes_with_gene_qc" #  i reran frpert wotj skew-t
+dataset_name_neg <- "replogle-rd7_neg_ctrl_ngenes=1000_gene_thresh=7" 
+
+base_path_neg <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/neg-control")
+
+run_name_pos <- "run_repl_ntargets=1500_ncells=100k_with_frpert_rerun" # "run_repl_ntargets=1500_ncells=100k"  #  i reran frpert wotj skew-t
+dataset_name_pos = "replogle-rd7_pos_ctrl_ntargets=1500_ncells=100k_gene_thresh=7"
+
+base_path_pos <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/pos-control")
+path_to_outputs_pos <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/pos-control/outputs")
+
+summarize_statistical_dataset(
+  dataset_name = dataset_name_pos,
+  dataset_type = "pos"
+)
+summarize_statistical_dataset(
+  dataset_name = dataset_name_neg,
+  dataset_type = "neg"
+)
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+disc_pairs <- read_rds(file.path(base_path_neg, "input_data", dataset_name_neg, "sceptre/discovery_pairs.rds")) |>
+  as_tibble()
+
+results_list_neg <- load_associations_neg(file.path(base_path_neg, "outputs"), run_name_neg, dataset_name_neg)
+results_neg <- combine_and_prepare_results_neg(results_list_neg, disc_pairs, eps = 1e-250)
+
+results_list_pos = load_associations_pos(file.path(base_path_pos, "outputs"), run_name_pos, dataset_name_pos)
+results_pos <- combine_and_prepare_results_pos(results_list_pos, eps = 1e-250)
+
+# ## adding in sample sizes ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# cell_info <- read_csv(
+#   file.path(base_path_pos, "input_data", dataset_name_pos, "cell_info.csv"),
+#   show_col_types = FALSE)
+# 
+# sample_sizes <- cell_info |> group_by(grna_target) |> summarize(n = n()) |>
+#     dplyr::select(target = grna_target, num_expressed_cells = n) |>
+#   mutate(pair_type = "positive control")
+
+results_repl <- rbind(
+  results_neg,
+  mutate(results_pos, pair_type = "positive control")[names(results_neg)]
+) #|> 
+  # left_join(
+  #   sample_sizes,
+  #   by = c("target", "pair_type")
+  # )
+
+```
+
+
+
+```{r, echo=FALSE}
+qq_plots <- make_qq_plots(results_repl)
+cowplot::plot_grid(plotlist = qq_plots, ncol = 1, labels = names(qq_plots))
+```
+
+```{r, echo=FALSE}
+make_roc_plot(results_repl, dataset_name = "Replogle")
+```
+
+```{r, echo=FALSE}
+make_trt_zero_plots(results_repl, dataset_name = "Replogle")
+```
+
+
+```{r, echo=FALSE}
+make_fp_budget_plot(
+  results_repl,
+  fp_budgets =  c(0, 1, 2, 5, 10, 20, 30, 50, 100, 250, 500, 727, 1000, 2000),
+  dataset_name = "Replogle"
+)
+```
+
+```{r, echo=FALSE, cache=TRUE}
+make_bh_vs_pi_plot(
+  results_repl,
+  q_target = 0.1,
+  N_total  = 7500,
+  pi_grid  = c(.01, .02, .05, .075, .1, .15, .2),
+  dataset_name = "Replogle"
+)
+```
+
+```{r, echo=FALSE, cache=TRUE}
+make_bh_vs_pi_plot(
+  results_repl,
+  q_target = 0.1,
+  N_total  = 100000,
+  pi_grid  = c(0.001, 0.002, 0.005, .0075, 0.01, 0.015),
+  dataset_name = "Replogle"
+)
+```
+
+
+
+
+## 2. COMPUTATIONAL
+
+```{r, echo=FALSE, include=FALSE}
+# this run had skew-t so no changes here
+run_names_inmem = c(
+  "run_repl_3_cells_2_pairs_extra_mixscale",
+  "run_repl_3_cells_2_pairs_more_targets",
+  "run_repl_remaining_runs_200_or_225_targets"
+)
+# scep_pipe_run = "replogle-rd7_comp_ngenes=560_ntargets=225_ncells=90k_n_nonzero_p=0.75"
+base_path_comp = file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/computational")
+
+scep_pipe_datasets <- c(
+"replogle-rd7_comp_ngenes=250_ntargets=200_ncells=50k_gene_thresh=7",
+"replogle-rd7_comp_ngenes=250_ntargets=200_ncells=75k_gene_thresh=7",
+"replogle-rd7_comp_ngenes=250_ntargets=200_ncells=98.9k_gene_thresh=7",
+"replogle-rd7_comp_ngenes=375_ntargets=200_ncells=50k_gene_thresh=7",
+"replogle-rd7_comp_ngenes=375_ntargets=200_ncells=75k_gene_thresh=7",
+"replogle-rd7_comp_ngenes=375_ntargets=200_ncells=98.9k_gene_thresh=7",
+"replogle-rd7_comp_ngenes=500_ntargets=200_ncells=50k_gene_thresh=7",
+"replogle-rd7_comp_ngenes=500_ntargets=200_ncells=75k_gene_thresh=7",
+"replogle-rd7_comp_ngenes=500_ntargets=200_ncells=98.9k_gene_thresh=7"
+)
+
+scep_pipe_base_fp = file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "association/computational/outputs/sceptre-pipeline"
+)
+
+# due to rounding, we can't just multiply ngenes and ntargets
+pair_dat <- data.frame(
+  ngenes =   c(222L, 250L, 333L, 375L, 444L, 500L), 
+  ntargets = c(225L, 200L, 225L, 200L, 225L, 200L),
+  npairs = c(   50,   50,   75,  75,    100, 100)
+)
+
+
+trace_inmem <- load_trace_files_in_memory(run_names = run_names_inmem, base_path_comp = base_path_comp)
+trace_pipe <- load_trace_files_scep_pipe(scep_pipe_datasets = scep_pipe_datasets, scep_pipe_base_fp = scep_pipe_base_fp)
+
+
+NUM_TARGETS_TO_USE = 200
+
+trace_repl = rbind(
+  trace_inmem |>
+    dplyr::select(method, mem_in_gb = peak_rss_gb, runtime_in_sec = realtime_sec, num_cells, ngenes, ntargets),
+  trace_pipe |>
+    dplyr::select(method, mem_in_gb = max_peak_rss_in_gb_for_assoc_workers, runtime_in_sec = assoc_elapsed_time_in_sec, num_cells, ngenes, ntargets)
+) |>
+  dplyr::filter(ntargets == NUM_TARGETS_TO_USE) |>
+  left_join(pair_dat, by = c("ngenes", "ntargets")) |>
+  mutate(
+    num_cells = factor(num_cells, levels = c("50k", "75k", "98.9k")),
+    npairs = factor(npairs)
+  )
+
+```
+
+```{r, echo=FALSE}
+plot_runtime(trace_repl, "Replogle: run time")
+```
+
+
+```{r, echo=FALSE}
+plot_memory(trace_repl, "Replogle: memory")
+```
+
+
+TODO: sceptre-pipeline extras
+
+
+# 2. GASPERINI
+
+```{r, echo=FALSE}
+rm(list=ls())
+source("~/.Rprofile")
+source("association-analysis-functions.R")
+
+source_data = "gasperini"
+
+run_name_neg <- "run_gasp_1000genes_with_gene_qc_with_frpert_rerun" # "run_gasp_1000genes_with_gene_qc"  # reran frpert with skew-t
+dataset_name_neg <- "gasperini_neg_ctrl_ngenes=1000_gene_thresh=7" 
+
+base_path_neg <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/neg-control")
+
+run_name_pos <- "run_gasp_ntargets=377_ncels=100k_with_frpert_rerun" # "run_gasp_ntargets=377_ncels=100k"  # reran frpert with skew-t
+dataset_name_pos = "gasperini_pos_ctrl_ntargets=377_ncells=100k_gene_thresh=7"
+
+base_path_pos <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/pos-control")
+path_to_outputs_pos <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/pos-control/outputs")
+
+summarize_statistical_dataset(
+  dataset_name = dataset_name_pos,
+  dataset_type = "pos"
+)
+summarize_statistical_dataset(
+  dataset_name = dataset_name_neg,
+  dataset_type = "neg"
+)
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+disc_pairs <- read_rds(file.path(base_path_neg, "input_data", dataset_name_neg, "sceptre/discovery_pairs.rds")) |>
+  as_tibble()
+
+results_list_neg <- load_associations_neg(file.path(base_path_neg, "outputs"), run_name_neg, dataset_name_neg)
+results_neg <- combine_and_prepare_results_neg(results_list_neg, disc_pairs, eps = 1e-250)
+
+results_list_pos = load_associations_pos(file.path(base_path_pos, "outputs"), run_name_pos, dataset_name_pos)
+results_pos <- combine_and_prepare_results_pos(results_list_pos, eps = 1e-250)
+
+# TODO add sample sizes?
+
+results_gasp <- rbind(
+  results_neg,
+  mutate(results_pos, pair_type = "positive control")[names(results_neg)]
+) 
+
+```
+
+
+
+```{r, echo=FALSE}
+qq_plots <- make_qq_plots(results_gasp)
+cowplot::plot_grid(plotlist = qq_plots, ncol = 1, labels = names(qq_plots))
+```
+
+```{r, echo=FALSE}
+make_roc_plot(results_gasp, dataset_name = "Gasperini")
+```
+
+```{r, echo=FALSE}
+make_trt_zero_plots(results_gasp, dataset_name = "Gasperini")
+```
+
+
+```{r, echo=FALSE}
+make_fp_budget_plot(
+  results_gasp,
+  fp_budgets =  c(0, 1, 2, 5, 10, 20, 30, 50, 100, 250, 500, 727, 1000, 2000),
+  dataset_name = "Gasperini"
+)
+```
+
+```{r, echo=FALSE, cache=TRUE}
+make_bh_vs_pi_plot(
+  results_gasp,
+  q_target = 0.1,
+  N_total  = 1880,
+  pi_grid  = c(.01, .02, .05, .075, .1, .15, .2),
+  dataset_name = "Gasperini"
+)
+```
+
+```{r, echo=FALSE, cache=TRUE}
+make_bh_vs_pi_plot(
+  results_gasp,
+  q_target = 0.1,
+  N_total  = 25100,
+  pi_grid  = c(0.001, 0.002, 0.005, .0075, 0.01, 0.015),
+  dataset_name = "Gasperini"
+)
+```
+
+
+## COMPUTATIONAL
+
+
+```{r, echo=FALSE}
+run_names_inmem = c(
+  # "run_gasp_200targets_3_pairs"  # i reran the frperturb from this one to have skew-t
+  "run_gasp_200targets_3_pairs_with_frpert_rerun"
+)
+# scep_pipe_run = "replogle-rd7_comp_ngenes=560_ntargets=225_ncells=90k_n_nonzero_p=0.75"
+base_path_comp = file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/computational")
+
+scep_pipe_datasets <- c(
+'gasperini_comp_ngenes=250_ntargets=200_ncells=100k_gene_thresh=7',
+'gasperini_comp_ngenes=250_ntargets=200_ncells=50k_gene_thresh=7',
+'gasperini_comp_ngenes=250_ntargets=200_ncells=75k_gene_thresh=7',
+'gasperini_comp_ngenes=375_ntargets=200_ncells=100k_gene_thresh=7',
+'gasperini_comp_ngenes=375_ntargets=200_ncells=50k_gene_thresh=7',
+'gasperini_comp_ngenes=375_ntargets=200_ncells=75k_gene_thresh=7',
+'gasperini_comp_ngenes=500_ntargets=200_ncells=100k_gene_thresh=7',
+'gasperini_comp_ngenes=500_ntargets=200_ncells=50k_gene_thresh=7',
+'gasperini_comp_ngenes=500_ntargets=200_ncells=75k_gene_thresh=7'
+)
+
+scep_pipe_base_fp = file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "association/computational/outputs/sceptre-pipeline"
+)
+
+# due to rounding, we can't just multiply ngenes and ntargets
+pair_dat <- data.frame(
+  ngenes =   c(222L, 250L, 333L, 375L, 444L, 500L), 
+  ntargets = c(225L, 200L, 225L, 200L, 225L, 200L),
+  npairs = c(   50,   50,   75,  75,    100, 100)
+)
+
+
+trace_inmem <- load_trace_files_in_memory(run_names = run_names_inmem, base_path_comp = base_path_comp)
+trace_pipe <- load_trace_files_scep_pipe(scep_pipe_datasets = scep_pipe_datasets, scep_pipe_base_fp = scep_pipe_base_fp)
+
+NUM_TARGETS_TO_USE = 200
+
+trace_gasp = rbind(
+  trace_inmem |>
+    dplyr::select(method, mem_in_gb = peak_rss_gb, runtime_in_sec = realtime_sec, num_cells, ngenes, ntargets),
+  trace_pipe |>
+    dplyr::select(method, mem_in_gb = max_peak_rss_in_gb_for_assoc_workers, runtime_in_sec = assoc_elapsed_time_in_sec, num_cells, ngenes, ntargets)
+) |>
+  dplyr::filter(ntargets == NUM_TARGETS_TO_USE) |>
+  left_join(pair_dat, by = c("ngenes", "ntargets")) |>
+  mutate(
+    num_cells = factor(num_cells, levels = c("50k", "75k", "100k")),
+    npairs = factor(npairs)
+  )
+
+```
+
+```{r, echo=FALSE}
+plot_runtime(trace_gasp, "Gasperini: run time")
+```
+
+
+```{r, echo=FALSE}
+plot_memory(trace_gasp, "Gasperini: memory")
+```
+
+
