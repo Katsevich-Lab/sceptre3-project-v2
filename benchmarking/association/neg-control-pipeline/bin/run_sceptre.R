@@ -80,7 +80,7 @@ scep <- import_data(
   grna_matrix = grna_matrix,
   grna_target_data_frame = grna_target_df,
   moi = moi,
-  extra_covariates = cell_covariates#[, covariates_to_use, drop = FALSE]
+  extra_covariates = cell_covariates
 )
 
 # Set analysis parameters with pre-computed discovery pairs

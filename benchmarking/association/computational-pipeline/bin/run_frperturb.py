@@ -57,7 +57,7 @@ moi_lookup = {
 moi = moi_lookup[dataset_name]
 
 # P-value computation settings
-use_skew_t = False  # Set to True to enable --fit-zero-pval
+use_skew_t = True  # Set to True to enable --fit-zero-pval
 num_perms = 1000 # default
 
 if use_skew_t:
@@ -84,7 +84,7 @@ else:
 # Conditionally add skew_t flag at the end
 if use_skew_t:
     cmd.append("--fit-zero-pval")
-else:
+if not use_skew_t:
     cmd.extend(["--num-perms", str(num_perms)])
 
 print(cmd, flush=True)

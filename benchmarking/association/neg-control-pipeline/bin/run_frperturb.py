@@ -55,8 +55,8 @@ covariates = covariates_lookup[dataset_name]
 print(f"Covariates: {covariates}", flush=True)
 
 # P-value computation settings
-use_skew_t = False  # Set to True to enable --fit-zero-pval
-num_perms = 2000
+use_skew_t = True  # Set to True to enable --fit-zero-pval
+num_perms = 1000
 
 if use_skew_t:
     print(f"Use skew_t: {use_skew_t}", flush=True)
