@@ -2,7 +2,7 @@
 #$ -N scep-pipe_assoc_replogle
 #$ -cwd
 #$ -j y
-#$ -l m_mem_free=8G
+#$ -l m_mem_free=16G
 
 set -euo pipefail
 
