@@ -2,8 +2,7 @@
 #$ -N scep-pipe_assoc_gasperini
 #$ -cwd
 #$ -j y
-#$ -q 16xl.q
-#$ -l m_mem_free=2G
+#$ -l m_mem_free=8G
 
 set -euo pipefail
 

@@ -2,7 +2,6 @@
 #$ -N scep-pipeline_gasperini_set-analysis
 #$ -j y
 #$ -cwd
-#$ -q 16xl.q
 #$ -pe openmp 1              # use the existing PE
 #$ -l m_mem_free=20G         # scheduler reservation (per slot)
 

@@ -2,7 +2,7 @@
 #$ -N scep-pipe_assoc_replogle
 #$ -cwd
 #$ -j y
-#$ -l m_mem_free=2G
+#$ -l m_mem_free=8G
 
 set -euo pipefail
 
@@ -49,12 +49,13 @@ nextflow run jdeu1023/sceptre-pipeline -r main \
   --grna_odm_fp "${grna_odm_fp}" \
   --output_directory "${output_fp}" \
   --grna_assignment_method mixture \
+  --grna_pod_size 90 \
   --pair_pod_size "${pair_pod_size}" \
   --n_calibration_pairs 0 \
   --additional_cells_to_remove "${cells_to_remove_fp}" \
   --assign_grnas_memory "2GB" \
-  --assign_grnas_time_per_grna "15s" \
-  --run_association_analysis_time_per_pair "0.5s" \
+  --assign_grnas_time_per_grna "25s" \
+  --run_association_analysis_time_per_pair "1.5s" \
   --n_nonzero_trt_thresh 0 \
   --n_nonzero_cntrl_thresh 0 \
   --response_n_umis_range_lower 0 \
