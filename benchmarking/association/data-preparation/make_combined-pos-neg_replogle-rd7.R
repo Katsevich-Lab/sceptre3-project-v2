@@ -450,13 +450,28 @@ make_discrimination_replogle <- function(
 # )
 # 
 # num_genes = 1000
+# make_discrimination_replogle(
+#   num_pos_genes = 100,
+#   min_cells_per_target = 10,
+#   num_nt_guides = 113,
+#   num_extra_genes = 1500,
+#   pos_and_neg_pairs_only = TRUE,
+#   dataset_name = "replogle-rd7_combined-pos-neg_medium",
+#   response_odm = ondisc::initialize_odm_from_backing_file(file.path(path_to_data, "response.odm")),
+#   grna_odm = ondisc::initialize_odm_from_backing_file(file.path(path_to_data, "grna.odm")),
+#   cell_covariates = scep@covariate_data_frame,
+#   scep_assn_mat = readRDS(file.path(path_to_assigns, "grna_assignment_matrix.rds")),
+#   grna_target_df = scep@grna_target_data_frame,
+#   num_mixscale_nts = 3
+# )
+
 make_discrimination_replogle(
-  num_pos_genes = 100,
+  num_pos_genes = 500,
   min_cells_per_target = 10,
   num_nt_guides = 113,
   num_extra_genes = 1500,
   pos_and_neg_pairs_only = TRUE,
-  dataset_name = "replogle-rd7_combined-pos-neg_medium",
+  dataset_name = "replogle-rd7_combined-pos-neg_medium2",
   response_odm = ondisc::initialize_odm_from_backing_file(file.path(path_to_data, "response.odm")),
   grna_odm = ondisc::initialize_odm_from_backing_file(file.path(path_to_data, "grna.odm")),
   cell_covariates = scep@covariate_data_frame,
