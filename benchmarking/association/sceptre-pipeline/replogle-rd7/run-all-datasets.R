@@ -61,6 +61,14 @@ for (batch_start in seq(1, nrow(config), by = batch_size)) {
 
     cat(sprintf("  [%d/%d] %s\n", i, nrow(config), assoc_dataset_name))
 
+    output_fp <- file.path(
+      Sys.getenv("LOCAL_BENCHMARKING_DIR"),
+      "association/computational/outputs/sceptre-pipeline",
+      assoc_dataset_name
+    )
+    dir.create(output_fp, recursive = TRUE, showWarnings = FALSE)
+    file.copy(csv_file, file.path(output_fp, "datasets_config.csv"), overwrite = TRUE)
+
     npairs <- config$npairs[i]
     num_assoc_workers <- config$num_assoc_workers[i]
 
