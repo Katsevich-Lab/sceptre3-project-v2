@@ -82,6 +82,41 @@ gene_qc_thresh <- 7
 #                           "_ntargets=", num_targets, "_ncells=", max_num_cells / 1000, "k_gene_thresh=", gene_qc_thresh)
 #   )
 
+# dataset_params = data.frame(
+#   num_genes =     rep(c(222, 333, 444), each = 3),
+#   num_targets =   225,
+#   max_num_cells = rep(c(50000, 75000, 98900), times = 3)
+# ) |>
+#   mutate(
+#     dataset_name = paste0("replogle-rd7_comp_ngenes=", num_genes,
+#                           "_ntargets=", num_targets, "_ncells=", max_num_cells / 1000, "k_gene_thresh=", gene_qc_thresh)
+#   )
+
+
+
+# only varying ntargets. leaving cells alone
+# dataset_params = data.frame(
+#   num_genes =     1000,
+#   num_targets =   c(50, 75, 100, 200),
+#   max_num_cells = Inf
+# ) |>
+#   mutate(
+#     dataset_name = paste0("replogle-rd7_comp_ngenes=", num_genes,
+#                           "_ntargets=", num_targets, "_gene_thresh=", gene_qc_thresh)
+#   )
+
+# ## this one is for scep-pipe only
+# dataset_params = data.frame(
+#   num_genes =     c(1000),
+#   num_targets =   1600,#c(400,800,1600),
+#   max_num_cells = Inf
+# ) |>
+#   mutate(
+#     dataset_name = paste0("replogle-rd7_comp_ngenes=", num_genes,
+#                           "_ntargets=", num_targets, "_gene_thresh=", gene_qc_thresh)
+#   )
+# METHODS_TO_SKIP = c("mixscale", "frperturb")
+
 gene_summary_stats = read_csv(file.path(path_to_data, "gene_summary_stats.csv"))
 
 genes_passing_qc <- gene_summary_stats |>
@@ -123,6 +158,10 @@ for(i in 1:nrow(dataset_params)) {
     max_num_cells  = dataset_params$max_num_cells[i],
     random_seed = i
   )
+  if(exists("METHODS_TO_SKIP")) {
+    func_args[["methods_to_skip"]] = METHODS_TO_SKIP
+    cat("Skipping", METHODS_TO_SKIP, "\n")
+  }
 
   do.call(make_computational_replogle, func_args)
 
@@ -154,14 +193,70 @@ for(i in 1:nrow(dataset_params)) {
   
   cells_to_remove <- setdiff(seq_len(ncol(scep_assn_mat)), cell_info$cell_idx)
   writeLines(as.character(cells_to_remove), file.path(sceptre_pipeline_dir, "cells_to_remove.csv"))
-  cat("scp -r ", sceptre_pipeline_dir, " hpc3:/home/stat/jdeu/data/projects/sceptre3/benchmarking/association/computational/input_data/", dataset_name, "\n", sep="")
+  # cat("scp -r ", sceptre_pipeline_dir, " hpc3:/home/stat/jdeu/data/projects/sceptre3/benchmarking/association/computational/input_data/", dataset_name, "\n", sep="")
 }
 
 
 
 
+# making just what scep-pipe needs for some bigger ones ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# TO RUN sceptre-pipeline WE ACTUALLY ONLY NEED THE FOLLOWING:
+# 1. cells_to_remove.csv [located in <dataset>/sceptre-pipline/]
+# 2. discovery_pairs.rds [located in <dataset>/sceptre/]
+#
+# So we address this as follows:
+# i.  we will use the same ntargets as a previous run, so we copy the appropriate cells_to_remove.csv
+# ii. we increase ngenes, so we need to make a new disc pairs
+#     - load the old one, get all unique targets
+#     - sample new genes, make cartesian product, write to new dataset file
 
-
+# completed_run = "replogle-rd7_comp_ngenes=1000_ntargets=1600_gene_thresh=7"
+# scep_pipe_params <- data.frame(
+#   num_genes = c(5000, 10000)
+# ) |>
+#   mutate(
+#   dataset_name = paste0("replogle-rd7_comp_ngenes=", num_genes,
+#                         "_ntargets=1600_gene_thresh=", gene_qc_thresh)
+# )
+# base_comp_path = file.path(
+#   .get_config_path("LOCAL_BENCHMARKING_DIR"),
+#   "association/computational/input_data"
+# )
+# old_disc_pairs = read_rds(file.path(base_comp_path, completed_run, "sceptre/discovery_pairs.rds"))
+# targets_to_use = unique(old_disc_pairs$grna_target) # these do not change
+# 
+# 
+# # idea: we exactly copy cells_to_remove.csv, because ntargets is fixed so our cells is fixed
+# # But we increase ngenes, so we need to make new discovery_pairs.rds
+# for(i in 1:nrow(scep_pipe_params)) {
+#   set.seed(i+10)
+#   dataset_name = scep_pipe_params$dataset_name[i]
+# 
+#   path_to_new_dataset = file.path(
+#     base_comp_path, dataset_name
+#   )
+# 
+#   path_to_new_scep = file.path(path_to_new_dataset, "sceptre")
+#   path_to_new_pipe = file.path(path_to_new_dataset, "sceptre-pipeline")
+#   
+#   dir.create(path_to_new_scep, showWarnings = FALSE, recursive = TRUE) # also makes dataset dir
+#   dir.create(path_to_new_pipe, showWarnings = FALSE, recursive = TRUE)
+#   
+#   file.copy(
+#     from = file.path(base_comp_path, completed_run, "sceptre-pipeline/cells_to_remove.csv"),
+#     to = file.path(path_to_new_pipe, "cells_to_remove.csv")
+#   ) 
+#   
+#   new_genes = sample(genes_passing_qc, scep_pipe_params$num_genes[i])
+#   new_disc_pairs = expand.grid(
+#     grna_target = targets_to_use,
+#     response_id = new_genes
+#   )
+#   stopifnot(nrow(new_disc_pairs) == 1600 * scep_pipe_params$num_genes[i])
+#   write_rds(new_disc_pairs, file.path(path_to_new_scep, "discovery_pairs.rds"))
+#   
+# }
+# 
 
 
 

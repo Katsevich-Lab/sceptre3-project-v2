@@ -80,7 +80,7 @@ prepare_cell_metadata_high_moi <- function(grna_indicator_matrix, grna_target_df
   ) |>
     dplyr::mutate(cell_name = rownames(cell_covariates)[cell_idx])
   
-  # Subset and prepare covariates (NO BATCH for Replogle)
+  # Subset and prepare covariates (NO BATCH for Replogle but YES batch for gasperini)
   cell_covariates_subset <- cell_covariates[cell_idx, ] |>
     dplyr::transmute(
       response_n_nonzero_full = response_n_nonzero,
@@ -108,7 +108,8 @@ make_computational_replogle <- function(
     num_targets,
     max_num_cells,
     nt_name = "non-targeting",
-    random_seed = 243535
+    random_seed = 243535,
+    methods_to_skip=""
 ) {
   
   # 1. sample targets
@@ -135,15 +136,20 @@ make_computational_replogle <- function(
   
   candidate_cells = which(Matrix::colSums(scep_assn_mat[guides,]) > 0)
   cat("Initially", length(candidate_cells), "cells found.\n")
-  if(length(candidate_cells) >= max_num_cells) {
-    cat("Downsampling to", max_num_cells, "cells.\n")
-    candidate_cells <- sample(candidate_cells, max_num_cells)
+  
+  if(is.finite(max_num_cells)) {
+    if(length(candidate_cells) >= max_num_cells) {
+      cat("Downsampling to", max_num_cells, "cells.\n")
+      candidate_cells <- sample(candidate_cells, max_num_cells)
+    } else {
+      # cat("Fewer than", max_num_cells, "cells; randomly sampling more.\n")
+      # all_other_cells = setdiff(1:ncol(scep_assn_mat), candidate_cells)
+      # candidate_cells <- c(candidate_cells, sample(all_other_cells, max_num_cells - length(candidate_cells)))
+      # cat("Fewer than", max_num_cells, "cells; all kept.\n")
+      stop("Not enough cells for these parameters.")
+    }
   } else {
-    # cat("Fewer than", max_num_cells, "cells; randomly sampling more.\n")
-    # all_other_cells = setdiff(1:ncol(scep_assn_mat), candidate_cells)
-    # candidate_cells <- c(candidate_cells, sample(all_other_cells, max_num_cells - length(candidate_cells)))
-    # cat("Fewer than", max_num_cells, "cells; all kept.\n")
-    stop("Not enough cells for these parameters.")
+    cat("max_num_cells = Inf so all cells for these targets are kept.\n")
   }
   
   # 3. use the provided genes, or sample genes and only keep genes that have some umi counts
@@ -226,29 +232,38 @@ make_computational_replogle <- function(
     output_path = file.path(write_fp, "sceptre")
   )
   
-  # Write Mixscale format
-  write_mixscale_output(
-    response_matrix = response_subset,
-    cell_info = cell_info,
-    output_path = file.path(write_fp, "mixscale")
-  )
+  if(! "mixscale" %in% methods_to_skip) {
+    # Write Mixscale format
+    write_mixscale_output(
+      response_matrix = response_subset,
+      cell_info = cell_info,
+      output_path = file.path(write_fp, "mixscale")
+    )
+  } else {
+    cat("Skipping mixscale.\n")
+  }
   
+  if(! "frperturb" %in% methods_to_skip) {
+    # Prepare FR-Perturb covariates (Replogle: log1p all covariates)
+    # regardless of whether batch is used, do not log it
+    covariates_to_log1p <- setdiff(names(cell_covariates_subset), "batch")
+    cell_covariates_frpert_with_perturbation <- prepare_frperturb_covariates(
+      cell_covariates = cell_covariates_subset,
+      grna_targets = cell_info$grna_target,
+      covariates_to_log1p = covariates_to_log1p
+    )
+    
+    write_frperturb_output(
+      response_matrix = response_subset,
+      cell_names =  paste0("cell_idx_", cell_info$cell_idx),
+      cell_covariates_frpert = cell_covariates_frpert_with_perturbation,
+      output_path = file.path(write_fp, "frperturb")
+    )
+  } else {
+    cat("Skipping FR-Perturb.\n")
+  }
   
-  # Prepare FR-Perturb covariates (Replogle: log1p all covariates)
-  # regardless of whether batch is used, do not log it
-  covariates_to_log1p <- setdiff(names(cell_covariates_subset), "batch")
-  cell_covariates_frpert_with_perturbation <- prepare_frperturb_covariates(
-    cell_covariates = cell_covariates_subset,
-    grna_targets = cell_info$grna_target,
-    covariates_to_log1p = covariates_to_log1p
-  )
-  
-  write_frperturb_output(
-    response_matrix = response_subset,
-    cell_names =  paste0("cell_idx_", cell_info$cell_idx),
-    cell_covariates_frpert = cell_covariates_frpert_with_perturbation,
-    output_path = file.path(write_fp, "frperturb")
-  )
+
   
   cat("\n Computational benchmarking dataset creation complete!\n")
   cat("Output directory:", write_fp, "\n")

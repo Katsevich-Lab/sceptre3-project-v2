@@ -105,7 +105,7 @@ identify_nt_only_cells <- function(scep_assn_mat, grna_target_df,
 #' @param grna_target_df Data frame with grna_id and grna_target columns
 #' @param cell_idx Integer vector of cell indices
 #' @return List with filtered: response_matrix, grna_indicator, grna_target_df, cell_idx, genes
-filter_all_objects <- function(response_matrix, grna_indicator, grna_target_df, cell_idx) {
+filter_all_objects <- function(response_matrix, grna_indicator, grna_target_df, cell_idx, low_moi=TRUE) {
   # Filter cells with all-0 UMI in response matrix
   cells_to_keep <- Matrix::colSums(response_matrix) > 0
   response_matrix <- response_matrix[, cells_to_keep, drop=FALSE]
@@ -130,8 +130,10 @@ filter_all_objects <- function(response_matrix, grna_indicator, grna_target_df, 
   stopifnot(nrow(grna_indicator) == nrow(grna_target_df))
   stopifnot(all(Matrix::colSums(response_matrix) > 0))
   stopifnot(all(Matrix::rowSums(response_matrix) > 0))
-  stopifnot(all(Matrix::colSums(grna_indicator) == 1))  # Low MOI already enforced
   stopifnot(all(Matrix::rowSums(grna_indicator) > 0))
+  if(low_moi) {
+    stopifnot(all(Matrix::colSums(grna_indicator) == 1))  # should already be enforced, but just in case
+  }
 
   return(list(
     response_matrix = response_matrix,
@@ -223,6 +225,7 @@ make_neg_control_replogle <- function(
     cell_covariates,
     scep_assn_mat,
     grna_target_df,
+    genes_passing_qc = NULL,
     num_genes = 5000,
     include_batch = FALSE,
     random_seed = 243535
@@ -241,7 +244,13 @@ make_neg_control_replogle <- function(
   cat("Random seed set to", random_seed, "\n")
 
   # Section 1: Gene selection
-  genes <- select_genes_random(response_odm, num_genes, random_seed)
+  if(!is.null(genes_passing_qc)) {
+    cat("`genes_passing_qc` provided: sampling from there.\n")
+    genes = sample(genes_passing_qc, num_genes)
+  } else {
+    genes <- select_genes_random(response_odm, num_genes, random_seed)
+  }
+  
 
   # Section 2: Cell filtering (NT-only cells)
   cat("\n=== Cell filtering ===\n")
@@ -472,146 +481,141 @@ make_neg_control_gasperini <- function(
     scep_assn_mat,
     grna_target_df,
     num_genes = 500,
-    num_nt_guides = 200,
-    # min_cells_per_guide = 10,
+    genes_passing_qc = NULL,
     nt_name = "non-targeting",
     fr_perturb_concat_string = "@",
     random_seed = 243535
 ) {
   cat("=== Gasperini Negative Control (HIGH MOI) ===\n\n")
   
+  # Section 0: Setup
   set.seed(random_seed)
-  cat("Random seed:", random_seed, "\n")
+  cat("Random seed set to", random_seed, "\n")
   
-  # 1. Sample genes
-  cat("\n=== Sampling genes ===\n")
-  all_genes <- rownames(response_odm)
-  genes <- if (length(all_genes) < num_genes) {
-    warning("Using all ", length(all_genes), " genes")
-    all_genes
+  # Section 1: Gene selection
+  if(!is.null(genes_passing_qc)) {
+    cat("`genes_passing_qc` provided: sampling from there.\n")
+    genes = sample(genes_passing_qc, num_genes)
   } else {
-    sample(all_genes, num_genes)
+    genes <- select_genes_random(response_odm, num_genes, random_seed)
   }
   cat("Selected", length(genes), "genes\n")
   
   
-  # 2. sample guides 
-  # we now have `num_guides` many guides, each with the min number of expressed cells,
-  # sampled randomly from all guides that aren't for the chosen genes
-  # guides_to_use = sample_guides(num_guides=num_guides, genes=genes,
-  #                               scep_assn_mat=scep_assn_mat, min_cells_per_guide=min_cells_per_guide,
-  #                               grna_target_df=grna_target_df)
-  num_nts_to_take <- min(sum(grna_target_df$grna_target == nt_name), num_nt_guides)
-  guides_to_use = grna_target_df$grna_id[grna_target_df$grna_target == nt_name][1:num_nts_to_take]
+  # Section 2: guide and cell selection
+  # for neg control pairs, we will take all cells expressing NT guides
+  # but with no concern for what other guides these cells express
   
-  # 3. now let's narrow to the number of cells of interest
-  # these are the cells that express my sampled guides, but do not express guides for the 
-  # sampled genes
+  all_nt_guides = grna_target_df$grna_id[grna_target_df$grna_target == nt_name]
+  candidate_cell_idx = cells_expressing_these_guides_and_not_gene_targets(
+    guides_to_use = all_nt_guides,
+    genes = genes,
+    scep_assn_mat = scep_assn_mat,
+    grna_target_df = grna_target_df
+  )
+  cat("There are", length(all_nt_guides), "NT guides.\n")
+  cat("There are", length(candidate_cell_idx), "cells expressing any of these NT guides and none for these genes.\n")
   
-  all_cell_idx = cells_expressing_these_guides_and_not_gene_targets(guides_to_use=guides_to_use,
-                                                                    genes=genes, scep_assn_mat=scep_assn_mat, grna_target_df=grna_target_df)
+  # Section 3: prepare response & grna matrices, NT target df, and filter
+  cat("\n=== Extracting response matrix ===\n")
+  response_subset <- odm_to_sparse_matrix(response_odm, genes, candidate_cell_idx)
+  cat("Extracted:", nrow(response_subset), "genes ×", ncol(response_subset), "cells (unfiltered)\n")
   
-  # 4. build response matrix and filter down
-  response_subset <- odm_to_sparse_matrix(response_odm, genes, all_cell_idx, set_rownames = TRUE)
-  cat("Response matrix:", nrow(response_subset), "genes ×", ncol(response_subset), "cells\n")
+  grna_indicator <- scep_assn_mat[all_nt_guides, candidate_cell_idx] + 0L
+  nt_grna_target_df = create_pseudo_targets(all_nt_guides)
   
-  cells_with_expression <- Matrix::colSums(response_subset) > 0
-  all_cell_idx <- all_cell_idx[cells_with_expression]
-  response_subset <- response_subset[,cells_with_expression,drop=FALSE]
-  
-  
-  # 5. build grna indicator and grna_target_df
-  grna_indicator = scep_assn_mat[guides_to_use, all_cell_idx]
-  
-  grna_target_df_pseudo = data.frame(
-    grna_id = guides_to_use,
-    grna_target = paste0("dummy-target", 1:length(guides_to_use))
+  filtered_objects <- filter_all_objects(
+    response_matrix = response_subset,
+    grna_indicator = grna_indicator,
+    grna_target_df = nt_grna_target_df,
+    cell_idx = candidate_cell_idx,
+    low_moi = FALSE
   )
   
-  #  do i care about guides that possibly have zero expressed cells?
-  # well, these will all get filtered by n_trt_nonzero > 0
-  # so i won't actually analyze those pairs
-  # let's not worry for now then
+  response_subset = filtered_objects$response_matrix
+  grna_indicator = filtered_objects$grna_indicator
+  nt_grna_target_df = filtered_objects$grna_target_df
+  cell_idx = filtered_objects$cell_idx
+  genes = filtered_objects$genes
+  guides = rownames(grna_indicator)
+  
+  cat("After filtering:", ncol(response_subset), "cells;", nrow(response_subset), "genes;", nrow(grna_indicator), "guides.\n")
   
   
-  # 6. discovery pairs
+  # Section 4: metadata and final objects
+  
+  metadata <- prepare_cell_metadata_high_moi(
+    grna_indicator_matrix = grna_indicator,
+    grna_target_df = nt_grna_target_df,
+    cell_covariates = cell_covariates,
+    cell_idx = cell_idx,
+    fr_perturb_concat_string = fr_perturb_concat_string
+  )
+  
+  cell_info = metadata$cell_info
+  cell_covariates_subset = metadata$cell_covariates_subset
+  
   disc_pairs = expand.grid(
-    grna_target = grna_target_df_pseudo$grna_target,
+    grna_target = nt_grna_target_df$grna_target,
     response_id = genes
   )
-  
-  
-  # 7. covariates
-  cell_covariates_subset <- cell_covariates[all_cell_idx,] |>
-    transmute(
-      cell_idx = all_cell_idx,
-      response_n_nonzero_full = response_n_nonzero,
-      response_n_umis_full = response_n_umis,
-      grna_n_nonzero_full = grna_n_nonzero,
-      grna_n_umis_full = grna_n_umis,
-      prep_batch
-    )
-  
-  
-  
+
   # Validation
   stopifnot(ncol(response_subset) == ncol(grna_indicator))
-  stopifnot(nrow(grna_indicator) == nrow(grna_target_df_pseudo))
-  stopifnot(all(rownames(grna_indicator) == grna_target_df_pseudo$grna_id))
+  stopifnot(nrow(grna_indicator) == nrow(nt_grna_target_df))
+  stopifnot(setequal(rownames(grna_indicator), nt_grna_target_df$grna_id))
+  stopifnot(nrow(disc_pairs) == nrow(response_subset) * nrow(nt_grna_target_df))
   
   
   
-  # 8. making metadata
-  cell_info_long <- make_cell_info(all_cell_idx=all_cell_idx, grna_indicator=grna_indicator, grna_target_df_pseudo=grna_target_df_pseudo) 
+  # Section 5: writing
   
-  
-  # 9. Write outputs
   write_fp <- file.path(
     .get_config_path("LOCAL_BENCHMARKING_DIR"),
     "association/neg-control/input_data", dataset_name
   )
-  dir.create(write_fp, recursive = TRUE, showWarnings = FALSE)
+  dir.create(write_fp, showWarnings = FALSE, recursive = TRUE)
   
-  write.csv(cell_info_long, file.path(write_fp, "cell_info.csv"), row.names = FALSE)
+  # Write shared metadata files
+  write.csv(cell_info, file.path(write_fp, "cell_info.csv"), row.names = FALSE)
+  cat("   `cell_info.csv` written.\n")
+  
   write.csv(cell_covariates_subset, file.path(write_fp, "cell_covariates.csv"),
             row.names = FALSE)
+  cat("   `cell_covariates.csv` written.\n")
   
-  # 9a. SCEPTRE format
-  cat("\n=== Writing SCEPTRE ===\n")
+  # Formula object
+  formula_string <- "~ 1 + log(response_n_nonzero_full + 1) + log(response_n_umis_full + 1) + log(grna_n_nonzero_full + 1) + log(grna_n_umis_full + 1) + prep_batch"
   
+  # Write SCEPTRE format
   write_sceptre_output(
     response_matrix = response_subset,
-    grna_matrix = grna_indicator + 0L, # make integer
+    grna_matrix = grna_indicator,
     cell_covariates = cell_covariates_subset,
-    grna_target_df = grna_target_df_pseudo,
+    grna_target_df = nt_grna_target_df,
     discovery_pairs = disc_pairs,
-    formula_object = "~ 1 + log(response_n_nonzero_full + 1) + log(response_n_umis_full + 1) + log(grna_n_nonzero_full + 1) + log(grna_n_umis_full + 1) + prep_batch",
+    formula_object = formula_string,
     output_path = file.path(write_fp, "sceptre")
   )
   
-  # 9b. FR-Perturb format
-  cat("\n=== Writing FR-Perturb ===\n")
-  
-  # Ensure fr_perturb_concat_string is safe delimiter
-  stopifnot(!any(grepl(fr_perturb_concat_string, grna_target_df_pseudo$grna_target, fixed = TRUE)))
-
-  cell_covs_frpert <- prepare_frperturb_covariates_highmoi(
-    cell_covariates_subset, cell_info_long, fr_perturb_concat_string
+  # Prepare FR-Perturb covariates, with all but batch log1p'd
+  covariates_to_log1p <- setdiff(names(cell_covariates_subset), "prep_batch")
+  cell_covariates_frpert_with_perturbation <- prepare_frperturb_covariates(
+    cell_covariates = cell_covariates_subset,
+    grna_targets = cell_info$expressed_target_concat,
+    covariates_to_log1p = covariates_to_log1p
   )
   
-  cell_names <- rownames(cell_covs_frpert)
-  
-  
+  # with gasperini, we have real cell names
   write_frperturb_output(
     response_matrix = response_subset,
-    cell_names = cell_names,
-    cell_covariates_frpert = cell_covs_frpert,
-    output_path = file.path(write_fp, "frperturb"),
-    perturbation_in_covariates = TRUE
+    cell_names =  cell_info$cell_name,
+    cell_covariates_frpert = cell_covariates_frpert_with_perturbation,
+    output_path = file.path(write_fp, "frperturb")
   )
   
-  cat("\n=== Done! ===\n")
-  cat("Dataset:", dataset_name, "\n")
-  cat("Output:", write_fp, "\n")
+  cat("\n Negative control dataset creation complete!\n")
+  cat("Output directory:", write_fp, "\n")
+
 }
 
