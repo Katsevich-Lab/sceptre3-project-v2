@@ -39,6 +39,7 @@ benchmarking/association/nf-logs
 
 # vscode
 .vscode/*
+**/.vscode
 
 # singularity images
 *.sif
