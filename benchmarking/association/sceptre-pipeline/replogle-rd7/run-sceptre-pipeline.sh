@@ -2,7 +2,8 @@
 #$ -N scep-pipe_assoc_replogle
 #$ -cwd
 #$ -j y
-#$ -l m_mem_free=16G
+#$ -l m_mem_free=20G
+#$ -q 16xl.q
 
 set -euo pipefail
 
@@ -41,6 +42,7 @@ cd "${output_fp}"
 #################
 # Invoke pipeline
 #################
+
 nextflow run jdeu1023/sceptre-pipeline -r main \
   -c "${config_fp}" \
   -profile profile_16xl \
@@ -56,6 +58,8 @@ nextflow run jdeu1023/sceptre-pipeline -r main \
   --assign_grnas_memory "2GB" \
   --assign_grnas_time_per_grna "25s" \
   --run_association_analysis_time_per_pair "1.5s" \
+  --combine_association_analysis_memory "20GB" \
+  --combine_association_analysis_time "30m" \
   --n_nonzero_trt_thresh 0 \
   --n_nonzero_cntrl_thresh 0 \
   --response_n_umis_range_lower 0 \

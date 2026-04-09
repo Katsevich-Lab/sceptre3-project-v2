@@ -12,6 +12,7 @@
 #   run-set-analysis.sh -> run-sceptre-pipeline.sh
 # Each new batch waits for all pipeline jobs from the previous batch.
 
+source("~/.Rprofile")
 args <- commandArgs(trailingOnly = TRUE)
 csv_file   <- if (length(args) >= 1) args[1] else "datasets_config.csv"
 batch_size <- if (length(args) >= 2) as.integer(args[2]) else 3L
