@@ -12,6 +12,8 @@
 #   run-set-analysis.sh -> run-sceptre-pipeline.sh
 # Each new batch waits for all pipeline jobs from the previous batch.
 
+source("~/.Rprofile")
+
 args <- commandArgs(trailingOnly = TRUE)
 csv_file   <- if (length(args) >= 1) args[1] else "datasets_config.csv"
 batch_size <- if (length(args) >= 2) as.integer(args[2]) else 3L
@@ -62,7 +64,7 @@ for (batch_start in seq(1, nrow(config), by = batch_size)) {
     cat(sprintf("  [%d/%d] %s\n", i, nrow(config), assoc_dataset_name))
 
     output_fp <- file.path(
-      Sys.getenv("LOCAL_BENCHMARKING_DIR"),
+      .get_config_path("LOCAL_BENCHMARKING_DIR"),
       "association/computational/outputs/sceptre-pipeline",
       assoc_dataset_name
     )

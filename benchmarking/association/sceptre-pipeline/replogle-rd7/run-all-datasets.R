@@ -63,7 +63,7 @@ for (batch_start in seq(1, nrow(config), by = batch_size)) {
     cat(sprintf("  [%d/%d] %s\n", i, nrow(config), assoc_dataset_name))
 
     output_fp <- file.path(
-      Sys.getenv("LOCAL_BENCHMARKING_DIR"),
+      .get_config_path("LOCAL_BENCHMARKING_DIR"),
       "association/computational/outputs/sceptre-pipeline",
       assoc_dataset_name
     )

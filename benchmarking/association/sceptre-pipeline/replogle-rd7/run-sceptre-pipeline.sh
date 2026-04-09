@@ -42,7 +42,6 @@ cd "${output_fp}"
 #################
 # Invoke pipeline
 #################
-
 nextflow run jdeu1023/sceptre-pipeline -r main \
   -c "${config_fp}" \
   -profile profile_16xl \
