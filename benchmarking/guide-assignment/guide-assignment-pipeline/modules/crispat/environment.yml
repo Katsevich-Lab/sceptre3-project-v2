@@ -11,4 +11,4 @@ dependencies:
   - scanpy
   - pip
   - pip:
-    - crispat==0.9.10
+    - git+https://github.com/jdeu1023/crispat.git@benchmark
