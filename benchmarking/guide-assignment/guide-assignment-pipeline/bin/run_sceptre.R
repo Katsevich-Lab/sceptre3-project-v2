@@ -35,27 +35,29 @@ cat("  gRNA targets:", sum(grna_target_df$grna_target != "non-targeting"),
 
 
 # load extra covariates if they exist; keep at sceptre default otherwise
-if(file.exists(covariates_fp <- file.path(input_dir, "covariate_data_frame.csv"))) {
-	extra_covariates <- read.csv(covariates_fp, row.names = 1)
+if(file.exists(covariates_fp <- file.path(input_dir, "cell_covariates.csv"))) {
+	extra_covariates <- read.csv(covariates_fp)
 	cat("  extra_covariates loaded from file.\n")
 } else {
-	extra_covariates <- data.frame()
-	cat("  no existing extra_covariates detected.\n")
+  stop("covariates should be found.")
+	# extra_covariates <- data.frame()
+	#cat("  no existing extra_covariates detected.\n")
 }
 
 
 # Load other sceptre params ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 # load assign_grnas() formula if it exists else set it with pre-determined formula
-if(file.exists(assign_grnas_fmla_fp <- file.path(input_dir, "assign_grnas_formula.rds"))) {
+if(file.exists(assign_grnas_fmla_fp <- file.path(input_dir, "formula_object.rds"))) {
 	assign_grnas_fmla <- readRDS(assign_grnas_fmla_fp) |> as.formula()
 } else {
+  stop("a formula should be found.")
 	# construct it
-	fmla_lookup <- list(
-		replogle = ~ 1 + log(grna_n_nonzero+1) + log(grna_n_umis+1),
-		gasperini = ~ prep_batch + log(grna_n_nonzero+1) + log(grna_n_umis+1)
-			    )
-	assign_grnas_fmla <- fmla_lookup[[dataset_name]]
+	# fmla_lookup <- list(
+	# 	replogle = ~ 1 + log(grna_n_nonzero+1) + log(grna_n_umis+1),
+	# 	gasperini = ~ prep_batch + log(grna_n_nonzero+1) + log(grna_n_umis+1)
+	# 		    )
+	# assign_grnas_fmla <- fmla_lookup[[dataset_name]]
 
 }
 cat("  Using assign_grnas(..., formula_object =", as.character(assign_grnas_fmla), "\b).\n")
@@ -89,7 +91,6 @@ sceptre_object <- import_data(
 # Set analysis parameters - use defaults
 cat("Setting analysis parameters (using defaults)...\n")
 # dummy formula since we're only doing assignment
-# TODO: update formula when we actually do assoc testing
 sceptre_object <- set_analysis_parameters(sceptre_object, formula = ~1) 
 
 # Assign gRNAs using mixture method with log-transformed covariates

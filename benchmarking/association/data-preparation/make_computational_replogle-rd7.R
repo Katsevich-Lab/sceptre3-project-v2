@@ -112,8 +112,8 @@ gene_qc_thresh <- 7
 #   max_num_cells = Inf
 # ) |>
 #   mutate(
-#     dataset_name = paste0("replogle-rd7_comp_ngenes=", num_genes,
-#                           "_ntargets=", num_targets, "_gene_thresh=", gene_qc_thresh)
+    # dataset_name = paste0("replogle-rd7_comp_ngenes=", num_genes,
+    #                       "_ntargets=", num_targets, "_gene_thresh=", gene_qc_thresh)
 #   )
 # METHODS_TO_SKIP = c("mixscale", "frperturb")
 

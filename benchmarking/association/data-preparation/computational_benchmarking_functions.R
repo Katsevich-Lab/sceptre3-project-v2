@@ -50,27 +50,65 @@ sample_genes_with_expression <- function(response_odm, num_genes, cell_idx, rand
 
 
 prepare_cell_metadata_high_moi <- function(grna_indicator_matrix, grna_target_df, cell_covariates, cell_idx,
-                                           fr_perturb_concat_string) {
+                                               fr_perturb_concat_string) {
   # Create cell_info with guide assignments
-  expressed_guide_concat = expressed_target_concat = character(ncol(grna_indicator_matrix))
+  if (!inherits(grna_indicator_matrix, "dgCMatrix")) {
+    grna_indicator_matrix <- as(grna_indicator_matrix, "dgCMatrix")
+  }
   
-  num_assigned_grnas = Matrix::colSums(grna_indicator_matrix)
-  if(any(num_assigned_grnas == 0)) {
+  guide_ids <- rownames(grna_indicator_matrix)
+  if (is.null(guide_ids) || !all(guide_ids %in% grna_target_df$grna_id)) {
+    stop("`grna_indicator_matrix` must have rownames giving guide IDs.")
+  }
+  
+  ## one-time guide -> target lookup
+  target_by_guide <- setNames(
+    as.character(grna_target_df$grna_target),
+    grna_target_df$grna_id
+  )
+  stopifnot(all(target_by_guide %in% grna_target_df$grna_target))
+  stopifnot(all(names(target_by_guide) %in% grna_target_df$grna_id))
+  
+  # these are all of the targets for our guide ids
+  # this will have repeated values in it
+  target_ids <- unname(target_by_guide[guide_ids])
+  
+  if (anyNA(target_ids)) {
+    missing_guides <- unique(guide_ids[is.na(target_ids)])
+    stop(
+      "Some guides in `grna_indicator_matrix` are missing from `grna_target_df`: ",
+      paste(head(missing_guides, 10), collapse = ", ")
+    )
+  }
+  
+  ## for a binary dgCMatrix, diff(@p) is the number of nonzeros in each column
+  p <- grna_indicator_matrix@p
+  i <- grna_indicator_matrix@i + 1L   # convert 0-based to 1-based row indices
+  
+  num_assigned_grnas <- diff(p)
+  
+  if (any(num_assigned_grnas == 0L)) {
     stop("In `prepare_cell_metadata_high_moi()`, some cells have no assigned guides, which should not happen here.")
   }
-  for(i in seq_len(ncol(grna_indicator_matrix))) {
-    curr_guides = rownames(grna_indicator_matrix)[grna_indicator_matrix[,i] == 1]
-    expressed_guide_concat[i] = paste0(
-      curr_guides,
-      collapse=fr_perturb_concat_string
-    )
-    expressed_target_concat[i] = paste0(
-      grna_target_df$grna_target[grna_target_df$grna_id %in% curr_guides],
-      collapse=fr_perturb_concat_string
+  
+  n_cells <- ncol(grna_indicator_matrix)
+  expressed_guide_concat <- character(n_cells)
+  expressed_target_concat <- character(n_cells)
+  
+  for (col in seq_len(n_cells)) {
+    idx <- seq.int(p[col] + 1L, p[col + 1L])
+    rows <- i[idx]
+    
+    expressed_guide_concat[col] <- paste(
+      guide_ids[rows],
+      collapse = fr_perturb_concat_string
     )
     
+    expressed_target_concat[col] <- paste(
+      target_ids[rows],
+      collapse = fr_perturb_concat_string
+    )
   }
-    
   
   cell_info <- data.frame(
     cell_idx = cell_idx,
@@ -95,6 +133,7 @@ prepare_cell_metadata_high_moi <- function(grna_indicator_matrix, grna_target_df
     cell_covariates_subset = cell_covariates_subset
   ))
 }
+
 
 
 make_computational_replogle <- function(
@@ -320,7 +359,8 @@ make_computational_gasperini <- function(
     nt_name = "non-targeting",
     force_nt_inclusion = FALSE,
     fr_perturb_concat_string = "@",
-    random_seed = 243535
+    random_seed = 243535,
+    methods_to_skip=""
 ) {
   
 
@@ -351,12 +391,22 @@ make_computational_gasperini <- function(
   
   candidate_cells = which(Matrix::colSums(scep_assn_mat[guides,]) > 0)
   cat("Initially", length(candidate_cells), "cells found.\n")
-  if(length(candidate_cells) >= max_num_cells) {
-    cat("Downsampling to", max_num_cells, "cells.\n")
-    candidate_cells <- sample(candidate_cells, max_num_cells)
+
+  if(is.finite(max_num_cells)) {
+    if(length(candidate_cells) >= max_num_cells) {
+      cat("Downsampling to", max_num_cells, "cells.\n")
+      candidate_cells <- sample(candidate_cells, max_num_cells)
+    } else {
+      # cat("Fewer than", max_num_cells, "cells; randomly sampling more.\n")
+      # all_other_cells = setdiff(1:ncol(scep_assn_mat), candidate_cells)
+      # candidate_cells <- c(candidate_cells, sample(all_other_cells, max_num_cells - length(candidate_cells)))
+      # cat("Fewer than", max_num_cells, "cells; all kept.\n")
+      stop("Not enough cells for these parameters.")
+    }
   } else {
-    cat("Fewer than", max_num_cells, "cells; all kept.\n")
+    cat("max_num_cells = Inf so all cells for these targets are kept.\n")
   }
+  
   
   # 3. use the provided genes, or sample genes and only keep genes that have some umi counts
   if(is.numeric(genes) && length(genes) == 1) {
@@ -431,21 +481,26 @@ make_computational_gasperini <- function(
   )
   
 
-  # Prepare FR-Perturb covariates, with all but batch log1p'd
-  covariates_to_log1p <- setdiff(names(cell_covariates_subset), "prep_batch")
-  cell_covariates_frpert_with_perturbation <- prepare_frperturb_covariates(
-    cell_covariates = cell_covariates_subset,
-    grna_targets = cell_info$expressed_target_concat,
-    covariates_to_log1p = covariates_to_log1p
-  )
-  
-  # with gasperini, we have real cell names
-  write_frperturb_output(
-    response_matrix = response_subset,
-    cell_names =  cell_info$cell_name,
-    cell_covariates_frpert = cell_covariates_frpert_with_perturbation,
-    output_path = file.path(write_fp, "frperturb")
-  )
+  if(! "frperturb" %in% methods_to_skip) {
+    # Prepare FR-Perturb covariates, with all but batch log1p'd
+    covariates_to_log1p <- setdiff(names(cell_covariates_subset), "prep_batch")
+    cell_covariates_frpert_with_perturbation <- prepare_frperturb_covariates(
+      cell_covariates = cell_covariates_subset,
+      grna_targets = cell_info$expressed_target_concat,
+      covariates_to_log1p = covariates_to_log1p
+    )
+    
+    # with gasperini, we have real cell names
+    write_frperturb_output(
+      response_matrix = response_subset,
+      cell_names =  cell_info$cell_name,
+      cell_covariates_frpert = cell_covariates_frpert_with_perturbation,
+      output_path = file.path(write_fp, "frperturb")
+    )
+  } else {
+    cat("skipping frperturb.\n")
+  }
+
   
   cat("\n Computational benchmarking dataset creation complete!\n")
   cat("Output directory:", write_fp, "\n")

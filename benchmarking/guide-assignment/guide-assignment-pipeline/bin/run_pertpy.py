@@ -32,7 +32,7 @@ max_assignments_per_cell = 1000
 
 # Run pertpy guide assignment
 print("Running pertpy guide assignment...", flush=True)
-print("Note: JAX will compile on first iterations (watch for 'Compiling...' messages)", flush=True)
+# print("Note: JAX will compile on first iterations (watch for 'Compiling...' messages)", flush=True)
 
 pertpy_obj = pt.pp.GuideAssignment()
 
