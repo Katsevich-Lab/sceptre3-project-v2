@@ -12,4 +12,4 @@ dependencies:
       - anndata
       - h5py
       - filelock
-      - "jax[cuda12]"
+      - jax
