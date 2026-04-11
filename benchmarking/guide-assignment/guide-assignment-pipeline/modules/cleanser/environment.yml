@@ -2,8 +2,10 @@ name: cleanser
 channels:
   - conda-forge
 dependencies:
+  - python=3.12
   - cmdstan
   - cmdstanpy
+  - pandas
   - pip
   - pip:
-    - git+https://github.com/Gersbachlab-Bioinformatics/CLEANSER.git
+    - git+https://github.com/Gersbachlab-Bioinformatics/CLEANSER.git@1.2.1

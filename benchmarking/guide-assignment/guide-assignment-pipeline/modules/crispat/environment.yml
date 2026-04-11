@@ -4,6 +4,11 @@ channels:
   - pytorch
   - bioconda
 dependencies:
+  - python=3.12
+  - pytorch
+  - cpuonly       # This is the magic "make it easy" button for non-GPU users
+  - pandas
+  - scanpy
   - pip
   - pip:
     - crispat==0.9.10
