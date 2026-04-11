@@ -1,4 +1,4 @@
-name: pertpy-gpu
+name: pertpy
 channels: [conda-forge]
 dependencies:
   - python=3.12
