@@ -1,0 +1,1159 @@
+---
+title: "defense-assignment-analysis"
+output: html_document
+date: "2026-04-11"
+---
+
+
+
+```{r, echo=FALSE}
+library(Matrix)
+library(tidyverse)
+library(data.table)
+
+rm(list=ls())
+source("~/.Rprofile")
+
+get_all_guides_per_dataset <- function(dataset_name) {
+  curr_path_to_data = file.path(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "guide_assignment/input_data",
+    dataset_name,
+    "sceptre/grna_matrix.rds"
+  )
+  grna_matrix = read_rds(curr_path_to_data)
+  rownames(grna_matrix)
+}
+
+make_assn_data_structure <- function(dataset_names, methods) {
+  # all assignments go here: 1st grouped by dataset, then by method, then by guide
+  assns_list <- vector("list", length(dataset_names)) |>
+    setNames(names(dataset_names))
+  for(i in seq_along(dataset_names)) {
+    assns_list[[i]] <- vector("list", length(methods)) |>
+      setNames(methods)
+    
+    curr_guides = get_all_guides_per_dataset(dataset_name = dataset_names[i])
+    guide_to_assns_template <- vector("list", length(curr_guides)) |>
+      setNames(curr_guides)
+    
+    for(j in seq_along(methods)) {
+      assns_list[[i]][[j]] <- guide_to_assns_template
+    }
+  }
+  assns_list
+}
+
+
+get_run_with_dataset_and_method <- function(run_names, dataset_name, method_name, base_data_dir) {
+  which_run_has_this_dataset_and_method <- sapply(run_names, function(run_name) {
+    curr_run_dir = file.path(base_data_dir, run_name)
+    curr_run_files = dir(curr_run_dir)
+    
+    file_found <- grepl(method_name, curr_run_files, fixed=TRUE) & 
+      grepl(dataset_name, curr_run_files, fixed=TRUE)
+    
+    if(sum(file_found) > 1) {
+      stop("multiple files matched for '", dataset_name, "' and ", method_name, " in '", run_name, "'\n")
+    }
+    any(file_found)
+  })
+  if(sum(which_run_has_this_dataset_and_method) > 1) {
+    stop("multiple runs matched for '", dataset_name, "' and ", method_name, "\n")
+  } else if(sum(which_run_has_this_dataset_and_method) == 0) {
+    stop("no runs matched for '", dataset_name, "' and ", method_name, "\n")
+  }
+  run_names[which_run_has_this_dataset_and_method]
+}
+
+
+load_all_assns <- function(run_names, dataset_names, methods) {
+  base_data_dir = file.path(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "guide_assignment/outputs"
+  )
+  
+  all_assns <- make_assn_data_structure(dataset_names = dataset_names, methods = methods)
+  
+  for(dataset_idx in seq_along(dataset_names)) {
+    dataset_name = dataset_names[dataset_idx]
+    dataset_name_short = names(dataset_names)[dataset_idx]
+    
+    path_to_cell_names = file.path(
+      .get_config_path("LOCAL_BENCHMARKING_DIR"),
+      "guide_assignment/input_data",
+      dataset_name, "sceptre/grna_matrix.rds"
+    )
+    cell_names_in_order = read_rds(path_to_cell_names) |> colnames()
+    
+    for(method_name in methods) {
+      
+      run_with_this_dataset = get_run_with_dataset_and_method(
+        run_names = run_names,
+        dataset_name = dataset_name,
+        method_name = method_name,
+        base_data_dir=base_data_dir
+      )
+      curr_run_dir = file.path(
+        base_data_dir, run_with_this_dataset
+      )
+      curr_files = dir(curr_run_dir)
+      
+      curr_assns_fname = curr_files[
+        grepl(dataset_name, curr_files, fixed=TRUE) &
+          grepl(method_name, curr_files, fixed=TRUE)
+      ]
+      
+      curr_assns = load_assns(
+        path_to_assns = file.path(curr_run_dir, curr_assns_fname),
+        method_name = method_name,
+        all_guides = names(all_assns[[dataset_name_short]][[method_name]]),
+        cell_names_in_order = cell_names_in_order
+      )
+      if(!all(names(curr_assns) == names(all_assns[[dataset_name_short]][[method_name]]))) {
+        stop("mismatch between the guide names returned when ", dataset_name, " and ", method_name, " is loaded.")
+      }
+      
+      all_assns[[dataset_name_short]][[method_name]] = curr_assns
+    }
+  }
+  all_assns
+}
+
+
+load_assns <- function(path_to_assns, method_name, all_guides, cell_names_in_order) {
+  if(method_name == "sceptre") {
+    load_assns_sceptre(path_to_assns = path_to_assns, all_guides = all_guides, cell_names_in_order = cell_names_in_order)
+  } else if(method_name == "crispat") {
+    load_assns_crispat(path_to_assns = path_to_assns, all_guides = all_guides)
+  } else if(method_name == "pertpy") {
+    load_assns_pertpy(path_to_assns = path_to_assns, all_guides = all_guides)
+  } else if(method_name == "cleanser") {
+    load_assns_cleanser(path_to_assns = path_to_assns, all_guides = all_guides, cell_names_in_order = cell_names_in_order)
+  } else {
+    stop("method '", method_name, "' not recognized.")
+  }
+}
+
+
+# path_to_assns = "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/outputs/run_all_3guides_100k/assignment_matrix_sceptre_replogle-rd7_assign_nguides=100_ncells=100k.rds"
+
+# THIS RETURNS NAMES
+load_assns_sceptre <- function(path_to_assns, all_guides, cell_names_in_order) {
+  scep_assn_mat = read_rds(path_to_assns)
+  guide_to_assns = vector("list", length(all_guides)) |>
+    setNames(all_guides)
+  for(guide in all_guides) {
+    guide_to_assns[[guide]] = cell_names_in_order[which(scep_assn_mat[guide,])]
+  }
+  guide_to_assns
+}
+
+# path_to_crispat = "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/outputs/run_all_3guides_100k/assignments_crispat_replogle-rd7_assign_nguides=100_ncells=100k.csv"
+all_guides = rownames(read_rds("/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7_assign_nguides=100_ncells=100k/sceptre/grna_matrix.rds"))
+cell_names_in_order  = colnames(read_rds("/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7_assign_nguides=100_ncells=100k/sceptre/grna_matrix.rds"))
+
+# RETURNS NAMES
+load_assns_crispat <- function(path_to_assns, all_guides) {
+  crisp_assign_raw <- read.csv(path_to_assns) 
+      # mutate(cell_idx = gsub("cell_idx_", "", cell_id) |> as.integer())
+  unordered_cell_list <- split(crisp_assign_raw$cell_id, crisp_assign_raw$grna_id)
+  
+  guide_to_assns = vector("list", length(all_guides)) |>
+    setNames(all_guides)
+  
+  guide_to_assns[names(unordered_cell_list)] <- unordered_cell_list
+  guide_to_assns
+}
+
+
+load_assns_pertpy <- function(path_to_assns, all_guides) {
+
+    pert_assign_raw <- read.csv(path_to_assns) |>
+      filter(grna_id != "negative")
+    
+    guide_to_assns = vector("list", length(all_guides)) |>
+      setNames(all_guides)
+    
+    dt <- as.data.table(pert_assign_raw)
+    
+    # 1) Split each cell's "g1+g2+g3" into multiple columns
+    spl <- dt[, tstrsplit(grna_id, "\\+", fixed = FALSE)]
+    
+    # 2) Go long: one row per (cell_id, grna)
+    long <- melt(
+      cbind(dt[, .(cell_id)], spl),
+      id.vars = "cell_id",
+      value.name = "grna",
+      na.rm = TRUE
+    )[, .(cell_id, grna)]
+    
+    # (optional) drop duplicates if the same guide appears twice for a cell
+    setkey(long, grna, cell_id)
+    long <- unique(long)
+    
+    # 3) Aggregate: list of cells per gRNA
+    grna_cells_list <- long[, .(cells = list(cell_id)), by = grna]
+    grna_cells_list <- setNames(grna_cells_list$cells, grna_cells_list$grna)
+    guide_to_assns[names(grna_cells_list)] <- grna_cells_list
+    
+    guide_to_assns
+}
+
+path_to_assns = "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/outputs/run_all_3guides_100k/assignments_cleanser_replogle-rd7_assign_nguides=100_ncells=100k.csv"
+load_assns_cleanser <- function(path_to_assns, all_guides, cell_names_in_order, posterior_thresh = 0.8) {
+  # print(all_guides)
+  clns_assign_raw <- read_csv(path_to_assns, show_col_types = FALSE) |> as.data.frame()
+  
+  # all_guides_ <<- all_guides
+  # cell_names_in_order_ <<- cell_names_in_order
+  #   print(head(clns_assign_raw))
+  #   print(sum(clns_assign_raw$posterior > .8))
+ clns_assign_raw = clns_assign_raw |>
+    filter(posterior >= posterior_thresh) |>
+    mutate(grna_id = all_guides[grna_id], cell_name = cell_names_in_order[cell_id])
+
+  guide_to_assns = vector("list", length(all_guides)) |>
+    setNames(all_guides)
+  
+  unordered_cell_list <- split(clns_assign_raw$cell_name, clns_assign_raw$grna_id)
+  
+  guide_to_assns[names(unordered_cell_list)] <- unordered_cell_list
+  guide_to_assns  
+}
+
+
+# 
+# 
+# 
+# test_scep = load_assns_sceptre(
+#   "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/outputs/run_all_3guides_100k/assignment_matrix_sceptre_replogle-rd7_assign_nguides=400_ncells=100k.rds",
+#     all_guides_,
+#   cell_names_
+# )
+# 
+# test_crisp = load_assns_crispat(
+#   "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/outputs/run_all_3guides_100k/assignments_crispat_replogle-rd7_assign_nguides=400_ncells=100k.csv",
+#   all_guides_
+# )
+# 
+# jac <- function(a,b) {
+#   numerator = length(intersect(a,b))
+#   denominator = length(union(a,b))
+#   if(denominator == 0) {
+#     return(NA)
+#   }
+#   numerator / denominator
+# }
+# 
+# sims = sapply(all_guides_, function(guide) jac(test_scep[guide], test_crisp[guide]))
+# hist(sims |> unlist())
+
+```
+
+
+```{r, echo=FALSE}
+run_names <- c("run_all_3guides_100k")
+
+dataset_names_repl <- c(
+  ng100 = "replogle-rd7_assign_nguides=100_ncells=100k",
+  ng200 = "replogle-rd7_assign_nguides=200_ncells=100k",
+  ng400 = "replogle-rd7_assign_nguides=400_ncells=100k"
+)
+dataset_names_gasp <- c(
+  ng100 = "gasperini_assign_nguides=100_ncells=100k",
+  ng200 = "gasperini_assign_nguides=200_ncells=100k",
+  ng400 = "gasperini_assign_nguides=400_ncells=100k"
+)
+methods = c("sceptre", "crispat", "cleanser", "pertpy")
+
+method_renamer = c(
+  sceptre="SCEPTRE",
+  cleanser="CLEANSER",
+  crispat="Crispat",
+  pertpy="Pertpy"
+)
+
+dataset_renamer = c(
+  ng100="100 guides",
+  ng200="200 guides",
+  ng400="400 guides"
+)
+
+sparsity_repl = file.path(
+      .get_config_path("LOCAL_BENCHMARKING_DIR"),
+      "guide_assignment/input_data",
+      "replogle-rd7",
+      "sceptre-pipeline/grna_summary_stats.csv"
+    ) |>
+  read_csv(show_col_types = FALSE) |>
+  mutate(sparsity_ranking = rank(grna_nonzero))
+  
+
+sparsity_gasp = file.path(
+      .get_config_path("LOCAL_BENCHMARKING_DIR"),
+      "guide_assignment/input_data",
+      "gasperini",
+      "sceptre-pipeline/grna_summary_stats.csv"
+    ) |>
+  read_csv(show_col_types = FALSE) |>
+  mutate(sparsity_ranking = rank(grna_nonzero))
+
+repl_assns <- load_all_assns(run_names=run_names, dataset_names=dataset_names_repl, methods=methods)
+
+gasp_assns <- load_all_assns(run_names=run_names, dataset_names=dataset_names_gasp, methods=methods)
+
+
+
+
+```
+
+
+
+ok... now what
+
+
+```{r, echo=FALSE}
+precision <- function(set1, set2) {
+  intersection <- length(intersect(set1, set2))
+  denom <- length(set1)
+  if (denom == 0) return(NA_real_)
+  return(intersection / denom)
+}
+
+recall <- function(set1, set2) {
+  intersection <- length(intersect(set1, set2))
+  denom <- length(set2)
+  if (denom == 0) return(NA_real_)
+  return(intersection / denom)
+}
+F1 <- function(set1, set2) {
+  inter <- length(intersect(set1, set2))
+  denom <- length(set1) + length(set2)
+  if (denom == 0) return(NA_real_)  # or return(1) if you want "both empty => perfect match"
+  2 * inter / denom
+}
+jaccard <- function(set1, set2) {
+  intersection <- length(intersect(set1, set2))
+  union <- length(union(set1, set2))
+  if (union == 0) return(NA_real_)
+  return(intersection / union)
+}
+
+
+list_prettier <- function(assns_list, method_renamer = NULL, dataset_renamer = NULL) {
+  if(!is.null(method_renamer)) {
+    for(i in seq_along(assns_list)) {
+      curr_names <- names(assns_list[[i]])
+      names(assns_list[[i]]) <- method_renamer[curr_names]
+    }
+  }
+  if(!is.null(dataset_renamer)) {
+    names(assns_list) <- dataset_renamer[names(assns_list)]
+  }
+  assns_list
+}
+
+plot_method_comparisons <- function(
+    assns_list, 
+    metric_type = c("F1", "precision", "recall", "jaccard"),
+    source_data,
+        metric_title_name,
+    metric_y_axis_name = NULL,
+    method_renamer = NULL,
+    dataset_renamer = NULL
+    ) {
+  metric_type <- match.arg(metric_type)
+  
+  # Map string to the metric functions you defined
+  metric_fn <- switch(metric_type,
+    "F1"        = F1,
+    "precision" = precision,
+    "recall"    = recall,
+    "jaccard" = jaccard
+  )
+  
+  assns_list <- list_prettier(
+    assns_list,
+    method_renamer=method_renamer,
+    dataset_renamer=dataset_renamer
+  )
+  datasets <- names(assns_list)
+  methods  <- names(assns_list[[1]])
+  
+  # Generate all unique pairwise combinations: choose(4, 2) = 6
+  method_pairs <- combn(methods, 2, simplify = FALSE)
+  
+  # Flatten the nested list into a long-format data frame
+  results <- map_df(datasets, function(ds) {
+    map_df(method_pairs, function(pair) {
+      m1 <- pair[1]
+      m2 <- pair[2]
+      
+      # Number of gRNAs
+      num_grnas <- length(assns_list[[ds]][[m1]])
+      
+      # Vectorized calculation over gRNAs
+      scores <- map_dbl(seq_len(num_grnas), function(k) {
+        metric_fn(assns_list[[ds]][[m1]][[k]], 
+                  assns_list[[ds]][[m2]][[k]])
+      })
+      
+      data.frame(
+        dataset    = ds,
+        comparison = paste(m1, "vs", m2),
+        score      = scores
+      )
+    })
+  })
+
+  # Generate the Violin Plot
+  ggplot(results, aes(x = dataset, y = score, fill = comparison)) +
+    # The 'violin' shows the full density of the scores
+    geom_violin(
+      trim         = TRUE, 
+      alpha        = 0.6, 
+      scale        = "width",
+      linewidth    = 0.2,
+      position     = position_dodge(width = 0.8)
+    ) +
+    labs(
+      title    = paste(source_data, "pairwise gRNA Assignment Agreement:", metric_type),
+      subtitle = "Distribution across all gRNAs per dataset",
+      y        = metric_y_axis_name,
+      x        = "Dataset",
+      fill     = "Method Comparison"
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      panel.grid.major.x = element_blank(),
+      legend.position    = "bottom",
+      axis.text.x        = element_text(face = "bold")
+    ) +
+    # Adjust y-axis to standard metric bounds
+    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    guides(fill = guide_legend(nrow = 2))
+}
+
+plot_method_metrics <- function(
+    assns_list, 
+    metric_type = c("cardinality"), 
+    source_data,
+        metric_title_name,
+    metric_y_axis_name = NULL,
+    log_scale = FALSE,
+    method_renamer = NULL,
+    dataset_renamer = NULL
+) {
+  metric_type <- match.arg(metric_type)
+  
+  metric_fn <- switch(metric_type,
+    "cardinality" = length
+  )
+  if(is.null(metric_y_axis_name)) {
+    metric_y_axis_name = metric_type
+  }
+  
+  assns_list <- list_prettier(
+    assns_list,
+    method_renamer=method_renamer,
+    dataset_renamer=dataset_renamer
+  )
+  
+  
+  
+  datasets <- names(assns_list)
+  methods  <- names(assns_list[[1]])
+  
+  # Flatten list into a data frame
+  results <- map_df(datasets, function(ds) {
+    map_df(methods, function(m) {
+      
+      # Calculate metric for each gRNA
+      scores <- map_dbl(assns_list[[ds]][[m]], metric_fn)
+      
+      data.frame(
+        dataset = ds,
+        method  = m,
+        score   = scores
+      )
+    })
+  })
+
+  # Initialize Plot
+  plt <- ggplot(results, aes(x = dataset, y = score, fill = method)) +
+    geom_violin(
+      trim      = TRUE, 
+      alpha     = 0.7, 
+      scale     = "width",
+      linewidth = 0.4, 
+      position  = position_dodge(width = 0.8)
+    ) +
+    labs(
+      title    = paste(source_data, "Evaluation:", metric_title_name),
+      subtitle = paste("Distribution of scores per gRNA", if(log_scale) "(Log1p Scale)" else ""),
+      y        = if(log_scale) paste("log1p(", metric_y_axis_name, ")") else metric_y_axis_name,
+      x        = "Dataset",
+      fill     = "Method"
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor   = element_blank(),
+      legend.position    = "bottom",
+      axis.title         = element_text(face = "bold")
+    ) +
+    scale_fill_brewer(palette = "Set2")
+
+  # Conditionally add log scale
+  if (log_scale) {
+# 1. Determine the range of your data to set sensible breaks
+    max_val <- max(results$score, na.rm = TRUE)
+    max_break <- floor(log10(max(1, max_val))) + 1
+    # 2. Create a sequence of powers of 10 that covers your data
+    # This covers 0, 1, 10, 100, 1000, etc.
+    my_breaks <- c(0, 10^(0:max_break), (10^(2:max_break)) / 2) |> sort()
+    
+    plt <- plt + scale_y_continuous(
+      trans  = "log1p",
+      breaks = my_breaks,
+      labels = scales::label_comma()
+    )
+  }
+
+  return(plt)
+}
+
+
+
+# Custom Geom for Split Violins
+GeomSplitViolin <- ggproto("GeomSplitViolin", GeomViolin, 
+  draw_group = function(self, data, ..., draw_quantiles = NULL) {
+    data <- transform(data, xminv = x - violinwidth * (x - xmin), xmaxv = x + violinwidth * (xmax - x))
+    grp <- data[1, "group"]
+    newdata <- plyr::arrange(transform(data, x = if (grp %% 2 == 1) xminv else xmaxv), if (grp %% 2 == 1) y else -y)
+    newdata <- rbind(newdata[1, ], newdata, newdata[nrow(newdata), ], newdata[1, ])
+    newdata[c(1, nrow(newdata) - 1, nrow(newdata)), "x"] <- round(newdata[1, "x"])
+    if (length(draw_quantiles) > 0 & !scales::zero_range(range(data$y))) {
+      stopifnot(all(draw_quantiles >= 0 & draw_quantiles <= 1))
+      quantiles <- ggplot2:::create_quantile_segment_frame(data, draw_quantiles)
+      aesthetics <- data[rep(1, nrow(quantiles)), setdiff(names(data), c("x", "y")), drop = FALSE]
+      aesthetics$x <- quantiles$x
+      aesthetics$y <- quantiles$y
+      aesthetics$group <- quantiles$group
+      aesthetics$xend <- quantiles$xend
+      aesthetics$yend <- quantiles$yend
+      dot_elements <- list(...)
+      segments <- do.call(grid::segmentsGrob, c(list(quantiles$x, quantiles$y, quantiles$xend, quantiles$yend), dot_elements))
+      grid::grobTree(GeomPolygon$draw_panel(newdata, ...), segments)
+    } else {
+      GeomPolygon$draw_panel(newdata, ...)
+    }
+  }
+)
+
+geom_split_violin <- function(mapping = NULL, data = NULL, stat = "ydensity", position = "identity", ..., 
+                              draw_quantiles = NULL, trim = TRUE, scale = "area", na.rm = FALSE, 
+                              show.legend = NA, inherit.aes = TRUE) {
+  layer(data = data, mapping = mapping, stat = stat, geom = GeomSplitViolin, 
+        position = position, show.legend = show.legend, inherit.aes = inherit.aes, 
+        params = list(trim = trim, scale = scale, draw_quantiles = draw_quantiles, na.rm = na.rm, ...))
+}
+plot_method_metrics_by_sparsity <- function(
+    dataset_list, 
+    sparsity_df, 
+    metric_type = c("cardinality"), 
+    source_data_name, 
+    metric_title_name,
+    log_scale = FALSE,
+    method_renamer = NULL
+) {
+  metric_type <- match.arg(metric_type)
+  metric_fn <- switch(metric_type, "cardinality" = length)
+  
+  # 1. Prettify
+  if (!is.null(method_renamer)) {
+    curr_names <- names(dataset_list)
+    names(dataset_list) <- ifelse(curr_names %in% names(method_renamer), 
+                                  method_renamer[curr_names], 
+                                  curr_names)
+  }
+  
+  # 2. Process Data
+  results <- map_df(names(dataset_list), function(m) {
+    data.frame(
+      method = m,
+      grna   = names(dataset_list[[m]]),
+      score  = map_dbl(dataset_list[[m]], metric_fn)
+    )
+  }) %>%
+    left_join(sparsity_df, by = "grna") %>%
+    filter(!is.na(sparsity_label)) %>%
+    mutate(sparsity_label = factor(sparsity_label, levels = c("low", "high")))
+
+  # 3. Plot
+  plt <- ggplot(results, aes(x = method, y = score, fill = sparsity_label)) +
+    geom_split_violin(trim = TRUE, alpha = 0.7,scale = "width", adjust = 1.5) + # Using the custom geom here
+    labs(
+      title    = paste(source_data_name, "Evaluation:", metric_title_name),
+      subtitle = "Split violins: Low (Left) vs High (Right) Sparsity",
+      y        = if(log_scale) paste("log1p(", metric_type, ")") else metric_type,
+      x        = "Method",
+      fill     = "Sparsity"
+    ) +
+    theme_minimal() +
+    scale_fill_manual(values = c("low" = "#66c2a5", "high" = "#fc8d62"))
+
+  # 4. Scale handling
+  if (log_scale) {
+    max_val <- max(results$score, na.rm = TRUE)
+    brks <- c(0, 10^(0:floor(log10(max(1, max_val)))))
+    plt <- plt + scale_y_continuous(trans = "log1p", breaks = brks, labels = scales::label_comma())
+  }
+
+  return(plt)
+}
+plot_method_comparisons_by_sparsity <- function(
+    dataset_list,         # One dataset (the inner list of methods)
+    sparsity_df,          # The dataframe with 'grna' and 'sparsity_label'
+    metric_type = c("F1", "precision", "recall", "jaccard"),
+    source_data_name,     # String for title
+    metric_title_name,
+    metric_y_axis_name = NULL,
+    method_renamer = NULL
+) {
+  metric_type <- match.arg(metric_type)
+  metric_fn <- switch(metric_type,
+    "F1"        = F1,
+    "precision" = precision,
+    "recall"    = recall,
+    "jaccard"   = jaccard
+  )
+  
+  if(is.null(metric_y_axis_name)) metric_y_axis_name = metric_type
+
+  # 1. Prettify method names
+  if (!is.null(method_renamer)) {
+    curr_names <- names(dataset_list)
+    names(dataset_list) <- ifelse(curr_names %in% names(method_renamer), 
+                                  method_renamer[curr_names], 
+                                  curr_names)
+  }
+  
+  methods <- names(dataset_list)
+  method_pairs <- combn(methods, 2, simplify = FALSE)
+  
+  # 2. Generate Pairwise Scores and Join with Sparsity
+  results <- map_df(method_pairs, function(pair) {
+    m1 <- pair[1]
+    m2 <- pair[2]
+    
+    # We use the names of the gRNAs from m1 to join with sparsity_df
+    grna_names <- names(dataset_list[[m1]])
+    
+    scores <- map_dbl(seq_along(dataset_list[[m1]]), function(k) {
+      metric_fn(dataset_list[[m1]][[k]], 
+                dataset_list[[m2]][[k]])
+    })
+    
+    data.frame(
+      comparison = paste(m1, "\nvs\n", m2), # \n keeps the x-axis clean
+      grna       = grna_names,
+      score      = scores
+    )
+  }) %>%
+    left_join(sparsity_df, by = "grna") %>%
+    filter(!is.na(sparsity_label)) %>%
+    mutate(sparsity_label = factor(sparsity_label, levels = c("low", "high")))
+  
+  results %>%
+  group_by(sparsity_label) %>%
+  summarise(
+    mean = mean(score),
+    sd = sd(score),
+    zeros = sum(score == 0),
+    ones = sum(score == 1)
+  ) |> print()
+
+  # 3. Create the Split Violin Plot
+  plt <- ggplot(results, aes(x = comparison, y = score, fill = sparsity_label)) +
+    geom_split_violin(trim = TRUE, alpha = 0.7, scale = "width", adjust = 1.5) +
+    labs(
+      title    = paste(source_data_name, "Pairwise Agreement:", metric_title_name),
+      subtitle = "Split violins: Low (Left) vs High (Right) Sparsity",
+      y        = metric_y_axis_name,
+      x        = "Method Comparison",
+      fill     = "Sparsity Group"
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      panel.grid.major.x = element_blank(),
+      legend.position    = "bottom",
+      axis.text.x        = element_text(size = 9) # Smaller text for 6 pairs
+    ) +
+    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    scale_fill_manual(values = c("low" = "#66c2a5", "high" = "#fc8d62"))
+
+  return(plt)
+}
+```
+
+
+plot 1: metrics as a function of guide
+
+```{r, echo=FALSE}
+
+
+# plot_method_comparisons(repl_assns, "F1")
+# plot_method_comparisons(gasp_assns, "F1")
+# plot_method_comparisons(repl_assns, "precision")
+# plot_method_comparisons(gasp_assns, "precision")
+# plot_method_comparisons(repl_assns, "recall")
+# plot_method_comparisons(gasp_assns, "recall")
+plot_method_comparisons(repl_assns, "jaccard", metric_y_axis_name = "Jaccard similarity", source_data = "Replogle",
+                    method_renamer = method_renamer, dataset_renamer = dataset_renamer)
+plot_method_comparisons(gasp_assns, "jaccard", metric_y_axis_name = "Jaccard similarity", source_data = "Gasperini",
+                    method_renamer = method_renamer, dataset_renamer = dataset_renamer)
+```
+
+
+```{r, echo=FALSE}
+plot_method_metrics(repl_assns, "cardinality", log_scale = TRUE,
+                    source_data = "Replogle", metric_title_name = "num. assignments per guide",
+                      metric_y_axis_name = "count",
+                    method_renamer = method_renamer, dataset_renamer = dataset_renamer)
+plot_method_metrics(gasp_assns[3], "cardinality", log_scale = FALSE, source_data = "Gasperini",
+                    metric_title_name = "num. assignments per guide", metric_y_axis_name = "count",
+                    method_renamer = method_renamer, dataset_renamer = dataset_renamer)
+```
+
+```{r, echo=FALSE}
+sparsity_df_repl <- sparsity_repl |>
+  filter(grna %in% names(repl_assns[["ng400"]][["sceptre"]])) |>
+  mutate(
+    sparsity_ranking = rank(grna_nonzero),
+    bottom_third_nonzero = grna_nonzero <= quantile(grna_nonzero, .33),
+    top_third_nonzero = grna_nonzero > quantile(grna_nonzero, .67)
+  )
+sparsity_label = rep(NA, nrow(sparsity_df_repl))
+sparsity_label[sparsity_df_repl$bottom_third_nonzero] = "high"
+sparsity_label[sparsity_df_repl$top_third_nonzero] = "low"
+sparsity_label = factor(sparsity_label, levels = c("low", "high"))
+sparsity_df_repl = sparsity_df_repl |>
+  mutate(sparsity_label = sparsity_label)
+rm(sparsity_label)
+
+plot_method_metrics_by_sparsity(
+  dataset_list = repl_assns[["ng400"]],     
+    sparsity_df = sparsity_df_repl,      
+    metric_type = c("cardinality"), 
+    source_data_name = "Replogle",     # String for title
+    metric_title_name = "num. assignments per guide",
+                      # metric_y_axis_name = "count",
+                    method_renamer = method_renamer,
+  log_scale = TRUE
+)
+
+plot_method_comparisons_by_sparsity(
+  dataset_list = repl_assns[["ng400"]],
+  sparsity_df = sparsity_df_repl,
+  metric_type = "jaccard",
+  metric_y_axis_name = "Jaccard similarity", source_data = "Replogle",
+                    method_renamer = method_renamer,
+  metric_title_name = "Jaccard"
+)
+
+# 
+# # testing this
+# df_name = "ng400"
+# curr_df = sparsity_df_repl |>
+#   filter(grna %in% names(repl_assns[[df_name]][["sceptre"]])) |>
+#   mutate(scep_v_crisp = 0)
+# for(i in 1:nrow(curr_df)) {
+#   curr_df$scep_v_crisp[i] = jaccard(
+#     repl_assns[[df_name]]$sceptre[[curr_df$grna[i]]],
+#     repl_assns[[df_name]]$crispat[[curr_df$grna[i]]]
+#   )
+# }
+# hist(curr_df$scep_v_crisp[as.character(curr_df$sparsity_label) == "low"])
+# plot(curr_df$scep_v_crisp ~ log1p(curr_df$grna_nonzero))
+```
+
+
+```{r, echo=FALSE}
+sparsity_df_gasp <- sparsity_gasp |>
+  filter(grna %in% names(gasp_assns[["ng400"]][["sceptre"]])) |>
+  mutate(
+    sparsity_ranking = rank(grna_nonzero),
+    bottom_third_nonzero = grna_nonzero <= quantile(grna_nonzero, .33),
+    top_third_nonzero = grna_nonzero > quantile(grna_nonzero, .67)
+  )
+sparsity_label = rep(NA, nrow(sparsity_df_gasp))
+sparsity_label[sparsity_df_gasp$bottom_third_nonzero] = "high"
+sparsity_label[sparsity_df_gasp$top_third_nonzero] = "low"
+sparsity_label = factor(sparsity_label, levels = c("low", "high"))
+sparsity_df_gasp = sparsity_df_gasp |>
+  mutate(sparsity_label = sparsity_label)
+rm(sparsity_label)
+
+plot_method_metrics_by_sparsity(
+  dataset_list = gasp_assns[["ng400"]],     
+    sparsity_df = sparsity_df_gasp,      
+    metric_type = c("cardinality"), 
+    source_data_name = "Gasperini",     # String for title
+    metric_title_name = "num. assignments per guide",
+                      # metric_y_axis_name = "count",
+                    method_renamer = method_renamer,
+  log_scale = FALSE
+)
+
+plot_method_comparisons_by_sparsity(
+  dataset_list = gasp_assns[["ng400"]],
+  sparsity_df = sparsity_df_gasp,
+  metric_type = "jaccard",
+  metric_y_axis_name = "Jaccard similarity", source_data = "Gasperini",
+                    method_renamer = method_renamer,
+  metric_title_name = "Jaccard"
+)
+
+```
+
+
+
+ok let's do compute 
+
+```{r, echo=FALSE}
+
+load_trace_files_in_memory_assignment <- function(run_names, path_to_outputs) {
+  lapply(run_names, function(run_name) {
+    read_tsv(
+      file.path(path_to_outputs, run_name, "trace.tsv"),
+      show_col_types = FALSE
+    )
+  }) |>
+    do.call(what = rbind)  |>
+    tidyr::extract(
+      tag,
+      into = c("nguides"),
+      regex = "nguides=([0-9]+)",
+      remove = FALSE,
+      convert = TRUE
+    ) |>
+    mutate(
+      source_data = strsplit(tag, "_") %>%
+        sapply(`[`, 1) |>
+        gsub(pattern="-rd7", replacement="", fixed=TRUE)
+    ) |>
+    transmute(
+      method = gsub("_assign", "", process, ignore.case = TRUE) |> tolower(),
+      peak_rss, realtime,
+      num_cells =  sub(".*ncells=([^_]+).*", "\\1", tag), nguides, source_data
+    ) |>
+    mutate(
+      peak_rss_gb = case_when(
+        str_detect(peak_rss, regex("\\bGB\\b", ignore_case = TRUE)) ~ parse_number(peak_rss),
+        str_detect(peak_rss, regex("\\bMB\\b", ignore_case = TRUE)) ~ parse_number(peak_rss) / 1024,
+        TRUE ~ NA_real_
+      )
+    ) |>
+    mutate(
+      h = parse_number(str_extract(realtime, "\\d+(?=h)")),
+      m = parse_number(str_extract(realtime, "\\d+(?=m)")),
+      s = parse_number(str_extract(realtime, "\\d+(?=s)")),
+      h = coalesce(h, 0),
+      m = coalesce(m, 0),
+      s = coalesce(s, 0),
+      realtime_sec = 3600*h + 60*m + s,
+      realtime_min = realtime_sec / 60
+    ) %>%
+    select(-h, -m, -s) 
+}
+path_to_outputs = file.path(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "guide_assignment/outputs"
+  )
+trace_inmem = load_trace_files_in_memory_assignment(run_names, path_to_outputs =path_to_outputs )
+
+
+assoc_datasets <- list(
+  replogle = "replogle-rd7_comp_ngenes=1000_ntargets=100_gene_thresh=7",
+  gasperini = "gasperini_comp_ngenes=1000_ntargets=100_gene_thresh=7"
+)
+load_trace_files_pipeline_assignment <- function(assoc_datasets) {
+  
+  parse_mem_to_gb <- function(x) {
+    x <- str_trim(x)
+    
+    value <- as.numeric(str_extract(x, "^[0-9.]+"))
+    unit  <- str_extract(x, "[A-Za-z]+$") |> toupper()
+    
+    mult <- case_when(
+      unit == "B"  ~ 1 / 1024^3,
+      unit == "KB" ~ 1 / 1024^2,
+      unit == "MB" ~ 1 / 1024,
+      unit == "GB" ~ 1,
+      unit == "TB" ~ 1024,
+      TRUE ~ NA_real_
+    )
+    
+    # hacky wrapper in case any unitless 0's got in there, which become NA
+    ifelse(is.na(value * mult), 0, value * mult)
+  }
+  
+  
+  
+  lapply(seq_along(assoc_datasets), function(i) {
+    curr_trace = path_to_an_assoc_run = file.path(
+      .get_config_path("LOCAL_BENCHMARKING_DIR"),
+      "association/computational/outputs/sceptre-pipeline",
+      assoc_datasets[i],
+      "tracing/trace.tsv"
+    ) |>
+      read_tsv(show_col_types = FALSE) |>
+      mutate(method = "pipeline", source_data = names(assoc_datasets)[i],
+             start = as.POSIXct(start, tz = "America/New_York"),
+          complete = as.POSIXct(complete, tz = "America/New_York"),
+          submit = as.POSIXct(submit, tz = "America/New_York"),
+          
+          peak_rss_in_GB = parse_mem_to_gb(peak_rss)) |>
+      filter(process == "assign_grnas")
+    
+    start_time <- min(curr_trace$submit)
+    
+    corrected_endtimes = curr_trace$submit + (curr_trace$complete - curr_trace$start)
+    end_time = max(corrected_endtimes)
+      
+      # get max memory for any worker
+      peak_rss_in_gb_for_a_worker = curr_trace |>
+        pull(peak_rss_in_GB) |>
+        max()
+      
+      data.frame(
+        source_data = names(assoc_datasets)[i],
+        method="pipeline",
+        assign_elapsed_time_in_sec = as.numeric(end_time - start_time, units = "secs"),
+        max_peak_rss_in_gb_for_assign_workers = peak_rss_in_gb_for_a_worker,
+        num_assign_analysis_workers = nrow(curr_trace)
+      )
+    
+  }) |>
+    do.call(what = rbind)
+    
+}
+trace_pipe = load_trace_files_pipeline_assignment(assoc_datasets) |>
+  left_join(
+    data.frame(
+      source_data = c("replogle", "gasperini"),
+      nguides = c(2666,13078),
+      stringsAsFactors = FALSE
+    ),
+    by="source_data"
+  )
+
+
+trace_pipe
+trace_inmem
+
+trace_all = rbind(
+  trace_pipe |>
+    dplyr::select(method, peak_rss_gb = max_peak_rss_in_gb_for_assign_workers,
+                  realtime_sec = assign_elapsed_time_in_sec,
+                  nguides, source_data),
+  trace_inmem |>
+    dplyr::select(method, peak_rss_gb ,
+                  realtime_sec,
+                  nguides, source_data)
+)
+
+```
+
+```{r, echo=FALSE}
+plot_runtime <- function(trace_file, title, source_data) {
+  fmt_hms <- function(x) {
+    x <- round(x)
+    sprintf("%d:%02d:%02d", x %/% 3600, (x %% 3600) %/% 60, x %% 60)
+  }
+  
+  
+  time_breaks <- c(
+    30,
+    60,      # 1 min
+    120,     # 2 min
+    300,     # 5 min
+    600,     # 10 min
+    1800,    # 30 min
+    3600,    # 1 hr
+    7200,    # 2 hr
+    14400    # 4 hr
+  )
+  trace_file |>
+    filter(source_data == !!source_data) |>
+  ggplot(
+    aes(
+      x = nguides,
+      y = realtime_sec,
+      color = method,
+      group = method
+    )
+  ) +
+    geom_line() +
+    geom_point(size = 2) +
+    # facet_wrap(
+    #   ~ npairs,
+    #   labeller = labeller(npairs = function(x) paste0("num. pairs = ", x, "k"))
+    # ) +
+    scale_y_log10(
+      breaks = time_breaks[time_breaks <= max(trace_file$realtime_sec)],
+      labels = fmt_hms
+    ) +
+    scale_x_log10() +
+    labs(
+      x = "Number of guides (log scale)",
+      y = "Runtime (log scale)",
+      color = "Method",
+      # linetype = NULL,
+      title = title
+    ) +
+    theme_bw()
+}
+plot_runtime(trace_all, title = "Runtime for Replogle", source_data = "replogle")
+plot_runtime(trace_all, title = "Runtime for Gasperini", source_data = "gasperini")
+```
+
+
+```{r, echo=FALSE}
+plot_memory <- function(trace_file, title, source_data) {
+  trace_file |>
+    filter(source_data == !!source_data) |>
+  ggplot(
+    aes(
+      x = nguides,
+      y = peak_rss_gb,
+      color = method
+      # group = interaction(method, npairs)
+    )
+  ) +
+    geom_line() +
+    geom_point(size = 2) +
+    # facet_wrap(
+    #   ~ npairs,
+    #   labeller = labeller(npairs = function(x) paste0("num. pairs = ", x, "k"))
+    # ) +
+    scale_y_log10(
+      breaks = c(0.5, 1, 2, 4, 8, 16, 32, 64, 128),
+      labels = scales::label_number()
+    ) +
+        scale_x_log10() +
+    labs(
+      x = "Number of guides (log)",
+      y = "Peak memory (GB, log scale)",
+      color = "Method",
+      title = title,
+      linetype = NULL
+    ) +
+    theme_bw()
+}
+
+plot_memory(trace_all, title = "Memory for Replogle", source_data = "replogle")
+plot_memory(trace_all, title = "Memory for Gasperini", source_data = "gasperini")
+```
+
+
+
+
+extra figures and whatnot for my defense presentation
+
+```{r}
+rm(list=ls())
+source("~/.Rprofile")
+library(tidyverse)
+
+data_sources <- c("replogle-rd7", "gasperini")
+
+umis_list <- list()
+
+for(i in seq_along(data_sources)) {
+  data_source = data_sources[i]
+  path_to_data <- file.path(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "guide_assignment/input_data", data_source,
+    "sceptre-pipeline"
+  )
+  
+  grna_odm <- ondisc::initialize_odm_from_backing_file(
+    file.path(path_to_data, "grna.odm")
+  )
+  
+  grna_summary_stats = file.path(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "guide_assignment/input_data",
+    data_source,
+    "sceptre-pipeline/grna_summary_stats.csv"
+  ) |>
+    read_csv(show_col_types = FALSE) |>
+    mutate(sparsity_ranking = rank(grna_nonzero, ties="first") ) |>
+    arrange(sparsity_ranking) %>%
+    filter(sparsity_ranking %in% c(50, nrow(.) - 50))
+
+    
+  
+  umis_list[[i]] = data.frame(
+    sparse = grna_odm[grna_summary_stats$grna[grna_summary_stats$sparsity_ranking == 50],],
+    dense = grna_odm[grna_summary_stats$grna[grna_summary_stats$sparsity_ranking >50], ],
+    data_source = data_source
+  )
+}
+
+umis <- do.call(rbind, umis_list) |>
+  pivot_longer(cols = !data_source, names_to = "Expression", values_to = "UMI count") |>
+  mutate(Expression = ifelse(Expression == "dense", "high", "low"),
+         data_source = ifelse(data_source == "replogle-rd7", "Replogle", "Gasperini"))
+
+plot_umis <- function(umis) {
+  max_val <- max(umis[["UMI count"]], na.rm = TRUE)
+  max_break <- floor(log10(max(1, max_val))) + 1
+
+  my_breaks <- c(0, 10^(0:max_break))#, (10^(2:max_break)) / 2) |> sort()
+  
+  umis |>
+    ggplot(aes(x = `UMI count`, fill = Expression)) +
+    geom_histogram(bins=50) +
+    # facet_wrap(data_source ~ Expression, labeller = label_bquote(cols = "Data: " * .(data_source)))+
+    facet_wrap(~data_source + Expression, 
+             labeller = labeller(
+               Expression = label_both,
+               data_source = label_value
+             ), scales="free_x") +
+    theme_bw() +
+    scale_y_continuous(
+      trans  = "log1p",
+      breaks = my_breaks,
+      labels = scales::label_comma()
+    ) +
+        scale_x_continuous(
+      trans  = "log1p",
+      breaks = my_breaks,
+      labels = scales::label_comma()
+    )
+}
+plot_umis(umis)
+
+# 
+# path_to_data <- file.path(
+#   .get_config_path("LOCAL_BENCHMARKING_DIR"),
+#   "guide_assignment/input_data", source_data,
+#   "sceptre-pipeline"
+# )
+# cat("Using", source_data, "\n")
+# grna_odm <- ondisc::initialize_odm_from_backing_file(
+#   file.path(path_to_data, "grna.odm")
+# )
+# cat("grna.odm :", nrow(grna_odm), "guides ;", ncol(grna_odm), "cells.\n")
+# 
+# scep <- sceptre::read_ondisc_backed_sceptre_object(
+#   sceptre_object_fp = file.path(path_to_data, "sceptre_object.rds"),
+#   response_odm_file_fp = file.path(path_to_data, "response.odm"),
+#   grna_odm_file_fp = file.path(path_to_data, "grna.odm")
+# )
+```
+
