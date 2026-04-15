@@ -1,0 +1,1248 @@
+---
+title: "sims for defense final"
+output: html_document
+date: "2026-04-11"
+---
+
+
+
+
+idea: fit a NB-NB using cleanser to get baseline parameters for a NB-NB mixure. Then simulate from this, except use a normalized grna_total to add a covariate effect.
+
+- this effect will be constant for each cell we simulate, so if we stack all sims in one matrix, then the methods that can learn it will have a chance to. 
+
+
+
+```{r}
+rm(list=ls())
+library(tidyverse)
+source("~/.Rprofile")
+
+
+# helper: log1p transform in base 10
+logp1 <- function(x, base = 10) {
+  log(x + 1, base = base)
+}
+
+# helper: build mixed exact / exponentially growing bins
+# bins are:
+#   0, 1, ..., k_exact as singleton bins
+# then widths 2, 4, 8, 16, ...
+make_mixed_bin_info <- function(max_x, k_exact = 10L) {
+  stopifnot(length(max_x) == 1, is.finite(max_x), max_x >= 0)
+  
+  upper <- 0:k_exact
+  
+  width <- 2L
+  while (tail(upper, 1L) < max_x) {
+    upper <- c(upper, tail(upper, 1L) + width)
+    width <- width * 2L
+  }
+  
+  lower <- c(0L, head(upper, -1L) + 1L)
+  
+  label <- ifelse(
+    lower == upper,
+    as.character(upper),
+    paste0(lower, "-", upper)
+  )
+  
+  data.frame(
+    bin_id = seq_along(label),
+    lower = lower,
+    upper = upper,
+    label = label,
+    xmin = seq_along(label) - 0.45,
+    xmax = seq_along(label) + 0.45,
+    stringsAsFactors = FALSE
+  )
+}
+
+# helper: assign each count to one mixed bin
+bin_with_info <- function(x, bin_info) {
+  cut(
+    x,
+    breaks = c(-1, bin_info$upper),
+    labels = bin_info$label,
+    right = TRUE
+  )
+}
+
+# helper: choose readable y-axis breaks on the original count scale
+make_y_breaks <- function(max_count) {
+  breaks <- c(
+    0, 1, 2, 3, 5,
+    10, 20, 30, 50,
+    100, 200, 300, 500,
+    1000, 2000, 3000, 5000,
+    10000, 20000, 30000, 50000,
+    100000, 200000, 300000, 500000,
+    1000000, 2000000, 3000000, 5000000,
+    10000000
+  )
+  breaks[breaks <= max_count]
+}
+
+# helper: exact binned counts for one vector
+make_binned_counts <- function(x, bin_info) {
+  stopifnot(all(is.finite(x)), all(x >= 0), all(x == floor(x)))
+  
+  bin <- factor(
+    bin_with_info(x, bin_info),
+    levels = bin_info$label
+  )
+  
+  out <- data.frame(bin = bin) |>
+    dplyr::count(bin, .drop = FALSE, name = "count") |>
+    dplyr::mutate(bin = as.character(bin)) |>
+    dplyr::left_join(bin_info, by = c("bin" = "label")) |>
+    dplyr::arrange(bin_id)
+  
+  stopifnot(sum(out$count) == length(x))
+  out
+}
+
+# helper: declutter x-axis labels
+# label all singleton bins up to k_exact, then every `tail_every`-th tail bin, plus the last bin
+make_x_axis_spec <- function(bin_info, k_exact, tail_every = 2L) {
+  is_exact <- bin_info$lower == bin_info$upper & bin_info$upper <= k_exact
+  tail_idx <- which(!is_exact)
+  
+  keep <- is_exact
+  if (length(tail_idx) > 0) {
+    keep[tail_idx[seq(1, length(tail_idx), by = tail_every)]] <- TRUE
+    keep[max(tail_idx)] <- TRUE
+  }
+  
+  list(
+    breaks = bin_info$bin_id[keep],
+    labels = bin_info$label[keep]
+  )
+}
+
+# real-data plot
+make_plt1a <- function(grna_real, bin_info, k_exact = 10L, tail_every = 2L, title = "real") {
+  real_counts <- make_binned_counts(grna_real, bin_info)
+  
+  y_breaks <- make_y_breaks(max(real_counts$count))
+  y_breaks_t <- logp1(y_breaks)
+  x_axis <- make_x_axis_spec(bin_info, k_exact = k_exact, tail_every = tail_every)
+  
+  plot_df <- real_counts |>
+    dplyr::mutate(
+      ymin = 0,
+      ymax = logp1(count)
+    )
+  
+  ggplot2::ggplot(plot_df) +
+    ggplot2::geom_rect(
+      ggplot2::aes(
+        xmin = xmin, xmax = xmax,
+        ymin = ymin, ymax = ymax
+      ),
+      fill = "grey70",
+      color = "black"
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = x_axis$breaks,
+      labels = x_axis$labels,
+      expand = ggplot2::expansion(add = 0.6)
+    ) +
+    ggplot2::scale_y_continuous(
+      breaks = y_breaks_t,
+      labels = scales::label_number(big.mark = ",")(y_breaks),
+      expand = ggplot2::expansion(mult = c(0, 0.05))
+    ) +
+    ggplot2::labs(
+      title = title,
+      x = "gRNA count bin",
+      y = "cell count"
+    ) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1)
+    )
+}
+
+make_plt1b <- function(grna_sim, is_pert, bin_info, k_exact = 10L, tail_every = 2L, title = "sim") {
+  stopifnot(length(grna_sim) == length(is_pert))
+  stopifnot(all(is.finite(grna_sim)), all(grna_sim >= 0), all(grna_sim == floor(grna_sim)))
+  
+  sim_df <- data.frame(
+    umi = grna_sim,
+    pert_status = factor(
+      ifelse(is_pert == 1, "pert", "not pert"),
+      levels = c("not pert", "pert")
+    )
+  )
+  
+  sim_df$bin <- factor(
+    bin_with_info(sim_df$umi, bin_info),
+    levels = bin_info$label
+  )
+  
+  sim_counts <- sim_df |>
+    dplyr::count(bin, pert_status, .drop = FALSE, name = "count") |>
+    dplyr::mutate(bin = as.character(bin)) |>
+    dplyr::left_join(bin_info, by = c("bin" = "label")) |>
+    dplyr::arrange(bin_id, pert_status) |>
+    dplyr::group_by(bin, bin_id, lower, upper, xmin, xmax) |>
+    dplyr::mutate(
+      y0 = dplyr::lag(cumsum(count), default = 0),
+      y1 = cumsum(count),
+      ymin = logp1(y0),
+      ymax = logp1(y1)
+    ) |>
+    dplyr::ungroup()
+  
+  stopifnot(sum(sim_counts$count) == length(grna_sim))
+  if ("0" %in% sim_counts$bin) {
+    stopifnot(
+      sum(sim_counts$count[sim_counts$bin == "0"]) == sum(grna_sim == 0)
+    )
+  }
+  
+  y_breaks <- make_y_breaks(max(sim_counts$y1))
+  y_breaks_t <- logp1(y_breaks)
+  x_axis <- make_x_axis_spec(bin_info, k_exact = k_exact, tail_every = tail_every)
+  
+  ggplot2::ggplot(sim_counts) +
+    ggplot2::geom_rect(
+      ggplot2::aes(
+        xmin = xmin, xmax = xmax,
+        ymin = ymin, ymax = ymax,
+        fill = pert_status
+      ),
+      color = "black"
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = x_axis$breaks,
+      labels = x_axis$labels,
+      expand = ggplot2::expansion(add = 0.6)
+    ) +
+    ggplot2::scale_y_continuous(
+      breaks = y_breaks_t,
+      labels = scales::label_number(big.mark = ",")(y_breaks),
+      expand = ggplot2::expansion(mult = c(0, 0.05))
+    ) +
+    ggplot2::labs(
+      title = title,
+      x = "gRNA count bin",
+      y = NULL,
+      fill = NULL
+    ) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1),
+      axis.title.y = ggplot2::element_blank(),
+      legend.position = c(0.98, 0.98),
+      legend.justification = c(1, 1),
+      legend.background = ggplot2::element_rect(fill = "white", color = "black"),
+      legend.key = ggplot2::element_rect(fill = "white", color = NA)
+    )
+}
+# wrapper: build shared bins from both datasets and return both plots
+make_umi_hists <- function(grna_real, grna_sim, is_pert, k_exact = 10L, tail_every = 2L, title_real = "real", title_sim = "sim", return_plots = FALSE) {
+  stopifnot(length(grna_sim) == length(is_pert))
+  stopifnot(all(grna_real >= 0), all(grna_sim >= 0))
+  stopifnot(all(grna_real == floor(grna_real)), all(grna_sim == floor(grna_sim)))
+  
+  bin_info <- make_mixed_bin_info(
+    max_x = max(c(grna_real, grna_sim)),
+    k_exact = k_exact
+  )
+  
+  plt1a <- make_plt1a(
+    grna_real = grna_real,
+    bin_info = bin_info,
+    k_exact = k_exact,
+    tail_every = tail_every,
+    title = title_real
+  )
+  
+  plt1b <- make_plt1b(
+    grna_sim = grna_sim,
+    is_pert = is_pert,
+    bin_info = bin_info,
+    k_exact = k_exact,
+    tail_every = tail_every,
+    title = title_sim
+  )
+  
+  plots <- list(
+    plt1a = plt1a,
+    plt1b = plt1b
+  )
+  if(return_plots) {
+    return(plots)
+  } else {
+    print(cowplot::plot_grid(plt1a, plt1b, nrow = 1, align = "h"))
+  }
+  invisible()
+}
+
+
+
+
+
+source_data <- "replogle-rd7"
+# source_data <- "gasperini"
+path_to_data <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data", source_data,
+  "sceptre-pipeline"
+)
+cat("Using", source_data, "\n")
+grna_odm <- ondisc::initialize_odm_from_backing_file(
+  file.path(path_to_data, "grna.odm")
+)
+cat("grna.odm :", nrow(grna_odm), "guides ;", ncol(grna_odm), "cells.\n")
+
+scep <- sceptre::read_ondisc_backed_sceptre_object(
+  sceptre_object_fp = file.path(path_to_data, "sceptre_object.rds"),
+  response_odm_file_fp = file.path(path_to_data, "response.odm"),
+  grna_odm_file_fp = file.path(path_to_data, "grna.odm")
+)
+
+cell_covariates = scep@covariate_data_frame
+
+grna_summary_stats <- read_csv(file.path(path_to_data, "grna_summary_stats.csv"), show_col_types = FALSE)
+  # mutate(grna=rownames(grna_odm))
+
+
+
+# guides_to_use = grna_summary_stats |>
+#   filter(
+#     grna_nonzero > quantile(grna_nonzero, .89),
+#     grna_nonzero < quantile(grna_nonzero, .91)
+#   ) 
+
+guides_to_use = grna_summary_stats |>
+  filter(
+    grna_nonzero > quantile(grna_nonzero, .95),
+    grna_nonzero < quantile(grna_nonzero, .951 )
+  ) 
+
+set.seed(1)
+guides_to_use |>
+  sample_n(1)
+
+# guide = c("replogle-rd7" = "2685_EPS8L1_P2_ENSG00000131037", "gasperini" = "CCGTAGCTCCAGAGAAACAG")[source_data]
+guide = c("replogle-rd7" = "306_ANAPC1_P1P2_ENSG00000153107", "gasperini" = "CCGTAGCTCCAGAGAAACAG")[source_data]
+y = grna_odm[guide]
+
+data.frame(
+  umi=grna_odm[guide,]
+) |>
+  # filter(umi > 0) |>
+  ggplot(aes(x = umi)) +
+  geom_histogram(bins=50) +
+  theme_bw() +
+  scale_y_continuous(transform = scales::pseudo_log_trans()) +
+    scale_x_continuous(transform = scales::pseudo_log_trans()) +
+    ggtitle(guide)
+cat("Using", source_data, "\n")
+```
+
+
+```{r}
+guides <- c( "306_ANAPC1_P1P2_ENSG00000153107", "2685_EPS8L1_P2_ENSG00000131037", "2_AAAS_P1P2_ENSG00000094914")
+data.frame(
+  guide_id = rep(1:3, each = ncol(grna_odm)),
+  umi = c(grna_odm[guides[1],], grna_odm[guides[2],], grna_odm[guides[3],])
+) |>
+  mutate(guide_id = factor(guide_id)) |>
+  ggplot(aes(x = umi, fill = guide_id)) +
+  geom_histogram(bins=30) +
+  theme_bw() +
+  scale_y_continuous(transform = scales::pseudo_log_trans()) +
+    scale_x_continuous(transform = scales::pseudo_log_trans()) +
+  ggtitle("Replogle guides of varying sequence depth")
+
+
+
+```
+
+
+```{r}
+sim_data <- function(params, n = NULL, cell_scaling = NULL, seed=1, require_pert_positive=TRUE) {
+  set.seed(seed)
+  if(is.null(n) && is.null(cell_scaling)) {
+    stop("at least one of `n` and `cell_scaling` must be provided.")
+  }
+  if(!is.null(n) && !is.null(cell_scaling)) {
+    if(length(n) != length(cell_scaling)) {
+      stop("`n` and `cell_scaling` must have the same length.")
+    }
+  }
+  if(is.null(cell_scaling)) {
+    cell_scaling <- 1
+  }
+  if(is.null(n)) {
+    n <- length(cell_scaling)
+  }
+  # if(any(cell_scaling == 0)) {
+  #   stop("`cell_scaling` has exact 0s.")
+  # }
+  
+  z <- rbinom(n = n, size = 1, prob = params["pi"])
+  is_pert = z == 1
+  num_pert = sum(is_pert)
+  num_nonpert = n - num_pert
+  cell_scaling_pert = cell_scaling[is_pert]
+  
+  # 1. simulate perturbed cells from NB; optionally conditioned on being positive
+  ysim_pos = MASS::rnegbin(
+    n = num_pert,
+    mu = params["mu_pert"] * cell_scaling_pert,
+    theta = params["theta_pert"]
+  )
+  if(require_pert_positive) {
+    pert_is_zero = ysim_pos == 0 & cell_scaling_pert > 0
+    while(sum(pert_is_zero) > 0) {
+      y_new <- MASS::rnegbin(
+        n = sum(pert_is_zero),
+        mu = params["mu_pert"] * cell_scaling_pert[pert_is_zero],
+        theta = params["theta_pert"]
+      )
+      ysim_pos[pert_is_zero] <- y_new
+      pert_is_zero = ysim_pos == 0 & cell_scaling_pert > 0
+    }
+  }
+  
+  # 2. simulate non-pert from NB; optionally, zero inflate
+  ysim_neg <- MASS::rnegbin(
+    n = num_nonpert,
+    mu = params["mu_np"] * cell_scaling[z == 0],
+    theta = params["theta_np"]
+  )
+  # if TRUE, zero inflate
+  # phi gives the overall probabilty of being zero
+  if("phi" %in% names(params)) { 
+    # this is found by solving phi = P(Y=0) for the prob to zero out
+    # we have P(Y=0) = P(Y=0|Z=0)P(Z=0)
+    # = P(NB = 0 OR zero out) (1 - pi) 
+    prob_nonpert_nb_is_zero = exp(params["theta_np"] * log(
+      params["theta_np"] / (params["theta_np"] + params["mu_np"])
+    ))
+    prob_to_zero_out <- (params["phi"] / (1 - params["pi"]) - prob_nonpert_nb_is_zero) / 
+      (1 - prob_nonpert_nb_is_zero)
+    to_zero_out <- rbinom(num_nonpert, 1, prob_to_zero_out)
+    ysim_neg[to_zero_out == 1] <- 0
+  }
+  
+  # collect
+  ysim <- numeric(n)
+  ysim[z == 0] <- ysim_neg
+  ysim[z == 1] <- ysim_pos
+    
+  list(ysim=ysim, z=z)
+}
+```
+
+
+```{r}
+# params_from_cleanser = c(
+#   pi = .00558,
+#   mu_pert = 1128.62,
+#   theta_pert = 1.0251,
+#   mu_np = 0.074444,
+#   theta_np = 2.36718
+# )
+
+# params_well_sep <- c(
+#   pi = .001,
+#   mu_pert = 1000,
+#   theta_pert = .75,
+#   mu_np = 0.03,
+#   theta_np = .1
+# )
+params_well_sep <- c(
+  pi = .002,
+  mu_pert = 800,
+  theta_pert = .5,
+  mu_np = 0.03,
+  theta_np = .1
+)
+
+V0 <- params_well_sep["mu_pert"] + params_well_sep["mu_pert"]^2 / params_well_sep["theta_pert"]
+
+mu_pert_seq <- seq(params_well_sep["mu_pert"], params_well_sep["mu_np"] * 1.5, length.out = 20)  # shrink toward ambient
+theta_pert_seq <- mu_pert_seq^2 / (V0 - mu_pert_seq)
+i=14  # 6
+# params_overlap <- c(
+#   pi = .002,
+#   mu_pert = mu_pert_seq[i],
+#   theta_pert = theta_pert_seq[i],
+#   mu_np = 0.03,
+#   theta_np = .1
+# )
+params_overlap <- c(
+  pi = .002,
+  mu_pert = mu_pert_seq[i],
+  theta_pert = theta_pert_seq[i],
+  mu_np = 0.03,
+  theta_np = .1
+)
+
+seed_ = 8
+set.seed(seed_+1)
+n = 50000
+locs = sample(ncol(grna_odm), n)
+grna_nonzero_locs = cell_covariates$grna_n_nonzero[locs]
+grna_nonzero_normed_locs = grna_nonzero_locs / mean(grna_nonzero_locs)
+y_curr = y[locs]
+
+sims <- sim_data(params = params_well_sep, cell_scaling = grna_nonzero_normed_locs, seed=seed_+2)
+
+make_umi_hists(grna_real = y_curr, grna_sim = sims$ysim, is_pert = sims$z)
+
+cat(
+  " num. pert =", sum(sims$z), "\n",
+  " num. pert below max unpert:", sum(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])),
+  "(", round(100 * mean(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])), 2 ), "%)", "\n",
+  " Real: max =", max(y_curr), "; Sim: max =", max(sims$ysim), "\n",
+  "Real: % 0 =", round(100 * mean(y_curr == 0), 2), "Sim: % 0 =", round(100 * mean(sims$ysim == 0), 2), "\n"
+)
+```
+
+
+
+```{r}
+# params_list = list(
+#   most_sep = c(
+#     pi = .002,
+#     mu_pert = 800,
+#     theta_pert = .5,
+#     mu_np = 0.03,
+#     theta_np = .1
+#   ),
+#   some_sep = c(
+#     pi = .002,
+#     mu_pert = 600,
+#     theta_pert = .25,
+#     mu_np = 0.03,
+#     theta_np = .1
+#   ),
+#   least_sep = c(
+#     pi = .002,
+#     mu_pert = 250,
+#     theta_pert = 0.05,
+#     mu_np = 0.03,
+#     theta_np = .1
+#   )
+# )
+
+# pi_ = 0.002
+# params_list = list(
+#   a1 = c(
+#     pi = pi_,
+#     mu_pert = 800,
+#     theta_pert = .75,
+#     mu_np = 0.03,
+#     theta_np = .1
+#   ),
+#   # some_sep = c(
+#   #   pi = .002,
+#   #   mu_pert = 600,
+#   #   theta_pert = .25,
+#   #   mu_np = 0.03,
+#   #   theta_np = .1
+#   # ),
+#   # some_sep = c(
+#   #   pi = pi_,
+#   #   mu_pert = 250,
+#   #   theta_pert = 0.05,
+#   #   mu_np = 0.03,
+#   #   theta_np = .1
+#   # ),
+#   # least_sep = c(
+#   #   pi = pi_,
+#   #   mu_pert = 50,
+#   #   theta_pert = 0.005 ,
+#   #   mu_np = 0.03,
+#   #   theta_np = .1
+#   # )
+#       a2 = c(
+#     pi = pi_,
+#     mu_pert = 400,
+#     theta_pert = .75,
+#     mu_np = 0.03,
+#     theta_np = .1
+#   ),
+#     a3 = c(
+#     pi = pi_,
+#     mu_pert = 200,
+#     theta_pert = .75,
+#     mu_np = 0.03,
+#     theta_np = .1
+#   ),
+#   a4 = c(
+#     pi = pi_,
+#     mu_pert = 100,
+#     theta_pert = .75 ,
+#     mu_np = 0.03,
+#     theta_np = .1
+#   ),
+#     a5 = c(
+#     pi = pi_,
+#     mu_pert = 50,
+#     theta_pert = .75 ,
+#     mu_np = 0.03,
+#     theta_np = .1
+#   )
+# )
+
+
+## these are from cleanser
+params_base <- c(
+  pi = 0.004,
+  mu_pert = 971.437,
+  theta_pert = 0.126,
+  mu_np = 0.066,
+  theta_np = 2.26
+)
+
+## modifying
+# params_base["pi"] = 0.001
+
+
+## sparsity adjusted
+# params_base <- c(
+#   pi = 0.001,
+#   mu_pert = 971.437,
+#   theta_pert = 0.126,
+#   mu_np = 0.066,
+#   theta_np = 2.26
+# )
+
+# params_base <- c(pi = 0.00052, mu_pert = 2323.33019, theta_pert = 0.8487, mu_np = 0.021, 
+# theta_np = 0.06091)
+
+## GLM fit depending on if it's above or below the threshold
+# params_base <- c(
+#   pi = 0.001,
+#   mu_pert = exp(7.098504),
+#   theta_pert = 0.8800,
+#   mu_np = exp(-4.6753847),
+#   theta_np = 0.15536
+# )
+
+## GLM fit with increased overdispersion
+# params_base <- c(
+#   pi = 0.002,
+#   mu_pert = exp(7.098504),
+#   theta_pert = 0.8800,
+#   mu_np = exp(-4.6753847) * 3,
+#   theta_np = 0.15536 
+# )
+
+## GLM fit with no thresh for NP 
+# params_base <- c(
+#   pi = 0.002,
+#   mu_pert = exp(7.098504),
+#   theta_pert = 0.8800,
+#   mu_np = exp(-0.830237),
+#   theta_np = 0.0034521 
+# )
+
+
+mu_pert_seq <- params_base["mu_pert"] / 2^(0:4)
+params_list <- lapply(mu_pert_seq, function(mu) {
+  curr_params = params_base
+  curr_params["mu_pert"] = mu
+  curr_params
+}) |>
+  # set_names("params = CLEANSER posterior mean")
+  set_names(letters[1L:length(mu_pert_seq)])
+
+
+
+n = 50000
+seed_base <- 1
+pltlist <- list()
+for(param_idx in seq_along(params_list)) {
+  seed_ = param_idx + seed_base
+  set.seed(seed_+1)
+
+  locs = sample(ncol(grna_odm), n)
+  grna_nonzero_locs = cell_covariates$grna_n_nonzero[locs]
+  grna_nonzero_normed_locs = grna_nonzero_locs / mean(grna_nonzero_locs) * 2
+  y_curr = y[locs]
+  
+  sims <- sim_data(params = params_list[[param_idx]], cell_scaling = grna_nonzero_normed_locs, seed=seed_+2, require_pert_positive = FALSE)
+  print(c(max(sims$ysim), mean(sims$ysim[sims$z == 1] == 0)))
+  plts <- make_umi_hists(grna_real = y_curr, grna_sim = sims$ysim, is_pert = sims$z, return_plots = TRUE, title_sim = names(params_list)[param_idx])
+  if(param_idx == 1) {
+    pltlist[["real"]] = plts$plt1a
+    pltlist[["sim1"]] = plts$plt1b
+  } else {
+    pltlist[[paste0("sim", param_idx)]] = plts$plt1b
+  }
+}
+
+cowplot::plot_grid(plotlist = pltlist)
+
+```
+
+
+```{r}
+
+
+est_params_via_thresholding <- function(y, thresh, L = NULL) {
+  
+  if(!is.null(L)) {
+    y <- y[L > 0]
+    L <- L[L > 0]
+    y <- y / L
+  } 
+  y_np <- y[y <= thresh]
+  y_p <- y[y > thresh]
+  
+  params <- c(
+    pi = mean(y > thresh),
+    mu_pert = mean(y_p),
+    theta_pert = mean(y_p)^2 / (var(y_p) - mean(y_p)),
+    mu_np = mean(y_np),
+    theta_np = mean(y_np)^2 / (var(y_np) - mean(y_np))
+  )
+  params
+}
+params_base <- est_params_via_thresholding(y, 10, L = cell_covariates$grna_n_nonzero / mean(cell_covariates$grna_n_nonzero))
+
+
+df = data.frame(
+  y = y,
+  x = cell_covariates$grna_n_nonzero 
+) |>
+  filter(x > 0)
+mod_p = MASS::glm.nb(y ~ log(x), data = df[df$y > 10,], ); mod_p |> summary()
+mod_np = MASS::glm.nb(y ~ log(x), data = df[df$y <= 10,], ); mod_np |> summary()
+mod_all = MASS::glm.nb(y ~ log(x), data = df); mod_all |> summary()
+
+
+
+params_glm <- c(
+  pi = mean(df$y > 10),
+  mu_pert = exp(5.63783),
+  theta_pert = 0.9199,
+  mu_np  =exp(-6.67555 ),
+  theta_np = 0.16719
+)
+
+# sim_data_glm <- function(pi, mod_pert, mod_nonpert, y, x, seed=1) {
+
+
+fit_glm_sims <- function(y, x, thresh) {
+  
+  get_mod_params <- function(mod, param_name_tag) {
+    coefs_ <- coef(mod) |> as.numeric()  # strip names
+    params <- c(
+      beta0 = coefs_[1],
+      log1p_x = coefs_[2],
+      theta = summary(mod)$theta
+    )
+    names(params) <- paste0(names(params), "_", param_name_tag)
+    params
+  }
+  
+  df = data.frame(
+    y = y,
+    x = x
+  )
+  nsim = nrow(df)
+   mod_pert = MASS::glm.nb(y ~ log1p(x), data = df[df$y > thresh,])
+  mod_nonpert = MASS::glm.nb(y ~ log1p(x), data = df[df$y <= thresh,])
+  
+  
+  
+  params <- c(
+    pi = mean(y > thresh),
+    get_mod_params(mod_pert, "pert"),
+     get_mod_params(mod_nonpert, "nonpert")
+  )
+  params
+}
+
+make_sims_glm <- function(glm_sim_params, xsim) {
+  
+  nsim = length(xsim)
+  z = rbinom(nsim, 1, glm_sim_params["pi"])
+  
+  mu_pert = exp(glm_sim_params["beta0_pert"] + log1p(xsim[z == 1]) * glm_sim_params["log1p_x_pert"])
+  mu_nonpert = exp(glm_sim_params["beta0_nonpert"] + log1p(xsim[z == 0]) * glm_sim_params["log1p_x_nonpert"])
+  
+  
+  ysim = integer(nsim)
+  ysim[z == 1] <- MASS::rnegbin(
+    sum(z == 1),
+    mu_pert,
+    glm_sim_params["theta_pert"]
+  )
+    ysim[z == 0] <- MASS::rnegbin(
+    sum(z == 0),
+    mu_nonpert,
+    glm_sim_params["theta_nonpert"]
+  )
+  list(ysim=ysim, z=z)
+}
+glm_sim_params_ <- fit_glm_sims(y = grna_odm[guide,], x = cell_covariates$grna_n_nonzero, thresh = 10)
+
+
+
+
+
+n = 200000
+locs_glm = sample(ncol(grna_odm), n)
+
+sims_glm = make_sims_glm(glm_sim_params_, xsim = cell_covariates$grna_n_nonzero[locs_glm])
+
+# sims_glm$ysim[sims_glm$z == 0] <- 2^(rpois(sum(sims_glm$z == 0), .07))
+
+make_umi_hists(grna_real = grna_odm[guide,][locs_glm], grna_sim = sims_glm$ysim, is_pert = sims_glm$z)
+
+```
+
+
+
+
+
+
+```{r}
+make_sims_resamp <- function(y, below_this_is_np, above_this_is_pert, pi, nsim) {
+  y_pert = y[y >= above_this_is_pert]
+  y_np <- y[y <= below_this_is_np]
+  
+  
+  z <- rbinom(nsim, 1, pi)
+  ysim = integer(nsim)
+  ysim[z == 1] = sample(y_pert, sum(z), TRUE)
+  ysim[z == 0] = sample(y_np, sum(1 - z), TRUE)
+  
+  list(ysim=ysim, z=z)
+}
+
+
+# sims_resamp = make_sims_resamp(y, below_this_is_np = 10, above_this_is_pert = 3, .001, 400000)
+# make_umi_hists(grna_real = grna_odm[guide,][locs], grna_sim = sims_resamp$ysim, is_pert = sims_resamp$z, title_sim = "Resampling based on thresholds")
+
+
+below_this_is_np = 10
+above_this_is_pert_seq <- c(3,6,9,12,15)
+pltlist <- list()
+for(i in seq_along(above_this_is_pert_seq)) {
+  sims_resamp = make_sims_resamp(y, below_this_is_np = 10, above_this_is_pert = above_this_is_pert_seq[i], .001, 400000)
+  plts <- make_umi_hists(grna_real = grna_odm[guide,][locs], grna_sim = sims_resamp$ysim, is_pert = sims_resamp$z, title_sim = bquote(min[p] ~ "=" ~ .(above_this_is_pert_seq[i]) * "," ~  max[np] ~ "=" ~ .(below_this_is_np)), return_plots = TRUE)
+  
+  if(i == 1) {
+    pltlist <- plts
+  } else {
+    pltlist <- c(pltlist, plts$plt1b)
+  }
+}
+# names(pltlist)[-1] <- paste0()
+
+cowplot::plot_grid(plotlist = pltlist)
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+ok, now i need to make my datasets.
+
+my goal: i want to do 3 main-effects-only analyses.
+
+- 3 points for overlap
+- 3 points for sparsity
+- 3 points for batch effect
+
+
+
+idea:
+- sparsity is .1%, 1%, 10%
+- then 1% is my "middle" value. We expect 200 true positives, which feels like enough to learn from? hmmm.. well, no, actually, i'd like more.
+
+maybe i shouldn't try to do a nice exponential grid...
+
+what if i do this: .5%, 2.5%, 5%
+then 2.5% is my middle point with 500 perturbed cells. 
+
+
+hmmm... ok actually i think i really like .1%, 1%, 10%. 
+
+so let's try to use 1% for my other datasets as the baseline. 200 samples is decent still. if only 1.5% of cells are non-zero, and most perturbed ones are, 200 of them should stick out very clearly!
+
+
+middle point dataset:
+- overlap = medium
+- sparsity = 1%
+- batch effect = 0
+
+varying sparsity:
+- low, to .1%
+- high, to 10%
+
+varying overlap:
+- low, to near perfect separation
+- high, to lots of overlap
+
+varying batch:
+- low = some effect
+- large = big effect
+
+--> only 7 different datasets if i can get this all to work nicely enough.
+
+
+FIGURING OUT BASELINE
+
+for now, let's ONLY be concerned with overlap.
+
+```{r}
+set.seed(123)
+n_sim = 100000
+locs = sample(which(cell_covariates$grna_n_nonzero > 0), n_sim)
+x_downsamp = cell_covariates$grna_n_nonzero[locs]
+x_downsamp_normed = x_downsamp / mean(x_downsamp)
+y_downsamp = y[locs]
+```
+
+
+for these, i vary both P and NP groups
+```{r}
+# params_baseline <- c(
+#   pi = .01,
+#   mu_pert = 800,
+#   theta_pert = .75,
+#   mu_np = 0.01,
+#   theta_np = .01
+# )
+
+params_minimal_overlap <- c(
+  pi = .005,
+  mu_pert = 800,
+  theta_pert = 1,
+  mu_np = 0.01,
+  theta_np = .01
+)
+
+# this might be too much overlap?
+params_some_overlap <- c(
+  pi = .005,
+  mu_pert = 500,
+  theta_pert = .5,
+  mu_np = 0.01,
+  theta_np = .0075
+)
+
+params_most_overlap <- c(
+  pi = .005,
+  mu_pert = 100,
+  theta_pert = .05,
+  mu_np = 0.01,
+  theta_np = .005
+)
+
+sims <- sim_data(params = params_most_overlap, cell_scaling = x_downsamp_normed, seed=6)
+
+
+
+make_umi_hists(grna_real = y_downsamp, grna_sim = sims$ysim, is_pert = sims$z)
+
+cat(
+  " num. pert =", sum(sims$z), "\n",
+  " num. pert below max unpert:", sum(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])),
+  "(", round(100 * mean(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])), 2 ), "%)", "\n",
+  " Real: max =", max(y_downsamp), "; Sim: max =", max(sims$ysim), "\n",
+  "Real: % 0 =", round(100 * mean(y_downsamp == 0), 2), "Sim: % 0 =", round(100 * mean(sims$ysim == 0), 2), "\n"
+)
+```
+
+
+
+but biologically, it makes more sense to only vary the perturbed group.
+
+```{r}
+grna_nonzero = cell_covariates$grna_n_nonzero
+x_nonzero <- grna_nonzero[grna_nonzero > 0]
+x_nonzero_normed <- x_nonzero / mean(x_nonzero)
+y_n_nonzero <- y[grna_nonzero > 0]
+
+# bootstrap
+seed_ = 7
+# set.seed(seed_ + 1)
+# y_n_nonzero = sample(y_n_nonzero, length(y_n_nonzero), TRUE)
+# here is a different way to get the distribution for the NP group
+# mod = MASS::glm.nb(y ~ 1, data = data.frame(y = y_downsamp[y_downsamp < 5]))
+
+# mod = MASS::glm.nb(y ~ log(x), data = data.frame(y = y_downsamp[y_downsamp < 10], x = x_downsamp[y_downsamp < 10]))
+# summary(mod)
+
+params_minimal_overlap <- c(
+  pi = .005,
+  mu_pert = 800,
+  theta_pert = 1,
+  mu_np = 0.01,
+  theta_np = 0.1
+  # phi = .9875
+)
+
+params_kinda_getting_it <- c(
+  pi = .005,
+  mu_pert = 800,
+  theta_pert = 1,
+  mu_np = 0.1,
+  theta_np = 0.0075,
+  phi = .994  # from mean(y == 0)
+)
+
+
+sims <- sim_data(params = params_minimal_overlap, cell_scaling = x_nonzero_normed, seed=seed_)
+
+
+
+make_umi_hists(grna_real = y_n_nonzero, grna_sim = sims$ysim, is_pert = sims$z)
+
+cat(
+  " num. pert =", sum(sims$z), "\n",
+  " num. pert below max unpert:", sum(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])),
+  "(", round(100 * mean(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])), 2 ), "%)", "\n",
+  " Real: max =", max(y_n_nonzero), "; Sim: max =", max(sims$ysim), "\n",
+  "Real: % 0 =", round(100 * mean(y_n_nonzero == 0), 2), "Sim: % 0 =", round(100 * mean(sims$ysim == 0), 2), "\n"
+)
+```
+
+
+
+
+well, i'm an idiot: i was ignoring the bayesian part of this and just doing NB samples. it's heavier tailed than that!!
+
+let's try doing a poisson-log-normal 
+```{r}
+grna_nonzero = cell_covariates$grna_n_nonzero
+x_nonzero <- grna_nonzero[grna_nonzero > 0]
+x_nonzero_normed <- x_nonzero / mean(x_nonzero)
+y_n_nonzero <- grna_odm["306_ANAPC1_P1P2_ENSG00000153107",][grna_nonzero > 0]
+
+
+cleanser_samples = read.table("/home/josep/scratch/fit-mixture-models/cleanser-out/samples.txt", sep="\t", header = TRUE) |>
+  filter(guide.id == 1)  |> # this is my chosen guide
+  dplyr::select(-guide.id) |>
+  as_tibble()
+
+n_post <- nrow(cleanser_samples)
+
+L <- x_nonzero_normed
+set.seed(6)
+nsim <- length(L)
+
+# Sample one posterior draw per cell
+idx <- sample(n_post, size = nsim, replace = TRUE)
+
+r_s        <- 0.001 # cleanser_samples$r[idx]
+mu_pert_s  <- cleanser_samples$mu[idx]
+disp_pert_s <- cleanser_samples$Disp[idx]
+mu_np_s    <- cleanser_samples$n_nbMean[idx] #/ 15
+disp_np_s  <- cleanser_samples$n_nbDisp[idx] 
+
+
+# can i try sampling from a heavier tailed dist for the disperion?
+
+
+
+z <- rbinom(n = nsim, size = 1, prob = r_s)
+
+ysim <- MASS::rnegbin(
+  n = nsim,
+  mu = ifelse(z == 1, mu_pert_s, mu_np_s) * L,
+  theta = ifelse(z == 1, disp_pert_s, disp_np_s)
+)
+
+sims = list(ysim=ysim, z=z)
+
+make_umi_hists(grna_real = y_n_nonzero, grna_sim = sims$ysim, is_pert = sims$z)
+
+cat(
+  " num. pert =", sum(sims$z), "\n",
+  " num. pert below max unpert:", sum(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])),
+  "(", round(100 * mean(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])), 2 ), "%)", "\n",
+  " Real: max =", max(y_n_nonzero), "; Sim: max =", max(sims$ysim), "\n",
+  "Real: % 0 =", round(100 * mean(y_n_nonzero == 0), 2), "Sim: % 0 =", round(100 * mean(sims$ysim == 0), 2), "\n"
+)
+
+```
+
+
+
+ok let's try running cleanser with a real L on just this guide
+
+```{r}
+L <- grna_nonzero / mean(grna_nonzero)
+counts <- grna_odm["306_ANAPC1_P1P2_ENSG00000153107"] # around 95% for n_nonzero
+nonzero <- which(counts > 0)
+
+df <- data.frame(
+  count = as.integer(counts[nonzero]),
+  L     = L[nonzero]
+)
+write.csv(df, "~/scratch/fit-mixture-models/guide-and-L-more-expressed.csv", row.names = FALSE)
+```
+
+
+```{r}
+guide = "306_ANAPC1_P1P2_ENSG00000153107"
+y = grna_odm[guide,]
+L <- cell_covariates$grna_n_nonzero / mean(cell_covariates$grna_n_nonzero)
+
+# y <- y[L > 0]
+
+
+
+cleanser_samples = read.table("/home/josep/scratch/fit-mixture-models/cleanser-out/guide-with-real-L-more-expressed-samples.csv", sep="\t", header = TRUE) |>
+  filter(guide.id == 1)  |> # this is my chosen guide
+  dplyr::select(-guide.id) |>
+  as_tibble()
+
+# hist(cleanser_samples$r)
+
+n_post <- nrow(cleanser_samples)
+
+# L <- x_nonzero_normed  # i'm using same L
+set.seed(5)
+nsim <- length(L)
+
+# Sample one posterior draw per cell
+idx <- sample(n_post, size = nsim, replace = TRUE)
+
+r_s        <- 0.001 # cleanser_samples$r[idx]
+mu_pert_s  <-  1000 # cleanser_samples$mu[idx]
+disp_pert_s <- .5 # cleanser_samples$Disp[idx]
+mu_np_s    <- .03 # cleanser_samples$n_nbMean[idx]
+disp_np_s  <- .1 # cleanser_samples$n_nbDisp[idx]
+
+# r_s        <- 0.001 # rep(mean(cleanser_samples$r), nsim)
+# mu_pert_s  <- rep(mean(cleanser_samples$mu), nsim)
+# disp_pert_s <- rep(mean(cleanser_samples$Disp), nsim)
+# mu_np_s    <- cleanser_samples$n_nbMean[idx]
+# disp_np_s  <- 1/cleanser_samples$n_nbDisp[idx]
+
+z <- rbinom(n = nsim, size = 1, prob = r_s)
+
+ysim <- MASS::rnegbin(
+  n = nsim,
+  mu = ifelse(z == 1, mu_pert_s, mu_np_s) * L,
+  theta = ifelse(z == 1, disp_pert_s, disp_np_s)
+)
+
+sims = list(ysim=ysim, z=z)
+
+y_curr = y
+make_umi_hists(grna_real = y_curr, grna_sim = sims$ysim, is_pert = sims$z)
+
+cat(
+  " num. pert =", sum(sims$z), "\n",
+  " num. pert below max unpert:", sum(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])),
+  "(", round(100 * mean(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])), 2 ), "%)", "\n",
+  " Real: max =", max(y_curr), "; Sim: max =", max(sims$ysim), "\n",
+  "Real: % 0 =", round(100 * mean(y_curr == 0), 2), "Sim: % 0 =", round(100 * mean(sims$ysim == 0), 2), "\n"
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+set.seed(6)
+idx <- sample(nrow(cleanser_samples), size = 1)
+# params_draw <- cleanser_samples[idx, ]
+
+params_draw <- list(
+  r = 0.005, 
+)
+
+z <- rbinom(n = nsim, size = 1, prob = params_draw$r)
+
+ysim <- MASS::rnegbin(
+  n = nsim,
+  mu = ifelse(z == 1, params_draw$mu, params_draw$n_nbMean) * L,
+  theta = ifelse(z == 1, params_draw$Disp, params_draw$n_nbDisp)
+)
+sims = list(ysim=ysim, z=z)
+
+make_umi_hists(grna_real = y_n_nonzero, grna_sim = sims$ysim, is_pert = sims$z)
+
+cat(
+  " num. pert =", sum(sims$z), "\n",
+  " num. pert below max unpert:", sum(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])),
+  "(", round(100 * mean(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])), 2 ), "%)", "\n",
+  " Real: max =", max(y_n_nonzero), "; Sim: max =", max(sims$ysim), "\n",
+  "Real: % 0 =", round(100 * mean(y_n_nonzero == 0), 2), "Sim: % 0 =", round(100 * mean(sims$ysim == 0), 2), "\n"
+)
+```
+
+
+
+hmmmm.... i don't like this
+
+let's try NB-log-N myself
+
+```{r}
+
+
+pi <- .005  # just fix this
+
+mu_pert <- exp(rnorm(nsim, log(50), log(3)))
+theta_pert = exp(rnorm(nsim, log(3), log(2)))
+
+mu_np <- exp(rnorm(nsim, log(1.075), log(1.1)))
+theta_np = exp(rnorm(nsim, log(1.1), log(1.1)))
+
+
+z <- rbinom(nsim, 1, pi)
+
+ysim <- MASS::rnegbin(
+  n = nsim,
+  mu = ifelse(z == 1, mu_pert, mu_np) * L,
+  theta = ifelse(z == 1, theta_pert, theta_np)
+)
+sims = list(ysim=ysim, z=z)
+
+make_umi_hists(grna_real = y_n_nonzero, grna_sim = sims$ysim, is_pert = sims$z)
+
+cat(
+  " num. pert =", sum(sims$z), "\n",
+  " num. pert below max unpert:", sum(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])),
+  "(", round(100 * mean(sims$ysim[sims$z == 1] < max(sims$ysim[sims$z == 0])), 2 ), "%)", "\n",
+  " Real: max =", max(y_n_nonzero), "; Sim: max =", max(sims$ysim), "\n",
+  "Real: % 0 =", round(100 * mean(y_n_nonzero == 0), 2), "Sim: % 0 =", round(100 * mean(sims$ysim == 0), 2), "\n"
+)
+
+```
+
