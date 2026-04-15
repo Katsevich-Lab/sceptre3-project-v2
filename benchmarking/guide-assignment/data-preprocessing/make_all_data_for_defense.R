@@ -150,10 +150,19 @@ make_grna_subset <- function(source_data, dataset_name, output_base_dir, num_gui
 }
 
 
+# dataset_params = data.frame(
+#   source_data = rep(c( "replogle-rd7", "gasperini"), each = 3),
+#   num_cells=  100000,
+#   num_guides = rep(c(100,200,400), times = 2)
+# ) |>
+#   mutate(
+#     dataset_name = paste0(source_data, "_assign_nguides=", num_guides, "_ncells=", num_cells / 1000, "k")
+#   )
+
 dataset_params = data.frame(
-  source_data = rep(c( "replogle-rd7", "gasperini"), each = 3),
+  source_data = rep(c( "replogle-rd7", "gasperini"), each = 1),
   num_cells=  100000,
-  num_guides = rep(c(100,200,400), times = 2)
+  num_guides = 800
 ) |>
   mutate(
     dataset_name = paste0(source_data, "_assign_nguides=", num_guides, "_ncells=", num_cells / 1000, "k")
