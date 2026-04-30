@@ -1,0 +1,209 @@
+---
+title: "sceptre — Bioconductor Submission Plan"
+author:
+  - name: Eugene Katsevich
+date: today
+date-format: long
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    toc-title: "Contents"
+    number-sections: true
+    number-depth: 3
+    embed-resources: true
+    theme:
+      light: cosmo
+    fontsize: "1.02em"
+    linestretch: 1.55
+    smooth-scroll: true
+    page-layout: article
+    grid:
+      sidebar-width: 260px
+      body-width: 820px
+      margin-width: 220px
+    fig-cap-location: bottom
+    code-fold: false
+    code-tools: false
+    link-external-icon: true
+    link-external-newwindow: true
+    css: custom.css
+execute:
+  echo: false
+  warning: false
+---
+
+## Current state
+
+On `main`:
+
+```
+R CMD check  — Status: 1 ERROR
+BiocCheck    — 2 ERRORS · 2 WARNINGS · 13 NOTES
+              (+ 1 transient ERROR — Bioc support-site HTTP 502)
+```
+
+The transient ERROR (`Unable to find your email in the Support Site: HTTP 502 Bad Gateway`) is a `bioconductor.org` server issue, not a package issue; it may or may not appear on any given run. PR \#199 addresses the `R CMD CHECK` ERROR and three `BiocCheck` NOTEs (`BugReports:` field added, vignette chunk labels added, `\dontrun{}` → `\donttest{}` in `man/sceptre-package.Rd`). 
+
+**Post-#199 state:**
+
+```
+R CMD check  — Status: OK
+BiocCheck    — 2 ERRORS · 2 WARNINGS · 10 NOTES
+```
+
+Below is a worklist for getting `sceptre` to a clean Bioconductor submission. Items are grouped by **priority level**:
+
+- **(A)** Currently flagged by an automated check (`R CMD check` or `BiocCheck` with `new-package = TRUE`). Concrete rules — the check fails until the item is closed.
+- **(B)** Not flagged automatically, but a human reviewer is very likely to raise. Correctness, architecture, or ecosystem-integration concerns. Closing these avoids re-submission rounds.
+- **(C)** Not flagged automatically and reviewers may or may not notice. Cleanup and polish — worth doing before submission, but not blocking.
+
+## (A) Automated-check findings
+
+Items currently flagged by `R CMD check` or `BiocCheck`. Severity follows the tool. Each item is annotated with **status** — open, closed by PR #199, or blocked on a downstream decision.
+
+### ERRORs
+
+#### A1 — `Remotes: github::timothy-barry/ondisc` (BiocCheck) {#a1}
+
+Bioc and CRAN don't honour `Remotes:`. Beyond removing the field, every package in `Imports`/`Depends`/`Suggests` must be on CRAN or Bioc — so we also need to resolve `ondisc`'s status. The two main options are:
+
+- **Push `ondisc` to Bioc** — If we want to maintain `ondisc` for usage outside of `sceptre`.
+- **Absorb into `sceptre`** — If we don't want to maintain `ondisc` separately. We could keep an unmaintained standalone version of `ondisc` on GitHub for any folks who use it for non-`sceptre` purposes.
+
+Status: **open.**
+
+#### A2 — Package version not `x.99.z` (BiocCheck) {#a2}
+
+Bioc requires new submissions to be at version `0.99.z`. Currently `0.10.3`.
+
+Mechanical fix: bump `Version:` in `DESCRIPTION` once the rest of the submission work is ready. Doing it earlier doesn't hurt but signals "submitting now" to anyone reading the repo. Status: **open.**
+
+#### A3 — Test failures from ggplot2 4.0 / cowplot 1.2.0 (R CMD check)
+
+Eight tests in `tests/testthat/test-plotting_functions.R` (lines 82, 83, 84, 120, 121, 141, 142, 149) fail because cowplot 1.2.0 changed the `$labels` accessor pattern and ggplot2 4.0 deprecated `geom_violin(draw_quantiles = ...)`. Status: **closed by PR #199.**
+
+### WARNINGs
+
+#### A4 — `set.seed()` in package code, 5 sites (BiocCheck) {#a4}
+
+`R/aux_functions.R:90`, `R/assign_grna_functions.R:179`, `R/mixture_model_functs.R:102`, `R/plotting_functions.R:838, :1009`. Bioc rule: package code should not mutate the user's RNG state.
+
+Fix: replace with `withr::with_seed()` or accept seed as an argument. The two plot-body calls are also a latent correctness bug — they corrupt the user's RNG mid-plot.
+
+Sequencing: gated on the C++ RNG decision ([B1](#b1)) since both touch RNG behaviour. Status: **open.**
+
+#### A5 — No Bioconductor software dependencies (BiocCheck) {#a5}
+
+Bioc nudges packages with no Bioc deps to consider CRAN instead. If we absorb `ondisc` into `sceptre`, this will be resolved, as `Rhdf5lib` is a Bioconductor package.
+
+Status: **open.**
+
+### NOTEs
+
+Listed in BiocCheck order. Mechanical items use one line.
+
+| # | Item | File / detail | Status |
+|---|---|---|---|
+| A6 | `LazyData: true` should be `false` or removed | `DESCRIPTION:57` | open |
+| A7 | R-version dependency: bump from 4.1 to 4.6.0 | `DESCRIPTION:40` | open |
+| A8 | Provide `BugReports:` field | DESCRIPTION | **closed by PR #199** |
+| A9 | No `'fnd'` role in `Authors@R` | flag funder grant via `comment = c(funder = "...")` or `person(role = "fnd")` | open |
+| A10 | Vignette chunk labels missing | `vignettes/sceptre.Rmd` | **closed by PR #199** |
+| A11 | `cat()` / `print()` outside `show()` methods, 36 sites | sites in `R/check_functions.R`, `import_functs.R`, `medium_level_functs_v2.R`, `mixture_model_functs.R`, `neg_control_functions.R`, `s4_analysis_functs_2.R`, `s4_helpers.R` | open |
+| A12 | `suppressWarnings()` usage | `R/mixture_model_functs.R:76` — Bioc prefers fixing the underlying warning | open |
+| A13 | 27 functions over 50 lines | longest: `import_data_from_cellranger_memory()` 132, `run_crt_in_memory_v2()` 130, `check_import_data_inputs()` 122, `plot_assign_grnas()` 115, `run_perm_test_in_memory()` 113 | open; cosmetic |
+| A14 | `\dontrun{}` / `\donttest{}` tags found | informational; persists even after switching to `\donttest{}` | open; informational |
+| A15 | Use `\donttest{}` instead of `\dontrun{}` | `man/sceptre-package.Rd` | **closed by PR #199** |
+| A16 | 831 lines (14%) over 80 chars | run `styler::style_pkg()` | open |
+| A17 | 2,192 lines (36%) with non-multiple-of-4 indent | same — `styler::style_pkg()` | open |
+| A18 | Bioc-devel mailing list subscription not detectable | one-time admin step at <https://stat.ethz.ch/mailman/listinfo/bioc-devel> | open |
+
+The two **WARNING for `cat()`/`print()`** ripple slightly: `message()` writes to `stderr` (suppressible via `suppressMessages()`) where `cat()` writes to `stdout`. Any user scripts capturing sceptre's stdout will see a change — flag in `NEWS.md`.
+
+The **styler NOTEs (A16, A17)** typically close in one PR via `styler::style_pkg()`. Watch out for the `Rcpp` files where styler may rearrange include guards or `Rcpp::export` placement.
+
+---
+
+## (B) Things human reviewers are very likely to flag
+
+Not in `BiocCheck`, but consistently come up in Bioc review either by reading the code, running examples, or expecting Bioc-ecosystem integration.
+
+### B1 — C++ samplers ignore `set.seed()` {#b1}
+
+The highest-priority B item — a correctness bug, not a style nit.
+
+Every sampler in `src/generate_samples_functions.cpp:36, 78, 140, 164` and `src/negative_control_functions.cpp:37, 112` hardcodes the MT19937 seed to the literal integer `4`. R-side `set.seed()` is silently ignored. Two consequences a reviewer will hit:
+
+- Two consecutive `run_calibration_check()` calls in the same session produce **identical** null draws (same hardcoded seed each time). Anyone exercising the calibration check twice will notice.
+- A reviewer who tries `set.seed(42)`, runs, sets the seed again, and gets a different result will flag it.
+
+Resolution options:
+
+- *A.* Route the C++ RNG through R's RNG via `unif_rand()`. Cleanest; behavioural change.
+- *B.* Add a `seed = NULL` argument to public functions; default to a draw from R's RNG. Preserves the C++ inner-loop purity.
+- *C.* Document the current behaviour as-is. Lowest cost; will draw a reviewer comment.
+
+Lean: **B**. Explicit, testable, makes the seed part of the contract. `NEWS.md` note required.
+
+### B2 — `SingleCellExperiment` integration
+
+The most predictable Bioc-review pushback for any single-cell package: *"Why aren't you using `SingleCellExperiment`?"* However, Kasper is willing to advocate for Bioconductor to overlook this.
+
+### B3 — Missing `setValidity()` on `sceptre_object`
+
+A 41-slot S4 class with no validity method draws a comment. Add cheap invariants: matching matrix dims, valid factor levels for `moi`, integer columns where required.
+
+### B4 — Class-level documentation missing
+
+No `man/sceptre_object-class.Rd`. Reviewers will ask. Add per-slot `@slot` documentation while we're there.
+
+### B5 — `ondisc:::` reaching into private API
+
+Even after gating with `requireNamespace`, the eight `:::` calls into `ondisc`'s unexported internals will draw a fragility comment. Resolution: ondisc adds public wrappers (paired with the minimal path of [A1](#a1)), or absorption (the absorb path of [A1](#a1)) makes this moot.
+
+### B6 — Vignette portability
+
+`vignettes/sceptre.Rmd:34, 381-384, 390` writes to `~/sceptre_outputs` and shells out to `system("rm -rf …")`. Replace with `tempdir()`. Reviewers read vignettes carefully and **will** flag both — the home-dir write is a portability issue, the `rm -rf` is a what-on-earth issue.
+
+### B7 — No Windows CI
+
+The Bioc check farm runs Linux + macOS + **Windows**. `.github/workflows/check-standard.yaml` runs Linux + macOS only. The issues that need to be fixed for Windows are likely (a) incompatibility of multi-core parallelization and (b) filepaths. Once these issues are fixed, add a Windows runner before submission.
+
+### B8 — 0% test coverage on importer / on-disk paths
+
+`R/ondisc_functs.R` (0%), `R/pair_constructor_functs.R` (0%), `R/import_functs.R` (16.6%), `R/getters_and_setters.R` (20.7%). Reviewers don't always run `covr`, but they often do — and they sometimes notice when an entire feature has no tests. Closing all of this before submission is unrealistic; closing **importer** tests is achievable and signals intent.
+
+### B9 — `_v2` / `_v3` / `_v4` naming scars in the public C++ API
+
+`run_low_level_test_full_v4`, `compute_nt_nonzero_matrix_and_n_ok_pairs_v3`, `sample_undercover_pairs_v2` and others survived into the public C++ API. A reviewer skimming function names will ask "which version is current and why are old ones still around?" Defensible v0.99.0 minimum: rename internal ones now; keep deprecation aliases on the public ones.
+
+---
+
+## (C) Lower-priority cleanup
+
+Items reviewers may or may not flag — code hygiene, dead code, cosmetic. Bundle into other PRs.
+
+| # | Item | File / detail |
+|---|---|---|
+| C1 | `Imports: BH` should be `LinkingTo:` only | `DESCRIPTION:28` + `import(BH)` from `NAMESPACE:33` |
+| C2 | Drop `Suggests: parallel`, `Suggests: magrittr` | `parallel` is base R; no `%>%` in `R/` |
+| C3 | `@docType package` → `"_PACKAGE"` sentinel | `R/sceptre.R`; modern roxygen idiom |
+| C4 | `LazyDataCompression: gzip` → `xz` | smaller install; cosmetic |
+| C5 | Document `gene_position_data_frame_grch37` | new `.Rd` matching `_grch38.Rd` |
+| C6 | Gzip `inst/extdata/parse_example/gene_mat.mtx` | 528 KB → ~50 KB; update parse importer to accept `.mtx.gz` |
+| C7 | Gate `crayon` on `interactive()` | colours leak into `sink()`-ed logs via `print(sceptre_object)` |
+| C8 | Delete `src/low_level_distilled_test.cpp` | entirely commented-out file |
+| C9 | Demote dead `Rcpp::export` tags | `src/check_functions.cpp` (4 unused), `src/shared_low_level_functions.cpp` (4), `src/sparse_matrix_functs.cpp`, `src/mixture_functs.cpp` |
+| C10 | Remove unused `calibration_check_run` parameter | `R/check_functions.R:339` |
+| C11 | Reconcile `grna_group` vs `grna_target` column names | `R/check_functions.R:316, :353` |
+| C12 | `using namespace` cleanup | `src/shared_low_level_functions.h:2`, `src/sparse_matrix_functs.cpp:2` |
+| C13 | Whole-file `#ifndef` guard | `src/shared_low_level_functions.h:4-36` (currently per-declaration) |
+| C14 | Fix typo `fisher_yates_samlper` | `src/generate_samples_functions.cpp:30`; with deprecation alias |
+| C15 | Confirm `URL:` is current; consider adding pkgdown URL | `DESCRIPTION:55` already lists the book + GitHub |
+| C16 | Replace `parallel::detectCores()` with `parallelly::availableCores()` | PR #196 (already open) |
+| C17 | `.Rbuildignore` for any local audit files / scratch dirs | self-inflicted |
+| C18 | CI: add `BiocCheck` workflow + `covr`/Codecov + bump `actions/checkout@v4` | Windows is a separate concern → [B7](#b7) |
+
+---
