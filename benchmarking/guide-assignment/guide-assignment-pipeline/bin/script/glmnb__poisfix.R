@@ -1,7 +1,5 @@
-# Same as baseline, but with the curr_g_pert M-step bug fix turned on:
-# the perturbation effect is treated as multiplicative
-# (g_mus_pert1 = g_mus_pert0 * exp(curr_g_pert)) rather than additive
-# (g_mus_pert1 = g_mus_pert0 + curr_g_pert).
+# NB GLM offset (MASS::glm.nb, joint MLE of beta and theta), Poisson mixture,
+# multiplicative M-step (fixed).
 
 source(file.path(bin_dir, "script", "lib", "run_variant.R"))
 
@@ -12,12 +10,13 @@ assign_grnas_script <- function(response_matrix, grna_matrix, grna_target_df,
     extra_covariates    = extra_covariates,
     formula             = formula,
     cpus                = cpus,
-    offset_model_fit_fn = fit_baseline_glm_pure_R,
+    offset_model_fit_fn = fit_baseline_glm_nb,
     offset_spec         = list(
-      name        = "fit_baseline_glm_pure_R",
-      description = "Vanilla Poisson MLE GLM via stats::glm.fit",
+      name        = "fit_baseline_glm_nb",
+      description = "NB GLM via MASS::glm.nb (joint MLE of beta and theta)",
       params      = list()
     ),
+    worker_libraries    = c("Matrix", "MASS", "sceptre"),
     fix_curr_g_pert_bug = TRUE
   )
 }

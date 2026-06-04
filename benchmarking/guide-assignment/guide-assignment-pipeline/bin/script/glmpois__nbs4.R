@@ -1,5 +1,5 @@
-# Baseline: pure-R port of sceptre's default mixture-model gRNA assignment.
-# Vanilla Poisson MLE GLM offset; sceptre's existing (additive) M-step.
+# Vanilla Poisson GLM offset, NB-shared mixture with 4 phi updates.
+# Initial phi per guide from sceptre:::estimate_theta on the Poisson fit.
 
 source(file.path(bin_dir, "script", "lib", "run_variant.R"))
 
@@ -15,6 +15,12 @@ assign_grnas_script <- function(response_matrix, grna_matrix, grna_target_df,
       name        = "fit_baseline_glm_pure_R",
       description = "Vanilla Poisson MLE GLM via stats::glm.fit",
       params      = list()
-    )
+    ),
+    worker_libraries    = c("Matrix", "sceptre"),
+    family              = "nb-shared",
+    estimate_phi_fn     = estimate_phi_from_offset_fit_sceptre,
+    n_phi_updates       = 4L,
+    # Fallback when initial estimate_phi_fn errors / returns a bad value.
+    phi                 = 5
   )
 }

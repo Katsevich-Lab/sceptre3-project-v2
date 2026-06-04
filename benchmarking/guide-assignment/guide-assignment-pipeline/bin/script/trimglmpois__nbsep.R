@@ -1,12 +1,12 @@
-# Trimmed Poisson GLM offset (top 0.1% of cells by g dropped before fitting)
-# combined with the curr_g_pert M-step bug fix turned ON (multiplicative
-# perturbation effect: g_mus_pert1 = g_mus_pert0 * exp(curr_g_pert)).
+# Trimmed Poisson GLM offset (top 0.1% by g dropped), NB-separate mixture
+# (phi0 != phi1). Seed phi per guide from sceptre:::estimate_theta on the
+# trimmed Poisson fit.
 
 source(file.path(bin_dir, "script", "lib", "run_variant.R"))
 
 assign_grnas_script <- function(response_matrix, grna_matrix, grna_target_df,
                                 extra_covariates, formula, moi, cpus) {
-  TRIM_FRAC <- 0.1 / 100
+  TRIM_FRAC <- 0.001
   offset_model_fit_fn <- function(g, X) {
     fit_baseline_glm_trimmed_pure_R(g, X, trim_frac = TRIM_FRAC)
   }
@@ -21,6 +21,10 @@ assign_grnas_script <- function(response_matrix, grna_matrix, grna_target_df,
       description = "Poisson MLE GLM fit on cells outside the top trim_frac of g",
       params      = list(trim_frac = TRIM_FRAC)
     ),
-    fix_curr_g_pert_bug = TRUE
+    worker_libraries    = c("Matrix", "sceptre"),
+    family              = "nb-separate",
+    estimate_phi_fn     = estimate_phi_from_offset_fit_sceptre,
+    # Fallback when initial estimate_phi_fn errors / returns a bad value.
+    phi                 = 5
   )
 }

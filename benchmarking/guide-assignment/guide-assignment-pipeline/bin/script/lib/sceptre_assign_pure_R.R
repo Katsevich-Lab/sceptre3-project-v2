@@ -110,6 +110,73 @@ fit_baseline_glmrob_pure_R <- function(g, covariate_matrix) {
 }
 
 
+# ---- Trimmed robust Poisson GLM baseline fit --------------------------------
+# Robust analogue of fit_baseline_glm_trimmed_pure_R: drop the top `trim_frac`
+# of cells by g, then run glmrob on the remainder, then evaluate fitted means
+# on ALL cells. Standardization stats are computed from the kept rows so the
+# Mqle solver sees a well-conditioned design (same rationale as the untrimmed
+# glmrob fit); trimmed cells are then evaluated on that same scale.
+fit_baseline_glmrob_trimmed_pure_R <- function(g, covariate_matrix, trim_frac = 0.05) {
+  stopifnot(trim_frac >= 0, trim_frac < 1)
+  if (!requireNamespace("robustbase", quietly = TRUE)) {
+    stop("`fit_baseline_glmrob_trimmed_pure_R` requires the `robustbase` package.")
+  }
+  n      <- length(g)
+  n_trim <- floor(trim_frac * n)
+  if (n_trim == 0L) {
+    return(fit_baseline_glmrob_pure_R(g, covariate_matrix))
+  }
+
+  keep <- rank(-g, ties.method = "first") > n_trim
+
+  effective_trim_frac <- trim_frac
+  if (all(g[keep] == 0)) {
+    keep                <- rep(TRUE, n)
+    effective_trim_frac <- 0
+  }
+
+  X            <- covariate_matrix
+  is_intercept <- apply(X, 2L, function(col) length(unique(col)) == 1L)
+  centers      <- ifelse(is_intercept, 0, colMeans(X[keep, , drop = FALSE]))
+  scales       <- ifelse(is_intercept, 1, apply(X[keep, , drop = FALSE], 2L, stats::sd))
+  scales[scales == 0] <- 1
+  X            <- sweep(X, 2L, centers, "-")
+  X            <- sweep(X, 2L, scales,  "/")
+
+  safe_names <- paste0("X", seq_len(ncol(X)))
+  colnames(X) <- safe_names
+  df <- as.data.frame(X[keep, , drop = FALSE])
+  df$.y <- g[keep]
+  fml <- stats::as.formula(
+    paste0(".y ~ -1 + ", paste(safe_names, collapse = " + "))
+  )
+  fit <- suppressWarnings(
+    robustbase::glmrob(
+      fml, data = df,
+      family = stats::poisson(),
+      method = "Mqle"
+    )
+  )
+
+  coef <- fit$coefficients
+  coef[is.na(coef)] <- 0
+  eta_all <- as.numeric(X %*% coef)
+  fit$fitted.values     <- exp(eta_all)
+  fit$linear.predictors <- eta_all
+  fit$trim_frac         <- effective_trim_frac
+  fit$n_trimmed         <- sum(!keep)
+  fit$offset_model_summary <- list(
+    coefficients        = fit$coefficients,
+    deviance            = fit$deviance,
+    iter                = fit$iter,
+    converged           = fit$converged,
+    effective_trim_frac = effective_trim_frac,
+    n_trimmed           = sum(!keep)
+  )
+  fit
+}
+
+
 # ---- Trimmed Poisson GLM baseline fit ---------------------------------------
 # Alternative robust baseline that's much more predictable than glmrob: drop
 # the top `trim_frac` of cells by g, fit stats::glm.fit on the remainder, then
@@ -293,6 +360,88 @@ fit_baseline_glm_nb <- function(g, covariate_matrix) {
     theta        = fit$theta,
     SE_theta     = fit$SE.theta,
     twologlik    = fit$twologlik
+  )
+  fit
+}
+
+
+# ---- Trimmed NB GLM baseline fit (MASS::glm.nb on trimmed sample) -----------
+# NB analogue of fit_baseline_glm_trimmed_pure_R: drop the top `trim_frac` of
+# cells by g, run MASS::glm.nb on the remainder, then evaluate fitted means on
+# ALL cells. Same Poisson + sceptre:::estimate_theta fallback as
+# fit_baseline_glm_nb when glm.nb fails; the resulting `$theta` is preserved so
+# estimate_phi_from_offset_fit_theta works downstream.
+fit_baseline_glm_nb_trimmed_pure_R <- function(g, covariate_matrix, trim_frac = 0.05) {
+  stopifnot(trim_frac >= 0, trim_frac < 1)
+  if (!requireNamespace("MASS", quietly = TRUE)) {
+    stop("`fit_baseline_glm_nb_trimmed_pure_R` requires the `MASS` package.")
+  }
+  n      <- length(g)
+  n_trim <- floor(trim_frac * n)
+  if (n_trim == 0L) {
+    return(fit_baseline_glm_nb(g, covariate_matrix))
+  }
+
+  keep <- rank(-g, ties.method = "first") > n_trim
+
+  effective_trim_frac <- trim_frac
+  if (all(g[keep] == 0)) {
+    keep                <- rep(TRUE, n)
+    effective_trim_frac <- 0
+  }
+
+  safe_names <- paste0("X", seq_len(ncol(covariate_matrix)))
+  df <- as.data.frame(covariate_matrix[keep, , drop = FALSE])
+  colnames(df) <- safe_names
+  df$.y <- g[keep]
+  fml <- stats::as.formula(
+    paste0(".y ~ -1 + ", paste(safe_names, collapse = " + "))
+  )
+
+  fit <- tryCatch(
+    suppressWarnings(MASS::glm.nb(formula = fml, data = df)),
+    error = function(e) NULL
+  )
+  if (is.null(fit)) {
+    if (!requireNamespace("sceptre", quietly = TRUE)) {
+      stop("fit_baseline_glm_nb_trimmed_pure_R's Poisson fallback requires the `sceptre` package.")
+    }
+    fit <- suppressWarnings(stats::glm.fit(
+      y      = g[keep],
+      x      = covariate_matrix[keep, , drop = FALSE],
+      family = stats::poisson()
+    ))
+    fit$theta <- tryCatch(
+      sceptre:::estimate_theta(
+        y     = g[keep],
+        mu    = fit$fitted.values,
+        dfr   = fit$df.residual,
+        limit = 50L,
+        eps   = .Machine$double.eps^(1/4)
+      )[[1]],
+      error = function(e) NA_real_
+    )
+    fit$SE.theta  <- NA_real_
+    fit$twologlik <- NA_real_
+  }
+
+  coef <- fit$coefficients
+  coef[is.na(coef)] <- 0
+  eta_all <- as.numeric(covariate_matrix %*% coef)
+  fit$fitted.values     <- exp(eta_all)
+  fit$linear.predictors <- eta_all
+  fit$trim_frac         <- effective_trim_frac
+  fit$n_trimmed         <- sum(!keep)
+  fit$offset_model_summary <- list(
+    coefficients        = fit$coefficients,
+    deviance            = fit$deviance,
+    iter                = fit$iter,
+    converged           = fit$converged,
+    theta               = fit$theta,
+    SE_theta            = fit$SE.theta,
+    twologlik           = fit$twologlik,
+    effective_trim_frac = effective_trim_frac,
+    n_trimmed           = sum(!keep)
   )
   fit
 }

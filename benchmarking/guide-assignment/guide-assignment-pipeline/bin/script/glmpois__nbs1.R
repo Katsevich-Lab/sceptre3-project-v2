@@ -1,8 +1,5 @@
-# Like baseline_nb (vanilla Poisson GLM offset + NB-NB mixture, initial phi
-# from sceptre:::estimate_theta), but with one phi-update round:
-#   EM -> update phi -> EM
-# The saved (pi, g_pert) come from the second EM, matching the updated phi.
-# Use n_phi_updates = K (in run_meta) for K updates; here K = 1.
+# Vanilla Poisson GLM offset, NB-shared mixture with 1 phi update.
+# Initial phi per guide from sceptre:::estimate_theta on the Poisson fit.
 
 source(file.path(bin_dir, "script", "lib", "run_variant.R"))
 
@@ -23,8 +20,7 @@ assign_grnas_script <- function(response_matrix, grna_matrix, grna_target_df,
     family              = "nb-shared",
     estimate_phi_fn     = estimate_phi_from_offset_fit_sceptre,
     n_phi_updates       = 1L,
-    # Fallback used when initial estimate_phi_fn errors / returns a bad value
-    # for a given guide. Recorded per-guide as em_phi_source = "fallback".
+    # Fallback when initial estimate_phi_fn errors / returns a bad value.
     phi                 = 5
   )
 }
