@@ -1,0 +1,5 @@
+method,dataset,cpus,memory
+script_baseline,gasperini_assign_nguides=100_ncells=100k,2,4.GB
+sceptre,gasperini_assign_nguides=100_ncells=100k,1,4.GB
+script_baseline,replogle-rd7_assign_nguides=100_ncells=100k,2,4.GB
+sceptre,replogle-rd7_assign_nguides=100_ncells=100k,1,4.GB

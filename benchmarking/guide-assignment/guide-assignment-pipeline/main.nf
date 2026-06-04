@@ -7,6 +7,7 @@ include { CRISPAT_ASSIGN } from './modules/crispat'
 include { CLEANSER_ASSIGN } from './modules/cleanser'
 include { PERTPY_ASSIGN } from './modules/pertpy'
 include { SCEPTRE_ASSIGN } from './modules/sceptre'
+include { SCRIPT_ASSIGN } from './modules/script'
 // TODO: Add more methods as needed
 
 workflow {
@@ -32,7 +33,10 @@ workflow {
         .map { resource_row ->
             def dataset_id = resource_row.dataset
             def method = resource_row.method
-            def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${method}")
+            // All script_* variants consume the same R input format as sceptre,
+            // so they share the sceptre/ input subdirectory.
+            def input_subdir = method.startsWith('script_') ? 'sceptre' : method
+            def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${input_subdir}")
             def resources = [
                 cpus: resource_row.cpus,
                 memory: resource_row.memory,
@@ -49,6 +53,7 @@ workflow {
         cleanser: it[2] == 'cleanser'
         pertpy: it[2] == 'pertpy'
         sceptre: it[2] == 'sceptre'
+        script: it[2].startsWith('script_')
         // TODO: Add more methods here
     }
         
@@ -63,6 +68,10 @@ workflow {
     
     // Run sceptre with explicit output directory
     sceptre_results = SCEPTRE_ASSIGN(branched_ch.sceptre, outdir)
+
+    // Run script_* variants (all share the SCRIPT_ASSIGN process; the wrapper
+    // dispatches to bin/script/{variant}.R based on the method name)
+    script_results = SCRIPT_ASSIGN(branched_ch.script, outdir)
     // TODO: Add more methods here
 }
 
