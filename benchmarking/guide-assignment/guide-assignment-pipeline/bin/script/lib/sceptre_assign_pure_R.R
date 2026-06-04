@@ -55,7 +55,7 @@ fit_baseline_glm_pure_R <- function(g, covariate_matrix) {
 # ---- Robust Poisson GLM baseline fit ----------------------------------------
 # Drop-in replacement for fit_baseline_glm_pure_R that downweights cells with
 # large Pearson residuals (perturbed cells, for heavy-tailed guides). Uses the
-# Cantoni-Ronchetti Mqle estimator from `robustbase::glmrob`.
+# transformation-based MT estimator from `robustbase::glmrob`.
 #
 # Motivation: the standard MLE fit is contaminated by perturbed cells, which
 # inflates `g_mus_pert0` -- particularly for heavy-tailed guides -- and makes
@@ -71,11 +71,12 @@ fit_baseline_glmrob_pure_R <- function(g, covariate_matrix) {
   }
 
   # Standardize non-intercept columns to keep glmrob's iteratively-reweighted
-  # Fisher information well-conditioned. Mqle inverts X' W X directly, which
-  # is fragile when columns have wildly different scales (a common situation
-  # with sceptre's covariates: `(Intercept)` is 1, `log(response_n_umis)` is
-  # 8-12, `grna_n_umis` can be 0-10000). Standardization is invariant for
-  # fitted.values, so downstream code is unaffected.
+  # Fisher information well-conditioned. Iterative robust solvers invert
+  # X' W X-like matrices that are fragile when columns have wildly different
+  # scales (a common situation with sceptre's covariates: `(Intercept)` is 1,
+  # `log(response_n_umis)` is 8-12, `grna_n_umis` can be 0-10000).
+  # Standardization is invariant for fitted.values, so downstream code is
+  # unaffected.
   X            <- covariate_matrix
   is_intercept <- apply(X, 2L, function(col) length(unique(col)) == 1L)
   centers      <- ifelse(is_intercept, 0, colMeans(X))
@@ -97,14 +98,18 @@ fit_baseline_glmrob_pure_R <- function(g, covariate_matrix) {
     robustbase::glmrob(
       fml, data = df,
       family = stats::poisson(),
-      method = "Mqle"
+      method = "MT"
     )
   )
   fit$offset_model_summary <- list(
     coefficients = fit$coefficients,
     deviance     = fit$deviance,
     iter         = fit$iter,
-    converged    = fit$converged
+    converged    = fit$converged,
+    # Per-cell robustness weights (length n). w_r downweights large Pearson
+    # residuals; w_x downweights high-leverage covariate rows.
+    w_r          = fit$w.r,
+    w_x          = fit$w.x
   )
   fit
 }
@@ -114,7 +119,7 @@ fit_baseline_glmrob_pure_R <- function(g, covariate_matrix) {
 # Robust analogue of fit_baseline_glm_trimmed_pure_R: drop the top `trim_frac`
 # of cells by g, then run glmrob on the remainder, then evaluate fitted means
 # on ALL cells. Standardization stats are computed from the kept rows so the
-# Mqle solver sees a well-conditioned design (same rationale as the untrimmed
+# MT solver sees a well-conditioned design (same rationale as the untrimmed
 # glmrob fit); trimmed cells are then evaluated on that same scale.
 fit_baseline_glmrob_trimmed_pure_R <- function(g, covariate_matrix, trim_frac = 0.05) {
   stopifnot(trim_frac >= 0, trim_frac < 1)
@@ -154,7 +159,7 @@ fit_baseline_glmrob_trimmed_pure_R <- function(g, covariate_matrix, trim_frac = 
     robustbase::glmrob(
       fml, data = df,
       family = stats::poisson(),
-      method = "Mqle"
+      method = "MT"
     )
   )
 
@@ -165,13 +170,25 @@ fit_baseline_glmrob_trimmed_pure_R <- function(g, covariate_matrix, trim_frac = 
   fit$linear.predictors <- eta_all
   fit$trim_frac         <- effective_trim_frac
   fit$n_trimmed         <- sum(!keep)
+
+  # Expand the kept-rows-only weights back to full length n, NA at trimmed
+  # cells. This keeps w_r / w_x indexed by cell across guides regardless of
+  # how many were trimmed.
+  w_r_full <- rep(NA_real_, n); w_r_full[keep] <- fit$w.r
+  w_x_full <- rep(NA_real_, n); w_x_full[keep] <- fit$w.x
+
   fit$offset_model_summary <- list(
     coefficients        = fit$coefficients,
     deviance            = fit$deviance,
     iter                = fit$iter,
     converged           = fit$converged,
     effective_trim_frac = effective_trim_frac,
-    n_trimmed           = sum(!keep)
+    n_trimmed           = sum(!keep),
+    # Per-cell robustness weights (length n). NA marks trimmed cells (not fit).
+    # w_r downweights large Pearson residuals; w_x downweights high-leverage
+    # covariate rows.
+    w_r                 = w_r_full,
+    w_x                 = w_x_full
   )
   fit
 }
@@ -183,7 +200,8 @@ fit_baseline_glmrob_trimmed_pure_R <- function(g, covariate_matrix, trim_frac = 
 # evaluate fitted means on ALL cells (the trimmed cells receive a baseline
 # prediction extrapolated from the bulk, not influenced by themselves).
 #
-# This avoids the multiple-solutions pathology of Mqle: the Poisson MLE on a
+# This avoids the M-estimator pathologies of glmrob (multiple solutions for
+# Mqle, slow / sometimes brittle convergence for MT): the Poisson MLE on a
 # subset of cells is a convex problem with a unique solution. The only knob is
 # what fraction to drop. Its failure modes are easy to reason about: too high
 # `trim_frac` -> fit becomes unstable from too few cells; too low -> still

@@ -1,4 +1,4 @@
-# Trimmed robust Poisson GLM offset (top 0.1% by g dropped, then glmrob Mqle),
+# Trimmed robust Poisson GLM offset (top 0.1% by g dropped, then glmrob MT),
 # Poisson mixture, multiplicative M-step (fixed).
 
 source(file.path(bin_dir, "script", "lib", "run_variant.R"))
@@ -17,7 +17,7 @@ assign_grnas_script <- function(response_matrix, grna_matrix, grna_target_df,
     offset_model_fit_fn = offset_model_fit_fn,
     offset_spec         = list(
       name        = "fit_baseline_glmrob_trimmed_pure_R",
-      description = "Robust Poisson GLM via glmrob (Mqle) on cells outside the top trim_frac of g",
+      description = "Robust Poisson GLM via glmrob (MT) on cells outside the top trim_frac of g",
       params      = list(trim_frac = TRIM_FRAC)
     ),
     worker_libraries    = c("Matrix", "robustbase"),
