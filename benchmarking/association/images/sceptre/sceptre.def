@@ -3,8 +3,8 @@ From: rocker/r-ver:4.4.3
 
 %labels
     Author Louis Deutsch
-    Description Sceptre guide assignment container (with procps) from latest main
-    Version 1.1
+    Description Sceptre guide assignment container (with procps + robustbase + MASS) from latest main
+    Version 1.2
 
 %post
     set -eux
@@ -36,6 +36,12 @@ From: rocker/r-ver:4.4.3
     R --slave -e 'install.packages("remotes", repos="https://cran.r-project.org")'
     R --slave -e 'remotes::install_github("Katsevich-Lab/sceptre", dependencies=TRUE, upgrade="never")'
 
+    # Extra CRAN packages used by bin/script/{variant}.R fitters
+    # (MASS is also pulled in transitively via sceptre's deps -- listing it
+    # here keeps the variants' requireNamespace() checks robust if that ever
+    # changes upstream).
+    R --slave -e 'install.packages(c("robustbase", "MASS"), repos="https://cran.r-project.org")'
+
     # Working directory (optional)
     mkdir -p /opt/sceptre
 
@@ -53,5 +59,7 @@ From: rocker/r-ver:4.4.3
     which ps
     ps -o pid,comm | head -n 2
     R --quiet -e 'suppressPackageStartupMessages(library(sceptre)); cat("sceptre ", as.character(packageVersion("sceptre")), " OK\n", sep="")'
+    R --quiet -e 'suppressPackageStartupMessages(library(robustbase)); cat("robustbase ", as.character(packageVersion("robustbase")), " OK\n", sep="")'
+    R --quiet -e 'suppressPackageStartupMessages(library(MASS)); cat("MASS ", as.character(packageVersion("MASS")), " OK\n", sep="")'
 
 
