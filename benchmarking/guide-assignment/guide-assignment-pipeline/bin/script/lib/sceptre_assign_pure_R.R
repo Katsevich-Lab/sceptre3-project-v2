@@ -229,6 +229,98 @@ fit_baseline_glm_trimmed_pure_R <- function(g, covariate_matrix, trim_frac = 0.0
 }
 
 
+# ---- NB GLM baseline fit (MASS::glm.nb) -------------------------------------
+# Iterative MLE of (beta, theta) under a NB GLM via MASS::glm.nb. Returns
+# fitted means (used by EM as g_mus_pert0) plus the estimated theta on the
+# fit object, so a paired `estimate_phi_fn` can read it directly without
+# re-estimating.
+fit_baseline_glm_nb <- function(g, covariate_matrix) {
+  if (!requireNamespace("MASS", quietly = TRUE)) {
+    stop("`fit_baseline_glm_nb` requires the `MASS` package.")
+  }
+  # MASS::glm.nb needs a formula + data interface, not glm.fit's x/y. The "-1"
+  # only suppresses adding *another* intercept on top of `covariate_matrix`;
+  # the original intercept column from the user's formula (named "(Intercept)"
+  # by model.matrix) is renamed X1 here and stays as a predictor. So this is
+  # equivalent to calling glm.fit(y = g, x = covariate_matrix, ...) as in the
+  # other fit fns -- intercept iff the user's formula had one.
+  safe_names <- paste0("X", seq_len(ncol(covariate_matrix)))
+  df <- as.data.frame(covariate_matrix)
+  colnames(df) <- safe_names
+  df$.y <- g
+  fml <- stats::as.formula(
+    paste0(".y ~ -1 + ", paste(safe_names, collapse = " + "))
+  )
+  fit <- suppressWarnings(MASS::glm.nb(formula = fml, data = df))
+  fit$offset_model_summary <- list(
+    coefficients = fit$coefficients,
+    deviance     = fit$deviance,
+    iter         = fit$iter,
+    converged    = fit$converged,
+    theta        = fit$theta,
+    SE_theta     = fit$SE.theta,
+    twologlik    = fit$twologlik
+  )
+  fit
+}
+
+
+# ---- NB phi (= theta) estimators --------------------------------------------
+# An `estimate_phi_fn` is called per guide as
+#   estimate_phi_fn(g, offset_model_fit) -> scalar phi
+# and the result is then handed to run_em_nb_nb_pure_R as the (shared) NB
+# overdispersion. Use one of the helpers below, or write your own that
+# matches that contract.
+
+# Estimate NB theta by fixing mu from the Poisson offset fit and running
+# sceptre's internal Newton estimator. sceptre:::estimate_theta returns
+# `list(theta, method)`; we take the theta only.
+estimate_phi_from_offset_fit_sceptre <- function(g, offset_model_fit,
+                                                  limit = 50L,
+                                                  eps   = .Machine$double.eps^(1/4)) {
+  if (!requireNamespace("sceptre", quietly = TRUE)) {
+    stop("estimate_phi_from_offset_fit_sceptre requires the sceptre package.")
+  }
+  sceptre:::estimate_theta(
+    y     = g,
+    mu    = offset_model_fit$fitted.values,
+    dfr   = offset_model_fit$df.residual,
+    limit = limit,
+    eps   = eps
+  )[[1]]
+}
+
+# Read theta directly off the offset fit. Use this when the offset model
+# already estimated theta jointly (e.g. fit_baseline_glm_nb -> MASS::glm.nb).
+estimate_phi_from_offset_fit_theta <- function(g, offset_model_fit) {
+  offset_model_fit$theta
+}
+
+
+# ---- Phi update given (pi, gamma) from a converged EM -----------------------
+# Maximize the marginal log-likelihood of the NB-NB mixture in phi alone,
+# holding (pi, gamma) and the offset means fixed. Used by
+# run_em_nb_nb_update_phi_pure_R to refine phi between EM passes.
+# Numerically stable form: log1p / log + dnbinom(log = TRUE) + logaddexp.
+est_phi_given_model_pure_R <- function(g, pi, gamma, g_mus_pert0,
+                                       log_phi_lower = -10,
+                                       log_phi_upper =  10) {
+  mu0       <- g_mus_pert0
+  mu1       <- exp(gamma) * g_mus_pert0
+  log_1m_pi <- log1p(-pi)
+  log_pi    <- log(pi)
+  fn <- function(log_phi) {
+    phi    <- exp(log_phi)
+    log_p0 <- log_1m_pi + stats::dnbinom(g, mu = mu0, size = phi, log = TRUE)
+    log_p1 <- log_pi    + stats::dnbinom(g, mu = mu1, size = phi, log = TRUE)
+    mean(logaddexp(log_p0, log_p1))
+  }
+  opt <- stats::optimize(fn, lower = log_phi_lower, upper = log_phi_upper,
+                         maximum = TRUE)
+  exp(opt$maximum)
+}
+
+
 # ---- Pois-Pois mixture EM (mirrors run_reduced_em_algo_cpp) ------------------
 # g_mus_pert0 is the per-cell baseline mean from the Poisson GLM.
 # Note: matches the existing C++ exactly, including the M-step
@@ -499,6 +591,92 @@ run_em_nb_nb_pure_R <- function(g, g_mus_pert0, phi, pi_guesses, g_pert_guesses,
 }
 
 
+# ---- NB-NB EM alternating with phi updates ----------------------------------
+# Coordinate ascent over (pi, gamma) and phi:
+#   for k = 1..(n_phi_updates + 1):
+#     EM at current phi -> (pi, gamma)
+#     if k <= n_phi_updates: phi <- est_phi_given_model_pure_R(...)
+# Total: (n_phi_updates + 1) EM passes, n_phi_updates phi updates. The last
+# EM uses the final phi, so the returned (pi, gamma) match it.
+#
+# If a given EM pass doesn't converge (or returns non-finite pi/gamma), the
+# phi update for that round is skipped and curr_phi is retained. The full
+# per-pass trajectory is returned for diagnostics.
+run_em_nb_nb_update_phi_pure_R <- function(g, g_mus_pert0, phi, pi_guesses,
+                                           g_pert_guesses, n_phi_updates,
+                                           log_g_factorial = NULL,
+                                           max_iter = 50L, min_iter = 3L,
+                                           ep_tol = 0.5e-4) {
+  stopifnot(length(n_phi_updates) == 1L, is.finite(n_phi_updates),
+            n_phi_updates >= 0L)
+  stopifnot(length(phi) == 1L, is.finite(phi), phi > 0)
+
+  K <- n_phi_updates + 1L
+  phi_traj       <- numeric(K)
+  pi_traj        <- rep(NA_real_,    K)
+  g_pert_traj    <- rep(NA_real_,    K)
+  log_lik_traj   <- rep(NA_real_,    K)
+  converged_traj <- rep(NA,          K)
+  init_i_traj    <- rep(NA_integer_, K)
+
+  curr_phi <- phi
+  em_fit   <- NULL
+
+  for (k in seq_len(K)) {
+    phi_traj[k] <- curr_phi
+
+    em_fit <- run_em_nb_nb_pure_R(
+      g               = g,
+      g_mus_pert0     = g_mus_pert0,
+      phi             = curr_phi,
+      pi_guesses      = pi_guesses,
+      g_pert_guesses  = g_pert_guesses,
+      log_g_factorial = log_g_factorial,
+      max_iter        = max_iter,
+      min_iter        = min_iter,
+      ep_tol          = ep_tol
+    )
+
+    pi_traj[k]        <- em_fit$outer_pi
+    g_pert_traj[k]    <- em_fit$outer_g_pert
+    log_lik_traj[k]   <- em_fit$outer_log_lik
+    converged_traj[k] <- em_fit$outer_converged
+    init_i_traj[k]    <- em_fit$outer_i
+
+    # Update phi unless this was the final EM call.
+    if (k <= n_phi_updates) {
+      if (isTRUE(em_fit$outer_converged) &&
+          is.finite(em_fit$outer_pi) && is.finite(em_fit$outer_g_pert)) {
+        new_phi <- tryCatch(
+          est_phi_given_model_pure_R(
+            g           = g,
+            pi          = em_fit$outer_pi,
+            gamma       = em_fit$outer_g_pert,
+            g_mus_pert0 = g_mus_pert0
+          ),
+          error = function(e) NA_real_
+        )
+        if (!is.na(new_phi) && is.finite(new_phi) && new_phi > 0) {
+          curr_phi <- new_phi
+        }
+      }
+      # else: EM didn't converge or update failed -> keep curr_phi
+    }
+  }
+
+  em_fit$phi_final  <- curr_phi
+  em_fit$trajectory <- list(
+    phi       = phi_traj,
+    pi        = pi_traj,
+    g_pert    = g_pert_traj,
+    log_lik   = log_lik_traj,
+    converged = converged_traj,
+    init_i    = init_i_traj
+  )
+  em_fit
+}
+
+
 # ---- Per-guide assignment (mirrors obtain_em_assignments) --------------------
 # Returns the assignments + a small per-guide summary by default. Set
 # keep_fits = TRUE to also retain the full offset-model fit object and full
@@ -518,6 +696,23 @@ run_em_nb_nb_pure_R <- function(g, g_mus_pert0, phi, pi_guesses, g_pert_guesses,
 #   em_phi_pert           : numeric or NA  -- NB only, equal to em_phi_nonpert
 #                            today; can differ once phi is estimated per-class
 #   em_phi_nonpert        : numeric or NA
+#   em_phi_source         : character or NA  -- one of "estimated" (estimate_phi_fn
+#                            succeeded), "fallback" (estimate_phi_fn errored, used
+#                            scalar phi), or "fixed" (no estimate_phi_fn provided).
+#                            Describes the *initial* phi only; refinement across
+#                            phi updates is in em_trajectory. NA for pois / below cutoff.
+#   em_trajectory         : list of length-(n_phi_updates+1) parallel vectors
+#                            recording each EM pass:
+#                              $phi       : phi used as input
+#                              $pi        : output pi (NA if pass didn't converge)
+#                              $g_pert    : output g_pert
+#                              $log_lik   : output log-lik
+#                              $converged : output converged flag
+#                              $init_i    : output winning starting-guess index
+#                            For pois / below-cutoff guides, all entries are NA.
+#                            em_pi / em_g_pert / em_log_lik / em_converged / em_init_i
+#                            and em_phi_pert / em_phi_nonpert are the LAST trajectory
+#                            entry; the trajectory shows how they were arrived at.
 #   prob_quantiles        : length-7 named numeric (0/1/10/50/90/99/100% of Ti1s)
 #   n_above_prob_thresh   : sum(Ti1s >= probability_threshold)
 #   offset_model_summary  : offset_fit$offset_model_summary, or NULL below cutoff
@@ -534,11 +729,20 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
                                    fix_curr_g_pert_bug    = FALSE,
                                    family                 = c("pois", "nb"),
                                    phi                    = NULL,
+                                   estimate_phi_fn        = NULL,
+                                   n_phi_updates          = 0L,
                                    offset_model_fit_fn    = fit_baseline_glm_pure_R) {
   family <- match.arg(family)
-  if (family == "nb" && (is.null(phi) || length(phi) != 1L || !is.finite(phi) || phi <= 0)) {
-    stop("`family = \"nb\"` requires a single positive finite `phi` (NB size parameter).")
+  if (family == "nb") {
+    if (is.null(estimate_phi_fn) &&
+        (is.null(phi) || length(phi) != 1L || !is.finite(phi) || phi <= 0)) {
+      stop("`family = \"nb\"` requires either `estimate_phi_fn` or a single ",
+           "positive finite `phi` (NB size parameter).")
+    }
   }
+  stopifnot(length(n_phi_updates) == 1L, is.finite(n_phi_updates),
+            n_phi_updates >= 0L)
+  n_phi_updates <- as.integer(n_phi_updates)
 
   t_start   <- Sys.time()
   n_nonzero <- sum(g >= 1)
@@ -554,6 +758,15 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
   em_g_pert            <- NA_real_
   em_phi_pert          <- NA_real_
   em_phi_nonpert       <- NA_real_
+  em_phi_source        <- NA_character_
+  em_trajectory        <- list(
+    phi       = rep(NA_real_,    n_phi_updates + 1L),
+    pi        = rep(NA_real_,    n_phi_updates + 1L),
+    g_pert    = rep(NA_real_,    n_phi_updates + 1L),
+    log_lik   = rep(NA_real_,    n_phi_updates + 1L),
+    converged = rep(NA,          n_phi_updates + 1L),
+    init_i    = rep(NA_integer_, n_phi_updates + 1L)
+  )
   prob_quantile_probs  <- c(0, 0.01, 0.1, 0.5, 0.9, 0.99, 1)
   prob_quantiles       <- stats::setNames(
     rep(NA_real_, length(prob_quantile_probs)),
@@ -567,6 +780,36 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
     g_mus_pert0          <- offset_model_fit$fitted.values
     log_g_factorial      <- lgamma(g + 1)
 
+    # For NB: phi is either estimated per-guide from the offset fit, or the
+    # caller-supplied scalar. Shared overdispersion -> pert == nonpert today.
+    # If estimation errors / returns a non-finite value, fall back to the
+    # caller's `phi` scalar and record that via em_phi_source.
+    phi_used <- NA_real_
+    if (family == "nb") {
+      if (!is.null(estimate_phi_fn)) {
+        phi_estimate <- tryCatch(
+          estimate_phi_fn(g, offset_model_fit),
+          error = function(e) NULL
+        )
+        if (!is.null(phi_estimate) && length(phi_estimate) == 1L &&
+            is.finite(phi_estimate) && phi_estimate > 0) {
+          phi_used      <- phi_estimate
+          em_phi_source <- "estimated"
+        } else {
+          phi_used      <- phi
+          em_phi_source <- "fallback"
+        }
+      } else {
+        phi_used      <- phi
+        em_phi_source <- "fixed"
+      }
+      if (is.null(phi_used) || !is.finite(phi_used) || phi_used <= 0) {
+        stop("NB EM needs a positive finite phi but got ", phi_used,
+             " (estimate_phi_fn failed/returned bad value and no usable ",
+             "scalar phi was supplied).")
+      }
+    }
+
     em_fit <- if (family == "pois") {
       run_em_pois_pois_pure_R(
         g                   = g,
@@ -577,12 +820,16 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
         fix_curr_g_pert_bug = fix_curr_g_pert_bug
       )
     } else {
-      run_em_nb_nb_pure_R(
+      # NB: always route through the update_phi wrapper. With n_phi_updates = 0
+      # it just runs one EM pass (same as run_em_nb_nb_pure_R) but returns the
+      # length-1 trajectory; with > 0 it alternates EM and phi updates.
+      run_em_nb_nb_update_phi_pure_R(
         g               = g,
         g_mus_pert0     = g_mus_pert0,
-        phi             = phi,
+        phi             = phi_used,
         pi_guesses      = pi_guesses,
         g_pert_guesses  = g_pert_guesses,
+        n_phi_updates   = n_phi_updates,
         log_g_factorial = log_g_factorial
       )
     }
@@ -599,8 +846,11 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
     em_pi          <- em_fit$outer_pi
     em_g_pert      <- em_fit$outer_g_pert
     if (family == "nb") {
-      em_phi_pert    <- phi
-      em_phi_nonpert <- phi
+      # phi_final reflects all phi updates (= phi_used if n_phi_updates == 0).
+      em_phi_pert    <- em_fit$phi_final
+      em_phi_nonpert <- em_fit$phi_final
+      em_trajectory  <- em_fit$trajectory
+      # em_phi_source already set above when phi_used was determined
     }
   } else {
     assignments <- which(g >= backup_threshold)
@@ -619,6 +869,8 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
     em_g_pert            = em_g_pert,
     em_phi_pert          = em_phi_pert,
     em_phi_nonpert       = em_phi_nonpert,
+    em_phi_source        = em_phi_source,
+    em_trajectory        = em_trajectory,
     prob_quantiles       = prob_quantiles,
     n_above_prob_thresh  = n_above_prob_thresh,
     offset_model_summary = offset_model_summary,
@@ -651,19 +903,28 @@ sceptre_assign_pure_R <- function(grna_matrix,
                                   fix_curr_g_pert_bug    = FALSE,
                                   family                 = c("pois", "nb"),
                                   phi                    = NULL,
+                                  estimate_phi_fn        = NULL,
+                                  n_phi_updates          = 0L,
                                   offset_model_fit_fn    = fit_baseline_glm_pure_R) {
   family <- match.arg(family)
-  if (family == "nb" && (is.null(phi) || length(phi) != 1L || !is.finite(phi) || phi <= 0)) {
-    stop("`family = \"nb\"` requires a single positive finite `phi` (NB size parameter).")
+  if (family == "nb") {
+    if (is.null(estimate_phi_fn) &&
+        (is.null(phi) || length(phi) != 1L || !is.finite(phi) || phi <= 0)) {
+      stop("`family = \"nb\"` requires either `estimate_phi_fn` or a single ",
+           "positive finite `phi` (NB size parameter).")
+    }
   }
+  stopifnot(length(n_phi_updates) == 1L, is.finite(n_phi_updates),
+            n_phi_updates >= 0L)
+  n_phi_updates <- as.integer(n_phi_updates)
 
   # 0. force all promises that will be captured by the worker closure, so
   # they're shipped to PSOCK workers as values rather than as unevaluated
   # expressions that try to look up symbols (e.g. `scep_sims`) on the worker.
   force(grna_matrix)
   force(n_nonzero_cells_cutoff); force(backup_threshold); force(probability_threshold)
-  force(keep_fits); force(fix_curr_g_pert_bug); force(phi)
-  force(offset_model_fit_fn)
+  force(keep_fits); force(fix_curr_g_pert_bug); force(phi); force(estimate_phi_fn)
+  force(n_phi_updates); force(offset_model_fit_fn)
 
   # 1. design matrix
   covariate_matrix <- stats::model.matrix(object = formula_object,
@@ -707,6 +968,8 @@ sceptre_assign_pure_R <- function(grna_matrix,
       fix_curr_g_pert_bug    = fix_curr_g_pert_bug,
       family                 = family,
       phi                    = phi,
+      estimate_phi_fn        = estimate_phi_fn,
+      n_phi_updates          = n_phi_updates,
       offset_model_fit_fn    = offset_model_fit_fn
     )
   }
@@ -726,6 +989,9 @@ sceptre_assign_pure_R <- function(grna_matrix,
   run_meta <- list(
     family                 = family,
     offset_model_fit_fn    = offset_model_fit_fn,
+    estimate_phi_fn        = estimate_phi_fn,
+    phi                    = phi,
+    n_phi_updates          = n_phi_updates,
     fix_curr_g_pert_bug    = fix_curr_g_pert_bug,
     n_em_rep               = n_em_rep,
     pi_guess_range         = pi_guess_range,
