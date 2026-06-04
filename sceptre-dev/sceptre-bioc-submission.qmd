@@ -36,199 +36,41 @@ execute:
 
 ## Current state
 
-`main` is at commit `6b82999` (2026-05-25). Most recent `BiocCheck` run on this baseline:
-
 ```
-R CMD check  — Status: OK
-BiocCheck    — 1 ERROR · 1 WARNING · 8 NOTES
+R CMD build  — 0 ERRORS · 0 WARNINGS · 0 NOTES
+BiocCheck    — 1 ERROR  · 1 WARNING  · 7 NOTES
 ```
 
-Items are grouped into four categories:
+### We will address / have addressed
 
-- **(A)** Currently surfaces in `BiocCheck` on `main`.
-- **(B)** Mentioned by [Bioconductor documentation](https://contributions.bioconductor.org/) as a submission expectation, even if not flagged by `BiocCheck`.
-- **(C)** Not in (A) or (B), but addressed anyway with justification.
-- **(D)** Deferred — not pursued at this time, with rationale.
+- **ERROR: Package dependencies must be on CRAN or Bioconductor.** Will be addressed when `ondisc` lands back on CRAN.
+- **NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.** Tim is subscribed.
+- **Non-BiocCheck submission requirement: Bump version to 0.99.0.** We will do this when the time comes.
 
-## Open pull requests in this stream
+### We will not address
 
-- [**PR #205**](https://github.com/Katsevich-Lab/sceptre/pull/205) — see [C1](#c1).
-- [**PR #210**](https://github.com/Katsevich-Lab/sceptre/pull/210) — see [C2](#c2), [C3](#c3), [C4](#c4).
-- [**PR #212**](https://github.com/Katsevich-Lab/sceptre/pull/212) — see [A4](#a4).
-
-## Summary of remaining action items
-
-### Tim
-
-- Push `ondisc` to CRAN with public wrappers for the entry points `sceptre` currently reaches via `:::` ([A1](#a1)).
-- Subscribe to the Bioc-Devel mailing list at <https://stat.ethz.ch/mailman/listinfo/bioc-devel> ([A10](#a10)).
-- Draft the no-Bioc-dependency justification in the [cover letter](https://github.com/Katsevich-Lab/sceptre3-project-v2/blob/singularity-containers/sceptre-dev/sceptre-bioc-cover-letter.md) ([A2](#a2)). The rest of the cover letter — including the [A5](#a5) and [A7](#a7) justifications — is already drafted.
-- Review and merge open PRs [#205](https://github.com/Katsevich-Lab/sceptre/pull/205), [#210](https://github.com/Katsevich-Lab/sceptre/pull/210), and [#212](https://github.com/Katsevich-Lab/sceptre/pull/212).
-- Bump `Version:` to `0.99.0` at submission time ([B1](#b1)).
-
-### Gene
-
-- Add `inst/scripts/` with provenance documents for the bundled fixtures in `inst/extdata/{highmoi_example, parse_example}/` ([B2](#b2)).
+- **WARNING: No Bioconductor dependencies detected.** Tim will justify why ondisc data structure is preferable to Bioconductor data structures.
+- **NOTE: Update R version dependency from 4.1 to 4.6.0.** We want to avoid excluding users.
+- **NOTE: Avoid 'cat' and 'print' outside of 'show' methods.** This note is a "false positive."
+- **NOTE: The recommended function length is 50 lines or less. There are 27 functions greater than 50 lines.** Cosmetic.
+- **NOTE: Consider shorter lines; 829 lines (14%) are > 80 characters long.** Cosmetic.
+- **NOTE: Consider multiples of 4 spaces for line indents; 2,271 lines (37%) are not.** Cosmetic.
 
 ### To discuss
+- **NOTE: Usage of dontrun / donttest tags found in man page examples. 3% of man pages use at least one of these tags.** We have just one instance of `donttest`. Can we get rid of it?
+- **Non-BiocCheck submission requirement: Providing code used to generate `inst/extdata`.** Where did the Parse example data come from? Separately, Gene will move `data-raw` to `inst/scripts`, the preferred place for this code.
 
-- Bump `Depends: R (>= 4.1)` to `R (>= 4.6.0)` to satisfy Bioconductor's "current minor minus one" policy? ([A3](#a3))
+## Bioconductor cover letter
 
-## (A) Surfaces in BiocCheck
+`BiocCheck()` yields one warning and six notes, which we justify below:
 
-### A1 — ERROR: `Remotes: github::timothy-barry/ondisc` {#a1}
+- **WARNING: No Bioconductor dependencies detected.** *Tim should fill in justification.*
+- **NOTE: Update R version dependency from 4.1 to 4.6.0.** We would prefer to avoid excluding users with older versions of R, including those in computer clusters where they do not have control over the version of R installed.
+- **NOTE: Avoid 'cat' and 'print' outside of 'show' methods.** The remaining instances are intentional display/output paths rather than computational logging. In `R/s4_helpers.R`, the flagged `cat()` calls are inside the user-facing S4 `print()` method for `sceptre_object`, after delegating to `show(x)`. In `R/s4_analysis_functs_2.R`, the flagged `print()` call is inside a `sink()` block that captures the analysis summary for the output directory. We believe these are false positives in spirit and have left them in place.
+- **NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.** I am subscribed to this mailing list.
 
-Bioconductor (and CRAN) don't honour `Remotes:`. Every package in `Imports`/`Depends`/`Suggests` must be on CRAN or Bioconductor. The same gate also covers the eight `ondisc:::` calls in `sceptre` that reach into `ondisc`'s unexported internals — a `:::` usage that reviewers will flag separately.
+We following three notes are cosmetic, so we have deferred addressing them on an initial submission:
 
-**Resolution:** push `ondisc` back to CRAN with public wrappers for the entry points `sceptre` currently reaches via `:::`, then drop the `Remotes:` field. Gated on Tim's `ondisc` CRAN push.
-
-### A2 — WARNING: No Bioconductor software dependencies {#a2}
-
-`sceptre`'s `Imports` is entirely CRAN. Bioconductor reviewers may ask why submit to Bioc rather than CRAN.
-
-**Resolution:** address with a cover-letter justification. The core argument: `sceptre`'s use of the `ondisc` data structure is better suited to the scale and access patterns of single-cell CRISPR screens than `SingleCellExperiment` — large sparse expression and gRNA-by-cell matrices with per-pair iteration, where on-disk-backed representation is essential. Kasper will back the argument. **Tim** to draft this section of the cover letter.
-
-### A3 — NOTE: R version dependency 4.1 → 4.6.0 {#a3}
-
-Bioconductor's policy is to require an R version no older than the current minor release minus one.
-
-**Resolution — pending decision.** Recommend bumping `Depends: R (>= 4.1)` to `R (>= 4.6.0)`. Closes the NOTE; cost is locking out users on older R installs.
-
-### A4 — NOTE: No `'fnd'` role in `Authors@R` {#a4}
-
-If the work is supported by a grant, Bioconductor encourages crediting the funder via `person(role = "fnd")`.
-
-**Resolution:** Wharton Analytics and U.S. National Science Foundation (Grants DMS-2113072 and DMS-2310654) added to `Authors@R` via the `fnd` role in [**PR #212**](https://github.com/Katsevich-Lab/sceptre/pull/212). Confirmed by `BiocCheck::BiocCheck()` on the PR branch: the "No 'fnd' role found in Authors@R" NOTE no longer fires.
-
-### A5 — NOTE: `cat()` / `print()` outside `show()` methods (2 intentional sites) {#a5}
-
-Two sites are intentional and remain after the previous cleanup pass:
-
-- `R/s4_helpers.R:146` — inside a real S4 `show()` method. BiocCheck's parser cannot tell.
-- `R/s4_analysis_functs_2.R:501` — inside a `sink()/print()/sink()` block that writes the analysis summary to disk.
-
-Both are BiocCheck false positives in spirit.
-
-**Resolution:** acknowledge in the submission cover letter; respond if a reviewer asks.
-
-### A7 — NOTE: `\dontrun{}` / `\donttest{}` tags in man page examples {#a7}
-
-3% of man pages — `man/sceptre-package.Rd`.
-
-**Resolution:** acknowledge; rate is low. Reviewers rarely push.
-
-### A10 — NOTE: Maintainer's Bioc-Devel mailing list subscription not verifiable {#a10}
-
-`BiocCheck` cannot detect subscription — manual step required.
-
-**Resolution:** Tim subscribes at <https://stat.ethz.ch/mailman/listinfo/bioc-devel> before submission.
-
----
-
-The remaining BiocCheck NOTEs are deferred — submission proceeds without addressing them. See [(D)](#d-deferred) for rationale.
-
-### A6 — NOTE: 27 functions over 50 lines (deferred) {#a6}
-
-Longest: `import_data_from_cellranger_memory()` 132, `run_crt_in_memory_v2()` 130, `check_import_data_inputs()` 122, `plot_assign_grnas()` 115, `run_perm_test_in_memory()` 113.
-
-**Resolution:** [D1](#d1) — deferred.
-
-### A8 — NOTE: 832 lines (14%) over 80 chars (deferred) {#a8}
-
-**Resolution:** [D2](#d2) — deferred.
-
-### A9 — NOTE: 2,257 lines (37%) with non-multiple-of-4 indents (deferred) {#a9}
-
-**Resolution:** [D2](#d2) — deferred.
-
-## (B) Mentioned by Bioconductor documentation
-
-### B1 — Version bump to `0.99.z` for first submission {#b1}
-
-Bioconductor requires new packages to be at version `0.99.z`. Currently `0.10.3`.
-
-**Resolution:** bump `Version:` in `DESCRIPTION` to `0.99.0` at submission time. Doing it earlier signals "submitting now" to anyone reading the repo, so postpone until the rest of the work is ready.
-
-### B2 — `inst/scripts/` provenance for `inst/extdata/` data {#b2}
-
-Bioconductor [docs](https://contributions.bioconductor.org/docs.html) require that `inst/extdata/` contents be accompanied by scripts in `inst/scripts/` documenting "how the data was obtained and prepared," including source URLs and pre-processing details. `sceptre` ships fixtures under `inst/extdata/{highmoi_example, parse_example}/` but currently has no `inst/scripts/`.
-
-**Resolution:** add `inst/scripts/` with a provenance document for each fixture before submission.
-
-## (C) Addressed anyway, with justification
-
-### C1 — PR #205: option-aware `n_processors = "auto"` {#c1}
-
-Two coupled changes:
-
-- Make the `n_processors = "auto"` default honor the user's `parallelly.availableCores.fraction` R option (with `0.5` as the default when the option is unset). Previously, `parallelly::availableCores(fraction = 0.5)` was hardcoded, silently ignoring whatever the user had configured.
-- Relax the `parallelly` version pin from `>= 1.47.0` to `>= 1.23.0`.
-
-**Justification:** correct user-facing behavior. The hardcoded `0.5` had the surprising property of overriding a user's explicit `options(parallelly.availableCores.fraction = X)` setting, with no documented escape. Not BiocCheck-flagged; not in Bioconductor docs.
-
-### C2 — PR #210: typo rename `fisher_yates_samlper` {#c2}
-
-`src/generate_samples_functions.cpp:30` defined the C++ entry point with a typo (`samlper`). PR #210 renames the C++ symbol to `fisher_yates_sampler`, regenerates `RcppExports`, and adds an R-level `.Deprecated()` alias preserving the old name for any out-of-tree caller using it.
-
-**Justification:** the typo is embarrassing, the rename is mechanical, and the deprecation alias keeps backward compatibility. Not BiocCheck-flagged; not in Bioconductor docs.
-
-### C3 — PR #210: drop orphan `[[Rcpp::export]]` tags {#c3}
-
-Nine functions across `src/check_functions.cpp`, `src/mixture_functs.cpp`, `src/shared_low_level_functions.cpp`, and `src/sparse_matrix_functs.cpp` carry `[[Rcpp::export]]` tags but have no R-side caller. PR #210 demotes them.
-
-**Justification:** namespace hygiene; reduces surface area; avoids exporting C++ functions that aren't part of the user contract. Not BiocCheck-flagged; not in Bioconductor docs.
-
-### C4 — PR #210: `using namespace Rcpp;` removed from header {#c4}
-
-`src/shared_low_level_functions.h` had `using namespace Rcpp;` at file scope. PR #210 removes it and adds explicit `Rcpp::` qualification at use sites. `.cpp` files keep their `using namespace` — that's conventional.
-
-**Justification:** `using namespace` at file scope in a header pollutes every source file that includes it. Standard C++ practice is to avoid this. Not BiocCheck-flagged; not in Bioconductor docs.
-
-## (D) Deferred
-
-### D1 — Function-length refactor (closes A6) {#d1}
-
-27 functions exceed 50 lines. Refactoring is high-touch and risks introducing regressions in well-tested code.
-
-**Decision:** deferred. Submit as-is; BiocCheck NOTEs do not block submission. Revisit post-acceptance if useful.
-
-### D2 — Whitespace styler pass (closes A8, A9) {#d2}
-
-`styler::style_pkg()` would close the line-length and indent NOTEs but produces a massive whitespace-only diff that obscures `git blame` and conflicts with concurrent feature work.
-
-**Decision:** deferred. Single-shot pass after the submission lands.
-
-### D3 — `setValidity()` for `sceptre_object` {#d3}
-
-A common reviewer-pushback item on packages with user-facing S4 classes.
-
-**Decision:** declined. `sceptre_object` is built incrementally across the pipeline (`import_data` → `set_analysis_parameters` → `assign_grnas` → `run_qc` → …), so many slots are legitimately empty at intermediate stages. A stage-independent validity method catches few real bugs for its maintenance cost; a stage-aware one would require explicit `validObject()` calls through the function chain. The class is not exported in `NAMESPACE`. Revisit if a reviewer asks.
-
-### D4 — Class-level documentation for `sceptre_object` {#d4}
-
-A `man/sceptre_object-class.Rd` enumerating each slot.
-
-**Decision:** declined. `sceptre_object` is not exported. The sceptre book directs users to accessor functions (`get_response_matrix()`, `get_grna_matrix()`, `get_cell_covariates()`) rather than slots; `?sceptre_object` returning no help page is consistent with that user contract. R CMD check does not flag missing documentation on unexported S4 classes. Revisit if a reviewer asks.
-
-### D5 — Importer test coverage {#d5}
-
-`R/import_functs.R` is at 16.6%; ondisc-related paths are at 0%. Reviewers occasionally run `covr` and notice gaps.
-
-**Decision:** deferred. Shape-only smoke tests were drafted but not landed; fixture-pinned dimensions (asserting against known truths read directly from the bundled `.mtx` files) would be stronger and could be added in a release-coordinated effort.
-
-### D6 — `_v2` / `_v3` / `_v4` naming in the public C++ API {#d6}
-
-Several functions in the public C++ API carry version-suffix names (`run_low_level_test_full_v4`, `compute_nt_nonzero_matrix_and_n_ok_pairs_v3`, `sample_undercover_pairs_v2`, …).
-
-**Decision:** deferred. Not BiocCheck-flagged; reviewer-style item. Not pursued now to keep the current C++ PR (#210) surface focused. Easy to land later as its own focused rename PR with deprecation aliases on the public symbols.
-
-### D7 — Polish items not flagged by BiocCheck {#d7}
-
-Three items that have surfaced in earlier passes but are not check-flagged today:
-
-- `LazyDataCompression: xz` — `data/` is 1 MB, well under any size flag.
-- Gzip `inst/extdata/parse_example/gene_mat.mtx` — `inst/` is 700 KB total, not size-flagged.
-- Gate `crayon::red()` / `crayon::blue()` on `interactive()` — ANSI escape codes leak into pipeline / CI logs when run non-interactively.
-
-**Decision:** deferred. None are check-flagged; address only if a real-user complaint surfaces or as part of an unrelated PR that touches the same code.
-
+- **NOTE: The recommended function length is 50 lines or less. There are 27 functions greater than 50 lines.**
+- **NOTE: Consider shorter lines; 829 lines (14%) are > 80 characters long.**
+- **NOTE: Consider multiples of 4 spaces for line indents; 2,271 lines (37%) are not.**

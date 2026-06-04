@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Eugene Katsevich">
-<meta name="dcterms.date" content="2026-05-28">
+<meta name="dcterms.date" content="2026-06-04">
 
 <title>sceptre — Bioconductor Submission Plan</title>
 <style>
@@ -2296,49 +2296,13 @@ margin: 2em 0;
     <h2 id="toc-title">Contents</h2>
    
   <ul>
-  <li><a href="#current-state" id="toc-current-state" class="nav-link active" data-scroll-target="#current-state"><span class="header-section-number">1</span> Current state</a></li>
-  <li><a href="#open-pull-requests-in-this-stream" id="toc-open-pull-requests-in-this-stream" class="nav-link" data-scroll-target="#open-pull-requests-in-this-stream"><span class="header-section-number">2</span> Open pull requests in this stream</a></li>
-  <li><a href="#summary-of-remaining-action-items" id="toc-summary-of-remaining-action-items" class="nav-link" data-scroll-target="#summary-of-remaining-action-items"><span class="header-section-number">3</span> Summary of remaining action items</a>
+  <li><a href="#current-state" id="toc-current-state" class="nav-link active" data-scroll-target="#current-state"><span class="header-section-number">1</span> Current state</a>
   <ul class="collapse">
-  <li><a href="#tim" id="toc-tim" class="nav-link" data-scroll-target="#tim"><span class="header-section-number">3.1</span> Tim</a></li>
-  <li><a href="#gene" id="toc-gene" class="nav-link" data-scroll-target="#gene"><span class="header-section-number">3.2</span> Gene</a></li>
-  <li><a href="#to-discuss" id="toc-to-discuss" class="nav-link" data-scroll-target="#to-discuss"><span class="header-section-number">3.3</span> To discuss</a></li>
+  <li><a href="#we-will-address-have-addressed" id="toc-we-will-address-have-addressed" class="nav-link" data-scroll-target="#we-will-address-have-addressed"><span class="header-section-number">1.1</span> We will address / have addressed</a></li>
+  <li><a href="#we-will-not-address" id="toc-we-will-not-address" class="nav-link" data-scroll-target="#we-will-not-address"><span class="header-section-number">1.2</span> We will not address</a></li>
+  <li><a href="#to-discuss" id="toc-to-discuss" class="nav-link" data-scroll-target="#to-discuss"><span class="header-section-number">1.3</span> To discuss</a></li>
   </ul></li>
-  <li><a href="#a-surfaces-in-bioccheck" id="toc-a-surfaces-in-bioccheck" class="nav-link" data-scroll-target="#a-surfaces-in-bioccheck"><span class="header-section-number">4</span> (A) Surfaces in BiocCheck</a>
-  <ul class="collapse">
-  <li><a href="#a1" id="toc-a1" class="nav-link" data-scroll-target="#a1"><span class="header-section-number">4.1</span> A1 — ERROR: <code>Remotes: github::timothy-barry/ondisc</code></a></li>
-  <li><a href="#a2" id="toc-a2" class="nav-link" data-scroll-target="#a2"><span class="header-section-number">4.2</span> A2 — WARNING: No Bioconductor software dependencies</a></li>
-  <li><a href="#a3" id="toc-a3" class="nav-link" data-scroll-target="#a3"><span class="header-section-number">4.3</span> A3 — NOTE: R version dependency 4.1 → 4.6.0</a></li>
-  <li><a href="#a4" id="toc-a4" class="nav-link" data-scroll-target="#a4"><span class="header-section-number">4.4</span> A4 — NOTE: No <code>&#39;fnd&#39;</code> role in <code>Authors@R</code></a></li>
-  <li><a href="#a5" id="toc-a5" class="nav-link" data-scroll-target="#a5"><span class="header-section-number">4.5</span> A5 — NOTE: <code>cat()</code> / <code>print()</code> outside <code>show()</code> methods (2 intentional sites)</a></li>
-  <li><a href="#a7" id="toc-a7" class="nav-link" data-scroll-target="#a7"><span class="header-section-number">4.6</span> A7 — NOTE: <code>\dontrun{}</code> / <code>\donttest{}</code> tags in man page examples</a></li>
-  <li><a href="#a10" id="toc-a10" class="nav-link" data-scroll-target="#a10"><span class="header-section-number">4.7</span> A10 — NOTE: Maintainer’s Bioc-Devel mailing list subscription not verifiable</a></li>
-  <li><a href="#a6" id="toc-a6" class="nav-link" data-scroll-target="#a6"><span class="header-section-number">4.8</span> A6 — NOTE: 27 functions over 50 lines (deferred)</a></li>
-  <li><a href="#a8" id="toc-a8" class="nav-link" data-scroll-target="#a8"><span class="header-section-number">4.9</span> A8 — NOTE: 832 lines (14%) over 80 chars (deferred)</a></li>
-  <li><a href="#a9" id="toc-a9" class="nav-link" data-scroll-target="#a9"><span class="header-section-number">4.10</span> A9 — NOTE: 2,257 lines (37%) with non-multiple-of-4 indents (deferred)</a></li>
-  </ul></li>
-  <li><a href="#b-mentioned-by-bioconductor-documentation" id="toc-b-mentioned-by-bioconductor-documentation" class="nav-link" data-scroll-target="#b-mentioned-by-bioconductor-documentation"><span class="header-section-number">5</span> (B) Mentioned by Bioconductor documentation</a>
-  <ul class="collapse">
-  <li><a href="#b1" id="toc-b1" class="nav-link" data-scroll-target="#b1"><span class="header-section-number">5.1</span> B1 — Version bump to <code>0.99.z</code> for first submission</a></li>
-  <li><a href="#b2" id="toc-b2" class="nav-link" data-scroll-target="#b2"><span class="header-section-number">5.2</span> B2 — <code>inst/scripts/</code> provenance for <code>inst/extdata/</code> data</a></li>
-  </ul></li>
-  <li><a href="#c-addressed-anyway-with-justification" id="toc-c-addressed-anyway-with-justification" class="nav-link" data-scroll-target="#c-addressed-anyway-with-justification"><span class="header-section-number">6</span> (C) Addressed anyway, with justification</a>
-  <ul class="collapse">
-  <li><a href="#c1" id="toc-c1" class="nav-link" data-scroll-target="#c1"><span class="header-section-number">6.1</span> C1 — PR #205: option-aware <code>n_processors = &quot;auto&quot;</code></a></li>
-  <li><a href="#c2" id="toc-c2" class="nav-link" data-scroll-target="#c2"><span class="header-section-number">6.2</span> C2 — PR #210: typo rename <code>fisher_yates_samlper</code></a></li>
-  <li><a href="#c3" id="toc-c3" class="nav-link" data-scroll-target="#c3"><span class="header-section-number">6.3</span> C3 — PR #210: drop orphan <code>[[Rcpp::export]]</code> tags</a></li>
-  <li><a href="#c4" id="toc-c4" class="nav-link" data-scroll-target="#c4"><span class="header-section-number">6.4</span> C4 — PR #210: <code>using namespace Rcpp;</code> removed from header</a></li>
-  </ul></li>
-  <li><a href="#d-deferred" id="toc-d-deferred" class="nav-link" data-scroll-target="#d-deferred"><span class="header-section-number">7</span> (D) Deferred</a>
-  <ul class="collapse">
-  <li><a href="#d1" id="toc-d1" class="nav-link" data-scroll-target="#d1"><span class="header-section-number">7.1</span> D1 — Function-length refactor (closes A6)</a></li>
-  <li><a href="#d2" id="toc-d2" class="nav-link" data-scroll-target="#d2"><span class="header-section-number">7.2</span> D2 — Whitespace styler pass (closes A8, A9)</a></li>
-  <li><a href="#d3" id="toc-d3" class="nav-link" data-scroll-target="#d3"><span class="header-section-number">7.3</span> D3 — <code>setValidity()</code> for <code>sceptre_object</code></a></li>
-  <li><a href="#d4" id="toc-d4" class="nav-link" data-scroll-target="#d4"><span class="header-section-number">7.4</span> D4 — Class-level documentation for <code>sceptre_object</code></a></li>
-  <li><a href="#d5" id="toc-d5" class="nav-link" data-scroll-target="#d5"><span class="header-section-number">7.5</span> D5 — Importer test coverage</a></li>
-  <li><a href="#d6" id="toc-d6" class="nav-link" data-scroll-target="#d6"><span class="header-section-number">7.6</span> D6 — <code>_v2</code> / <code>_v3</code> / <code>_v4</code> naming in the public C++ API</a></li>
-  <li><a href="#d7" id="toc-d7" class="nav-link" data-scroll-target="#d7"><span class="header-section-number">7.7</span> D7 — Polish items not flagged by BiocCheck</a></li>
-  </ul></li>
+  <li><a href="#bioconductor-cover-letter" id="toc-bioconductor-cover-letter" class="nav-link" data-scroll-target="#bioconductor-cover-letter"><span class="header-section-number">2</span> Bioconductor cover letter</a></li>
   </ul>
 </nav>
 </div>
@@ -2365,7 +2329,7 @@ margin: 2em 0;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">May 28, 2026</p>
+      <p class="date">June 4, 2026</p>
     </div>
   </div>
   
@@ -2379,190 +2343,50 @@ margin: 2em 0;
 
 <section id="current-state" class="level2" data-number="1">
 <h2 data-number="1" class="anchored" data-anchor-id="current-state"><span class="header-section-number">1</span> Current state</h2>
-<p><code>main</code> is at commit <code>6b82999</code> (2026-05-25). Most recent <code>BiocCheck</code> run on this baseline:</p>
-<pre><code>R CMD check  — Status: OK
-BiocCheck    — 1 ERROR · 1 WARNING · 8 NOTES</code></pre>
-<p>Items are grouped into four categories:</p>
+<pre><code>R CMD build  — 0 ERRORS · 0 WARNINGS · 0 NOTES
+BiocCheck    — 1 ERROR  · 1 WARNING  · 7 NOTES</code></pre>
+<section id="we-will-address-have-addressed" class="level3" data-number="1.1">
+<h3 data-number="1.1" class="anchored" data-anchor-id="we-will-address-have-addressed"><span class="header-section-number">1.1</span> We will address / have addressed</h3>
 <ul>
-<li><strong>(A)</strong> Currently surfaces in <code>BiocCheck</code> on <code>main</code>.</li>
-<li><strong>(B)</strong> Mentioned by <a href="https://contributions.bioconductor.org/">Bioconductor documentation</a> as a submission expectation, even if not flagged by <code>BiocCheck</code>.</li>
-<li><strong>(C)</strong> Not in (A) or (B), but addressed anyway with justification.</li>
-<li><strong>(D)</strong> Deferred — not pursued at this time, with rationale.</li>
+<li><strong>ERROR: Package dependencies must be on CRAN or Bioconductor.</strong> Will be addressed when <code>ondisc</code> lands back on CRAN.</li>
+<li><strong>NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.</strong> Tim is subscribed.</li>
+<li><strong>Non-BiocCheck submission requirement: Bump version to 0.99.0.</strong> We will do this when the time comes.</li>
 </ul>
 </section>
-<section id="open-pull-requests-in-this-stream" class="level2" data-number="2">
-<h2 data-number="2" class="anchored" data-anchor-id="open-pull-requests-in-this-stream"><span class="header-section-number">2</span> Open pull requests in this stream</h2>
+<section id="we-will-not-address" class="level3" data-number="1.2">
+<h3 data-number="1.2" class="anchored" data-anchor-id="we-will-not-address"><span class="header-section-number">1.2</span> We will not address</h3>
 <ul>
-<li><a href="https://github.com/Katsevich-Lab/sceptre/pull/205"><strong>PR #205</strong></a> — see <a href="#c1">C1</a>.</li>
-<li><a href="https://github.com/Katsevich-Lab/sceptre/pull/210"><strong>PR #210</strong></a> — see <a href="#c2">C2</a>, <a href="#c3">C3</a>, <a href="#c4">C4</a>.</li>
-<li><a href="https://github.com/Katsevich-Lab/sceptre/pull/212"><strong>PR #212</strong></a> — see <a href="#a4">A4</a>.</li>
+<li><strong>WARNING: No Bioconductor dependencies detected.</strong> Tim will justify why ondisc data structure is preferable to Bioconductor data structures.</li>
+<li><strong>NOTE: Update R version dependency from 4.1 to 4.6.0.</strong> We want to avoid excluding users.</li>
+<li><strong>NOTE: Avoid ‘cat’ and ‘print’ outside of ‘show’ methods.</strong> This note is a “false positive.”</li>
+<li><strong>NOTE: The recommended function length is 50 lines or less. There are 27 functions greater than 50 lines.</strong> Cosmetic.</li>
+<li><strong>NOTE: Consider shorter lines; 829 lines (14%) are &gt; 80 characters long.</strong> Cosmetic.</li>
+<li><strong>NOTE: Consider multiples of 4 spaces for line indents; 2,271 lines (37%) are not.</strong> Cosmetic.</li>
 </ul>
 </section>
-<section id="summary-of-remaining-action-items" class="level2" data-number="3">
-<h2 data-number="3" class="anchored" data-anchor-id="summary-of-remaining-action-items"><span class="header-section-number">3</span> Summary of remaining action items</h2>
-<section id="tim" class="level3" data-number="3.1">
-<h3 data-number="3.1" class="anchored" data-anchor-id="tim"><span class="header-section-number">3.1</span> Tim</h3>
+<section id="to-discuss" class="level3" data-number="1.3">
+<h3 data-number="1.3" class="anchored" data-anchor-id="to-discuss"><span class="header-section-number">1.3</span> To discuss</h3>
 <ul>
-<li>Push <code>ondisc</code> to CRAN with public wrappers for the entry points <code>sceptre</code> currently reaches via <code>:::</code> (<a href="#a1">A1</a>).</li>
-<li>Subscribe to the Bioc-Devel mailing list at <a href="https://stat.ethz.ch/mailman/listinfo/bioc-devel" class="uri">https://stat.ethz.ch/mailman/listinfo/bioc-devel</a> (<a href="#a10">A10</a>).</li>
-<li>Draft the no-Bioc-dependency justification in the <a href="https://github.com/Katsevich-Lab/sceptre3-project-v2/blob/singularity-containers/sceptre-dev/sceptre-bioc-cover-letter.md">cover letter</a> (<a href="#a2">A2</a>). The rest of the cover letter — including the <a href="#a5">A5</a> and <a href="#a7">A7</a> justifications — is already drafted.</li>
-<li>Review and merge open PRs <a href="https://github.com/Katsevich-Lab/sceptre/pull/205">#205</a>, <a href="https://github.com/Katsevich-Lab/sceptre/pull/210">#210</a>, and <a href="https://github.com/Katsevich-Lab/sceptre/pull/212">#212</a>.</li>
-<li>Bump <code>Version:</code> to <code>0.99.0</code> at submission time (<a href="#b1">B1</a>).</li>
-</ul>
-</section>
-<section id="gene" class="level3" data-number="3.2">
-<h3 data-number="3.2" class="anchored" data-anchor-id="gene"><span class="header-section-number">3.2</span> Gene</h3>
-<ul>
-<li>Add <code>inst/scripts/</code> with provenance documents for the bundled fixtures in <code>inst/extdata/{highmoi_example, parse_example}/</code> (<a href="#b2">B2</a>).</li>
-</ul>
-</section>
-<section id="to-discuss" class="level3" data-number="3.3">
-<h3 data-number="3.3" class="anchored" data-anchor-id="to-discuss"><span class="header-section-number">3.3</span> To discuss</h3>
-<ul>
-<li>Bump <code>Depends: R (&gt;= 4.1)</code> to <code>R (&gt;= 4.6.0)</code> to satisfy Bioconductor’s “current minor minus one” policy? (<a href="#a3">A3</a>)</li>
+<li><strong>NOTE: Usage of dontrun / donttest tags found in man page examples. 3% of man pages use at least one of these tags.</strong> We have just one instance of <code>donttest</code>. Can we get rid of it?</li>
+<li><strong>Non-BiocCheck submission requirement: Providing code used to generate <code>inst/extdata</code>.</strong> Where did the Parse example data come from? Separately, Gene will move <code>data-raw</code> to <code>inst/scripts</code>, the preferred place for this code.</li>
 </ul>
 </section>
 </section>
-<section id="a-surfaces-in-bioccheck" class="level2" data-number="4">
-<h2 data-number="4" class="anchored" data-anchor-id="a-surfaces-in-bioccheck"><span class="header-section-number">4</span> (A) Surfaces in BiocCheck</h2>
-<section id="a1" class="level3" data-number="4.1">
-<h3 data-number="4.1" class="anchored" data-anchor-id="a1"><span class="header-section-number">4.1</span> A1 — ERROR: <code>Remotes: github::timothy-barry/ondisc</code></h3>
-<p>Bioconductor (and CRAN) don’t honour <code>Remotes:</code>. Every package in <code>Imports</code>/<code>Depends</code>/<code>Suggests</code> must be on CRAN or Bioconductor. The same gate also covers the eight <code>ondisc:::</code> calls in <code>sceptre</code> that reach into <code>ondisc</code>’s unexported internals — a <code>:::</code> usage that reviewers will flag separately.</p>
-<p><strong>Resolution:</strong> push <code>ondisc</code> back to CRAN with public wrappers for the entry points <code>sceptre</code> currently reaches via <code>:::</code>, then drop the <code>Remotes:</code> field. Gated on Tim’s <code>ondisc</code> CRAN push.</p>
-</section>
-<section id="a2" class="level3" data-number="4.2">
-<h3 data-number="4.2" class="anchored" data-anchor-id="a2"><span class="header-section-number">4.2</span> A2 — WARNING: No Bioconductor software dependencies</h3>
-<p><code>sceptre</code>’s <code>Imports</code> is entirely CRAN. Bioconductor reviewers may ask why submit to Bioc rather than CRAN.</p>
-<p><strong>Resolution:</strong> address with a cover-letter justification. The core argument: <code>sceptre</code>’s use of the <code>ondisc</code> data structure is better suited to the scale and access patterns of single-cell CRISPR screens than <code>SingleCellExperiment</code> — large sparse expression and gRNA-by-cell matrices with per-pair iteration, where on-disk-backed representation is essential. Kasper will back the argument. <strong>Tim</strong> to draft this section of the cover letter.</p>
-</section>
-<section id="a3" class="level3" data-number="4.3">
-<h3 data-number="4.3" class="anchored" data-anchor-id="a3"><span class="header-section-number">4.3</span> A3 — NOTE: R version dependency 4.1 → 4.6.0</h3>
-<p>Bioconductor’s policy is to require an R version no older than the current minor release minus one.</p>
-<p><strong>Resolution — pending decision.</strong> Recommend bumping <code>Depends: R (&gt;= 4.1)</code> to <code>R (&gt;= 4.6.0)</code>. Closes the NOTE; cost is locking out users on older R installs.</p>
-</section>
-<section id="a4" class="level3" data-number="4.4">
-<h3 data-number="4.4" class="anchored" data-anchor-id="a4"><span class="header-section-number">4.4</span> A4 — NOTE: No <code>&#39;fnd&#39;</code> role in <code>Authors@R</code></h3>
-<p>If the work is supported by a grant, Bioconductor encourages crediting the funder via <code>person(role = &quot;fnd&quot;)</code>.</p>
-<p><strong>Resolution:</strong> Wharton Analytics and U.S. National Science Foundation (Grants DMS-2113072 and DMS-2310654) added to <code>Authors@R</code> via the <code>fnd</code> role in <a href="https://github.com/Katsevich-Lab/sceptre/pull/212"><strong>PR #212</strong></a>. Confirmed by <code>BiocCheck::BiocCheck()</code> on the PR branch: the “No ‘fnd’ role found in Authors@R” NOTE no longer fires.</p>
-</section>
-<section id="a5" class="level3" data-number="4.5">
-<h3 data-number="4.5" class="anchored" data-anchor-id="a5"><span class="header-section-number">4.5</span> A5 — NOTE: <code>cat()</code> / <code>print()</code> outside <code>show()</code> methods (2 intentional sites)</h3>
-<p>Two sites are intentional and remain after the previous cleanup pass:</p>
+<section id="bioconductor-cover-letter" class="level2" data-number="2">
+<h2 data-number="2" class="anchored" data-anchor-id="bioconductor-cover-letter"><span class="header-section-number">2</span> Bioconductor cover letter</h2>
+<p><code>BiocCheck()</code> yields one warning and six notes, which we justify below:</p>
 <ul>
-<li><code>R/s4_helpers.R:146</code> — inside a real S4 <code>show()</code> method. BiocCheck’s parser cannot tell.</li>
-<li><code>R/s4_analysis_functs_2.R:501</code> — inside a <code>sink()/print()/sink()</code> block that writes the analysis summary to disk.</li>
+<li><strong>WARNING: No Bioconductor dependencies detected.</strong> <em>Tim should fill in justification.</em></li>
+<li><strong>NOTE: Update R version dependency from 4.1 to 4.6.0.</strong> We would prefer to avoid excluding users with older versions of R, including those in computer clusters where they do not have control over the version of R installed.</li>
+<li><strong>NOTE: Avoid ‘cat’ and ‘print’ outside of ‘show’ methods.</strong> The remaining instances are intentional display/output paths rather than computational logging. In <code>R/s4_helpers.R</code>, the flagged <code>cat()</code> calls are inside the user-facing S4 <code>print()</code> method for <code>sceptre_object</code>, after delegating to <code>show(x)</code>. In <code>R/s4_analysis_functs_2.R</code>, the flagged <code>print()</code> call is inside a <code>sink()</code> block that captures the analysis summary for the output directory. We believe these are false positives in spirit and have left them in place.</li>
+<li><strong>NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.</strong> I am subscribed to this mailing list.</li>
 </ul>
-<p>Both are BiocCheck false positives in spirit.</p>
-<p><strong>Resolution:</strong> acknowledge in the submission cover letter; respond if a reviewer asks.</p>
-</section>
-<section id="a7" class="level3" data-number="4.6">
-<h3 data-number="4.6" class="anchored" data-anchor-id="a7"><span class="header-section-number">4.6</span> A7 — NOTE: <code>\dontrun{}</code> / <code>\donttest{}</code> tags in man page examples</h3>
-<p>3% of man pages — <code>man/sceptre-package.Rd</code>.</p>
-<p><strong>Resolution:</strong> acknowledge; rate is low. Reviewers rarely push.</p>
-</section>
-<section id="a10" class="level3" data-number="4.7">
-<h3 data-number="4.7" class="anchored" data-anchor-id="a10"><span class="header-section-number">4.7</span> A10 — NOTE: Maintainer’s Bioc-Devel mailing list subscription not verifiable</h3>
-<p><code>BiocCheck</code> cannot detect subscription — manual step required.</p>
-<p><strong>Resolution:</strong> Tim subscribes at <a href="https://stat.ethz.ch/mailman/listinfo/bioc-devel" class="uri">https://stat.ethz.ch/mailman/listinfo/bioc-devel</a> before submission.</p>
-<hr>
-<p>The remaining BiocCheck NOTEs are deferred — submission proceeds without addressing them. See <a href="#d-deferred">(D)</a> for rationale.</p>
-</section>
-<section id="a6" class="level3" data-number="4.8">
-<h3 data-number="4.8" class="anchored" data-anchor-id="a6"><span class="header-section-number">4.8</span> A6 — NOTE: 27 functions over 50 lines (deferred)</h3>
-<p>Longest: <code>import_data_from_cellranger_memory()</code> 132, <code>run_crt_in_memory_v2()</code> 130, <code>check_import_data_inputs()</code> 122, <code>plot_assign_grnas()</code> 115, <code>run_perm_test_in_memory()</code> 113.</p>
-<p><strong>Resolution:</strong> <a href="#d1">D1</a> — deferred.</p>
-</section>
-<section id="a8" class="level3" data-number="4.9">
-<h3 data-number="4.9" class="anchored" data-anchor-id="a8"><span class="header-section-number">4.9</span> A8 — NOTE: 832 lines (14%) over 80 chars (deferred)</h3>
-<p><strong>Resolution:</strong> <a href="#d2">D2</a> — deferred.</p>
-</section>
-<section id="a9" class="level3" data-number="4.10">
-<h3 data-number="4.10" class="anchored" data-anchor-id="a9"><span class="header-section-number">4.10</span> A9 — NOTE: 2,257 lines (37%) with non-multiple-of-4 indents (deferred)</h3>
-<p><strong>Resolution:</strong> <a href="#d2">D2</a> — deferred.</p>
-</section>
-</section>
-<section id="b-mentioned-by-bioconductor-documentation" class="level2" data-number="5">
-<h2 data-number="5" class="anchored" data-anchor-id="b-mentioned-by-bioconductor-documentation"><span class="header-section-number">5</span> (B) Mentioned by Bioconductor documentation</h2>
-<section id="b1" class="level3" data-number="5.1">
-<h3 data-number="5.1" class="anchored" data-anchor-id="b1"><span class="header-section-number">5.1</span> B1 — Version bump to <code>0.99.z</code> for first submission</h3>
-<p>Bioconductor requires new packages to be at version <code>0.99.z</code>. Currently <code>0.10.3</code>.</p>
-<p><strong>Resolution:</strong> bump <code>Version:</code> in <code>DESCRIPTION</code> to <code>0.99.0</code> at submission time. Doing it earlier signals “submitting now” to anyone reading the repo, so postpone until the rest of the work is ready.</p>
-</section>
-<section id="b2" class="level3" data-number="5.2">
-<h3 data-number="5.2" class="anchored" data-anchor-id="b2"><span class="header-section-number">5.2</span> B2 — <code>inst/scripts/</code> provenance for <code>inst/extdata/</code> data</h3>
-<p>Bioconductor <a href="https://contributions.bioconductor.org/docs.html">docs</a> require that <code>inst/extdata/</code> contents be accompanied by scripts in <code>inst/scripts/</code> documenting “how the data was obtained and prepared,” including source URLs and pre-processing details. <code>sceptre</code> ships fixtures under <code>inst/extdata/{highmoi_example, parse_example}/</code> but currently has no <code>inst/scripts/</code>.</p>
-<p><strong>Resolution:</strong> add <code>inst/scripts/</code> with a provenance document for each fixture before submission.</p>
-</section>
-</section>
-<section id="c-addressed-anyway-with-justification" class="level2" data-number="6">
-<h2 data-number="6" class="anchored" data-anchor-id="c-addressed-anyway-with-justification"><span class="header-section-number">6</span> (C) Addressed anyway, with justification</h2>
-<section id="c1" class="level3" data-number="6.1">
-<h3 data-number="6.1" class="anchored" data-anchor-id="c1"><span class="header-section-number">6.1</span> C1 — PR #205: option-aware <code>n_processors = &quot;auto&quot;</code></h3>
-<p>Two coupled changes:</p>
+<p>We following three notes are cosmetic, so we have deferred addressing them on an initial submission:</p>
 <ul>
-<li>Make the <code>n_processors = &quot;auto&quot;</code> default honor the user’s <code>parallelly.availableCores.fraction</code> R option (with <code>0.5</code> as the default when the option is unset). Previously, <code>parallelly::availableCores(fraction = 0.5)</code> was hardcoded, silently ignoring whatever the user had configured.</li>
-<li>Relax the <code>parallelly</code> version pin from <code>&gt;= 1.47.0</code> to <code>&gt;= 1.23.0</code>.</li>
+<li><strong>NOTE: The recommended function length is 50 lines or less. There are 27 functions greater than 50 lines.</strong></li>
+<li><strong>NOTE: Consider shorter lines; 829 lines (14%) are &gt; 80 characters long.</strong></li>
+<li><strong>NOTE: Consider multiples of 4 spaces for line indents; 2,271 lines (37%) are not.</strong></li>
 </ul>
-<p><strong>Justification:</strong> correct user-facing behavior. The hardcoded <code>0.5</code> had the surprising property of overriding a user’s explicit <code>options(parallelly.availableCores.fraction = X)</code> setting, with no documented escape. Not BiocCheck-flagged; not in Bioconductor docs.</p>
-</section>
-<section id="c2" class="level3" data-number="6.2">
-<h3 data-number="6.2" class="anchored" data-anchor-id="c2"><span class="header-section-number">6.2</span> C2 — PR #210: typo rename <code>fisher_yates_samlper</code></h3>
-<p><code>src/generate_samples_functions.cpp:30</code> defined the C++ entry point with a typo (<code>samlper</code>). PR #210 renames the C++ symbol to <code>fisher_yates_sampler</code>, regenerates <code>RcppExports</code>, and adds an R-level <code>.Deprecated()</code> alias preserving the old name for any out-of-tree caller using it.</p>
-<p><strong>Justification:</strong> the typo is embarrassing, the rename is mechanical, and the deprecation alias keeps backward compatibility. Not BiocCheck-flagged; not in Bioconductor docs.</p>
-</section>
-<section id="c3" class="level3" data-number="6.3">
-<h3 data-number="6.3" class="anchored" data-anchor-id="c3"><span class="header-section-number">6.3</span> C3 — PR #210: drop orphan <code>[[Rcpp::export]]</code> tags</h3>
-<p>Nine functions across <code>src/check_functions.cpp</code>, <code>src/mixture_functs.cpp</code>, <code>src/shared_low_level_functions.cpp</code>, and <code>src/sparse_matrix_functs.cpp</code> carry <code>[[Rcpp::export]]</code> tags but have no R-side caller. PR #210 demotes them.</p>
-<p><strong>Justification:</strong> namespace hygiene; reduces surface area; avoids exporting C++ functions that aren’t part of the user contract. Not BiocCheck-flagged; not in Bioconductor docs.</p>
-</section>
-<section id="c4" class="level3" data-number="6.4">
-<h3 data-number="6.4" class="anchored" data-anchor-id="c4"><span class="header-section-number">6.4</span> C4 — PR #210: <code>using namespace Rcpp;</code> removed from header</h3>
-<p><code>src/shared_low_level_functions.h</code> had <code>using namespace Rcpp;</code> at file scope. PR #210 removes it and adds explicit <code>Rcpp::</code> qualification at use sites. <code>.cpp</code> files keep their <code>using namespace</code> — that’s conventional.</p>
-<p><strong>Justification:</strong> <code>using namespace</code> at file scope in a header pollutes every source file that includes it. Standard C++ practice is to avoid this. Not BiocCheck-flagged; not in Bioconductor docs.</p>
-</section>
-</section>
-<section id="d-deferred" class="level2" data-number="7">
-<h2 data-number="7" class="anchored" data-anchor-id="d-deferred"><span class="header-section-number">7</span> (D) Deferred</h2>
-<section id="d1" class="level3" data-number="7.1">
-<h3 data-number="7.1" class="anchored" data-anchor-id="d1"><span class="header-section-number">7.1</span> D1 — Function-length refactor (closes A6)</h3>
-<p>27 functions exceed 50 lines. Refactoring is high-touch and risks introducing regressions in well-tested code.</p>
-<p><strong>Decision:</strong> deferred. Submit as-is; BiocCheck NOTEs do not block submission. Revisit post-acceptance if useful.</p>
-</section>
-<section id="d2" class="level3" data-number="7.2">
-<h3 data-number="7.2" class="anchored" data-anchor-id="d2"><span class="header-section-number">7.2</span> D2 — Whitespace styler pass (closes A8, A9)</h3>
-<p><code>styler::style_pkg()</code> would close the line-length and indent NOTEs but produces a massive whitespace-only diff that obscures <code>git blame</code> and conflicts with concurrent feature work.</p>
-<p><strong>Decision:</strong> deferred. Single-shot pass after the submission lands.</p>
-</section>
-<section id="d3" class="level3" data-number="7.3">
-<h3 data-number="7.3" class="anchored" data-anchor-id="d3"><span class="header-section-number">7.3</span> D3 — <code>setValidity()</code> for <code>sceptre_object</code></h3>
-<p>A common reviewer-pushback item on packages with user-facing S4 classes.</p>
-<p><strong>Decision:</strong> declined. <code>sceptre_object</code> is built incrementally across the pipeline (<code>import_data</code> → <code>set_analysis_parameters</code> → <code>assign_grnas</code> → <code>run_qc</code> → …), so many slots are legitimately empty at intermediate stages. A stage-independent validity method catches few real bugs for its maintenance cost; a stage-aware one would require explicit <code>validObject()</code> calls through the function chain. The class is not exported in <code>NAMESPACE</code>. Revisit if a reviewer asks.</p>
-</section>
-<section id="d4" class="level3" data-number="7.4">
-<h3 data-number="7.4" class="anchored" data-anchor-id="d4"><span class="header-section-number">7.4</span> D4 — Class-level documentation for <code>sceptre_object</code></h3>
-<p>A <code>man/sceptre_object-class.Rd</code> enumerating each slot.</p>
-<p><strong>Decision:</strong> declined. <code>sceptre_object</code> is not exported. The sceptre book directs users to accessor functions (<code>get_response_matrix()</code>, <code>get_grna_matrix()</code>, <code>get_cell_covariates()</code>) rather than slots; <code>?sceptre_object</code> returning no help page is consistent with that user contract. R CMD check does not flag missing documentation on unexported S4 classes. Revisit if a reviewer asks.</p>
-</section>
-<section id="d5" class="level3" data-number="7.5">
-<h3 data-number="7.5" class="anchored" data-anchor-id="d5"><span class="header-section-number">7.5</span> D5 — Importer test coverage</h3>
-<p><code>R/import_functs.R</code> is at 16.6%; ondisc-related paths are at 0%. Reviewers occasionally run <code>covr</code> and notice gaps.</p>
-<p><strong>Decision:</strong> deferred. Shape-only smoke tests were drafted but not landed; fixture-pinned dimensions (asserting against known truths read directly from the bundled <code>.mtx</code> files) would be stronger and could be added in a release-coordinated effort.</p>
-</section>
-<section id="d6" class="level3" data-number="7.6">
-<h3 data-number="7.6" class="anchored" data-anchor-id="d6"><span class="header-section-number">7.6</span> D6 — <code>_v2</code> / <code>_v3</code> / <code>_v4</code> naming in the public C++ API</h3>
-<p>Several functions in the public C++ API carry version-suffix names (<code>run_low_level_test_full_v4</code>, <code>compute_nt_nonzero_matrix_and_n_ok_pairs_v3</code>, <code>sample_undercover_pairs_v2</code>, …).</p>
-<p><strong>Decision:</strong> deferred. Not BiocCheck-flagged; reviewer-style item. Not pursued now to keep the current C++ PR (#210) surface focused. Easy to land later as its own focused rename PR with deprecation aliases on the public symbols.</p>
-</section>
-<section id="d7" class="level3" data-number="7.7">
-<h3 data-number="7.7" class="anchored" data-anchor-id="d7"><span class="header-section-number">7.7</span> D7 — Polish items not flagged by BiocCheck</h3>
-<p>Three items that have surfaced in earlier passes but are not check-flagged today:</p>
-<ul>
-<li><code>LazyDataCompression: xz</code> — <code>data/</code> is 1 MB, well under any size flag.</li>
-<li>Gzip <code>inst/extdata/parse_example/gene_mat.mtx</code> — <code>inst/</code> is 700 KB total, not size-flagged.</li>
-<li>Gate <code>crayon::red()</code> / <code>crayon::blue()</code> on <code>interactive()</code> — ANSI escape codes leak into pipeline / CI logs when run non-interactively.</li>
-</ul>
-<p><strong>Decision:</strong> deferred. None are check-flagged; address only if a real-user complaint surfaces or as part of an unrelated PR that touches the same code.</p>
-</section>
 </section>
 
 </main>
