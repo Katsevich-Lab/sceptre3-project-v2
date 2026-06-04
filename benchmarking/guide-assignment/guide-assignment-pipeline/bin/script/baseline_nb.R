@@ -38,7 +38,7 @@ assign_grnas_script <- function(response_matrix, grna_matrix, grna_target_df,
     formula_object       = formula,
     cl                   = cl,
     offset_model_fit_fn  = offset_model_fit_fn,
-    family               = "nb",
+    family               = "nb-shared",
     estimate_phi_fn      = estimate_phi_from_offset_fit_sceptre,
     # Fallback used when estimate_phi_fn errors / returns a bad value for a
     # given guide. Recorded per-guide as em_phi_source = "fallback".

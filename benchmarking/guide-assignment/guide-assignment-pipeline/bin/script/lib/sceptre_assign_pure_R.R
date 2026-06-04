@@ -251,7 +251,40 @@ fit_baseline_glm_nb <- function(g, covariate_matrix) {
   fml <- stats::as.formula(
     paste0(".y ~ -1 + ", paste(safe_names, collapse = " + "))
   )
-  fit <- suppressWarnings(MASS::glm.nb(formula = fml, data = df))
+
+  # Try glm.nb directly (fast path). If it fails ("no valid set of coefficients
+  # has been found: please supply starting values" on near-Poisson or
+  # ill-conditioned designs), fall back to a Poisson glm.fit with theta
+  # estimated separately via sceptre:::estimate_theta -- the same routine used
+  # by estimate_phi_from_offset_fit_sceptre. Downstream
+  # estimate_phi_from_offset_fit_theta then reads $theta and returns this
+  # estimated value (em_phi_source = "estimated") rather than triggering the
+  # scalar-phi fallback.
+  fit <- tryCatch(
+    suppressWarnings(MASS::glm.nb(formula = fml, data = df)),
+    error = function(e) NULL
+  )
+  if (is.null(fit)) {
+    if (!requireNamespace("sceptre", quietly = TRUE)) {
+      stop("fit_baseline_glm_nb's Poisson fallback requires the `sceptre` package.")
+    }
+    fit <- suppressWarnings(
+      stats::glm.fit(y = g, x = covariate_matrix, family = stats::poisson())
+    )
+    fit$theta <- tryCatch(
+      sceptre:::estimate_theta(
+        y     = g,
+        mu    = fit$fitted.values,
+        dfr   = fit$df.residual,
+        limit = 50L,
+        eps   = .Machine$double.eps^(1/4)
+      )[[1]],
+      error = function(e) NA_real_
+    )
+    fit$SE.theta  <- NA_real_
+    fit$twologlik <- NA_real_
+  }
+
   fit$offset_model_summary <- list(
     coefficients = fit$coefficients,
     deviance     = fit$deviance,
@@ -677,6 +710,195 @@ run_em_nb_nb_update_phi_pure_R <- function(g, g_mus_pert0, phi, pi_guesses,
 }
 
 
+# ---- NB size (theta = phi) MLE via uniroot ----------------------------------
+# 1D weighted MLE of the NB size parameter holding mu fixed:
+#   max_phi  sum_i weights_i * log dnbinom(g_i; mu_i, phi)
+# The score is monotone decreasing in phi (NB log-lik is concave in phi),
+# so uniroot finds the unique root. Returns scalar phi; on uniroot failure
+# returns init_phi unchanged.
+nb_size_score <- function(log_phi, g, mu, weights) {
+  phi <- exp(log_phi)
+  sum(weights *
+      (log(phi) - log(phi + mu) + (mu - g) / (mu + phi) +
+       digamma(g + phi) - digamma(phi)))
+}
+
+update_nb_size_pure_R <- function(g, mu, weights, init_phi,
+                                   log_phi_lower = -15, log_phi_upper = 15) {
+  res <- tryCatch(
+    stats::uniroot(nb_size_score,
+                   interval  = c(log_phi_lower, log_phi_upper),
+                   extendInt = "downX",
+                   g = g, mu = mu, weights = weights),
+    error = function(e) NULL
+  )
+  if (is.null(res)) init_phi else exp(res$root)
+}
+
+
+# ---- Joint (gamma, phi1) M-step via alternating uniroot ---------------------
+# Block coordinate ascent: alternate the 1D MLEs for gamma (given phi1) and
+# phi1 (given gamma) until either max_iter is hit or the change in
+# (gamma, log phi1) falls below tol. Each individual M-step uses uniroot;
+# on failure the prev value is retained for that step.
+update_gamma_phi1_pure_R <- function(g, g_mus_pert0, Ti1s,
+                                      gamma_init, phi1_init,
+                                      max_iter = 100L, tol = 1e-6) {
+  curr_gamma <- gamma_init
+  curr_phi1  <- phi1_init
+  k <- 0L
+  for (k in seq_len(max_iter)) {
+    # gamma update given phi1 (reuse the existing nb-shared score)
+    y_plus_phi           <- g + curr_phi1
+    offset_minus_log_phi <- log(g_mus_pert0) - log(curr_phi1)
+    res_gamma <- tryCatch(
+      stats::uniroot(gamma_score,
+                     interval             = c(curr_gamma - 2, curr_gamma + 2),
+                     extendInt            = "downX",
+                     y_plus_phi           = y_plus_phi,
+                     offset_minus_log_phi = offset_minus_log_phi,
+                     phi                  = curr_phi1,
+                     prob_is_1            = Ti1s),
+      error = function(e) NULL
+    )
+    new_gamma <- if (is.null(res_gamma)) curr_gamma else res_gamma$root
+
+    # phi1 update given gamma (1D NB size MLE)
+    mu1      <- exp(new_gamma) * g_mus_pert0
+    new_phi1 <- update_nb_size_pure_R(g, mu = mu1, weights = Ti1s,
+                                       init_phi = curr_phi1)
+
+    delta      <- abs(new_gamma - curr_gamma) + abs(log(new_phi1) - log(curr_phi1))
+    curr_gamma <- new_gamma
+    curr_phi1  <- new_phi1
+    if (delta < tol) break
+  }
+  list(gamma = curr_gamma, phi1 = curr_phi1, n_iter = k)
+}
+
+
+# ---- NB-NB separate-phi mixture EM ------------------------------------------
+# Same outer-loop scaffolding as run_em_nb_nb_pure_R (B starting guesses,
+# sceptre's relative-tol convergence test, degeneracy bail-out), but the
+# mixture has class-specific overdispersions:
+#   nonpert cells:  g_i ~ NB(mean = g_mus_pert0_i,           size = phi0)
+#   pert    cells:  g_i ~ NB(mean = exp(gamma)*g_mus_pert0_i, size = phi1)
+#
+# M-step is ECM in three conditional blocks: phi0, then (gamma, phi1)
+# alternating, then pi (closed-form mean(Ti1s), clipped). No label-switch
+# flip: with phi0 != phi1, flipping would also require swapping phi0 <-> phi1
+# and re-anchoring gamma to the offset, which the conditional M-step can't
+# do directly. Pi clipping keeps pi in (1e-8, 1 - 1e-8) for numerical
+# stability instead.
+#
+# Each starting init seeds phi0 = phi1 = phi (the scalar input); the EM
+# then separates them.
+run_em_nb_separate_pure_R <- function(g, g_mus_pert0, phi,
+                                       pi_guesses, g_pert_guesses,
+                                       log_g_factorial = NULL,
+                                       max_iter = 50L, min_iter = 3L,
+                                       ep_tol = 0.5e-4,
+                                       max_iter_gamma_phi1 = 100L,
+                                       tol_gamma_phi1      = 1e-6) {
+  n <- length(g)
+  B <- length(pi_guesses)
+  stopifnot(length(g_pert_guesses) == B,
+            length(g_mus_pert0)    == n,
+            length(phi) == 1L, is.finite(phi), phi > 0)
+
+  outer_Ti1s      <- numeric(n)
+  outer_i         <- 0L
+  outer_log_lik   <- -Inf
+  outer_converged <- FALSE
+  outer_pi        <- NA_real_
+  outer_g_pert    <- NA_real_
+  outer_phi0      <- NA_real_
+  outer_phi1      <- NA_real_
+
+  for (i in seq_len(B)) {
+    curr_pi      <- min(max(pi_guesses[i], 1e-8), 1 - 1e-8)
+    curr_gamma   <- g_pert_guesses[i]
+    curr_phi0    <- phi
+    curr_phi1    <- phi
+    prev_log_lik <- -Inf
+    curr_log_lik <- -Inf
+    Ti1s         <- numeric(n)
+    converged    <- FALSE
+    iteration    <- 1L
+
+    repeat {
+      # E-step + observed log-lik (single dnbinom pass per class)
+      mu1          <- exp(curr_gamma) * g_mus_pert0
+      log_dnb0     <- stats::dnbinom(g, mu = g_mus_pert0, size = curr_phi0, log = TRUE)
+      log_dnb1     <- stats::dnbinom(g, mu = mu1,         size = curr_phi1, log = TRUE)
+      log_p0       <- log1p(-curr_pi) + log_dnb0
+      log_p1       <- log(curr_pi)    + log_dnb1
+      curr_log_lik <- sum(logaddexp(log_p0, log_p1))
+      Ti1s         <- stats::plogis(log_p1 - log_p0)
+
+      # bail-out on degenerate posteriors
+      if (all(Ti1s <= 1e-100) || any(!is.finite(Ti1s))) {
+        curr_log_lik <- -Inf
+        break
+      }
+
+      # pi update (closed-form, clipped; no flip with separate phi)
+      curr_pi <- min(max(mean(Ti1s), 1e-8), 1 - 1e-8)
+
+      # convergence check (sceptre's relative-tol form)
+      tol <- compute_em_tolerance_pure_R(curr_log_lik, prev_log_lik)
+      if (tol < ep_tol && iteration >= min_iter) {
+        converged <- TRUE
+        break
+      }
+      prev_log_lik <- curr_log_lik
+      iteration    <- iteration + 1L
+      if (iteration >= max_iter) break
+
+      # M-step for phi0 (weights = 1 - Ti1s; class mean = g_mus_pert0)
+      curr_phi0 <- update_nb_size_pure_R(
+        g        = g, mu = g_mus_pert0,
+        weights  = 1 - Ti1s,
+        init_phi = curr_phi0
+      )
+
+      # M-step for (gamma, phi1) (weights = Ti1s; alternating uniroot)
+      gp <- update_gamma_phi1_pure_R(
+        g           = g,
+        g_mus_pert0 = g_mus_pert0,
+        Ti1s        = Ti1s,
+        gamma_init  = curr_gamma,
+        phi1_init   = curr_phi1,
+        max_iter    = max_iter_gamma_phi1,
+        tol         = tol_gamma_phi1
+      )
+      curr_gamma <- gp$gamma
+      curr_phi1  <- gp$phi1
+    }
+
+    if (converged && curr_log_lik > outer_log_lik) {
+      outer_Ti1s      <- Ti1s
+      outer_i         <- i
+      outer_log_lik   <- curr_log_lik
+      outer_converged <- TRUE
+      outer_pi        <- curr_pi
+      outer_g_pert    <- curr_gamma
+      outer_phi0      <- curr_phi0
+      outer_phi1      <- curr_phi1
+    }
+  }
+
+  list(outer_Ti1s      = outer_Ti1s,
+       outer_i         = outer_i,
+       outer_converged = outer_converged,
+       outer_log_lik   = outer_log_lik,
+       outer_pi        = outer_pi,
+       outer_g_pert    = outer_g_pert,
+       outer_phi0      = outer_phi0,
+       outer_phi1      = outer_phi1)
+}
+
+
 # ---- Per-guide assignment (mirrors obtain_em_assignments) --------------------
 # Returns the assignments + a small per-guide summary by default. Set
 # keep_fits = TRUE to also retain the full offset-model fit object and full
@@ -693,9 +915,10 @@ run_em_nb_nb_update_phi_pure_R <- function(g, g_mus_pert0, phi, pi_guesses,
 #   em_g_pert             : numeric or NA  -- converged perturbation effect
 #                            (additive for pois w/ fix_curr_g_pert_bug=FALSE,
 #                             log-fold-change otherwise; see run_meta)
-#   em_phi_pert           : numeric or NA  -- NB only, equal to em_phi_nonpert
-#                            today; can differ once phi is estimated per-class
-#   em_phi_nonpert        : numeric or NA
+#   em_phi_pert           : numeric or NA  -- NB only. For nb-shared: equals
+#                            em_phi_nonpert (one shared phi). For nb-separate:
+#                            the class-specific size for perturbed cells (= phi1).
+#   em_phi_nonpert        : numeric or NA  -- NB only. For nb-separate: phi0.
 #   em_phi_source         : character or NA  -- one of "estimated" (estimate_phi_fn
 #                            succeeded), "fallback" (estimate_phi_fn errored, used
 #                            scalar phi), or "fixed" (no estimate_phi_fn provided).
@@ -703,13 +926,18 @@ run_em_nb_nb_update_phi_pure_R <- function(g, g_mus_pert0, phi, pi_guesses,
 #                            phi updates is in em_trajectory. NA for pois / below cutoff.
 #   em_trajectory         : list of length-(n_phi_updates+1) parallel vectors
 #                            recording each EM pass:
-#                              $phi       : phi used as input
+#                              $phi       : phi used as input. For nb-separate
+#                                           (length 1), this is the seed value
+#                                           used to initialize phi0 = phi1.
 #                              $pi        : output pi (NA if pass didn't converge)
 #                              $g_pert    : output g_pert
 #                              $log_lik   : output log-lik
 #                              $converged : output converged flag
 #                              $init_i    : output winning starting-guess index
 #                            For pois / below-cutoff guides, all entries are NA.
+#                            For nb-separate the trajectory is length 1 (n_phi_updates
+#                            must be 0); the final phi0/phi1 live in em_phi_nonpert/
+#                            em_phi_pert and are not in the trajectory.
 #                            em_pi / em_g_pert / em_log_lik / em_converged / em_init_i
 #                            and em_phi_pert / em_phi_nonpert are the LAST trajectory
 #                            entry; the trajectory shows how they were arrived at.
@@ -727,22 +955,26 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
                                    probability_threshold  = 0.8,
                                    keep_fits              = FALSE,
                                    fix_curr_g_pert_bug    = FALSE,
-                                   family                 = c("pois", "nb"),
+                                   family                 = c("pois", "nb-shared", "nb-separate"),
                                    phi                    = NULL,
                                    estimate_phi_fn        = NULL,
                                    n_phi_updates          = 0L,
                                    offset_model_fit_fn    = fit_baseline_glm_pure_R) {
   family <- match.arg(family)
-  if (family == "nb") {
+  if (family %in% c("nb-shared", "nb-separate")) {
     if (is.null(estimate_phi_fn) &&
         (is.null(phi) || length(phi) != 1L || !is.finite(phi) || phi <= 0)) {
-      stop("`family = \"nb\"` requires either `estimate_phi_fn` or a single ",
-           "positive finite `phi` (NB size parameter).")
+      stop("`family = \"", family, "\"` requires either `estimate_phi_fn` or ",
+           "a single positive finite `phi` (NB size parameter).")
     }
   }
   stopifnot(length(n_phi_updates) == 1L, is.finite(n_phi_updates),
             n_phi_updates >= 0L)
   n_phi_updates <- as.integer(n_phi_updates)
+  if (family == "nb-separate" && n_phi_updates > 0L) {
+    stop("`n_phi_updates` must be 0 for `family = \"nb-separate\"` ",
+         "(phi0/phi1 are updated inside each Q-step).")
+  }
 
   t_start   <- Sys.time()
   n_nonzero <- sum(g >= 1)
@@ -781,11 +1013,12 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
     log_g_factorial      <- lgamma(g + 1)
 
     # For NB: phi is either estimated per-guide from the offset fit, or the
-    # caller-supplied scalar. Shared overdispersion -> pert == nonpert today.
+    # caller-supplied scalar. For nb-shared this is THE shared phi; for
+    # nb-separate it's the seed value used to initialize both phi0 and phi1.
     # If estimation errors / returns a non-finite value, fall back to the
     # caller's `phi` scalar and record that via em_phi_source.
     phi_used <- NA_real_
-    if (family == "nb") {
+    if (family %in% c("nb-shared", "nb-separate")) {
       if (!is.null(estimate_phi_fn)) {
         phi_estimate <- tryCatch(
           estimate_phi_fn(g, offset_model_fit),
@@ -819,10 +1052,11 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
         log_g_factorial     = log_g_factorial,
         fix_curr_g_pert_bug = fix_curr_g_pert_bug
       )
-    } else {
-      # NB: always route through the update_phi wrapper. With n_phi_updates = 0
-      # it just runs one EM pass (same as run_em_nb_nb_pure_R) but returns the
-      # length-1 trajectory; with > 0 it alternates EM and phi updates.
+    } else if (family == "nb-shared") {
+      # Always route nb-shared through the update_phi wrapper. With
+      # n_phi_updates = 0 it runs one EM pass (same as run_em_nb_nb_pure_R)
+      # but returns the length-1 trajectory; with > 0 it alternates EM and
+      # phi updates.
       run_em_nb_nb_update_phi_pure_R(
         g               = g,
         g_mus_pert0     = g_mus_pert0,
@@ -830,6 +1064,15 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
         pi_guesses      = pi_guesses,
         g_pert_guesses  = g_pert_guesses,
         n_phi_updates   = n_phi_updates,
+        log_g_factorial = log_g_factorial
+      )
+    } else {  # "nb-separate"
+      run_em_nb_separate_pure_R(
+        g               = g,
+        g_mus_pert0     = g_mus_pert0,
+        phi             = phi_used,
+        pi_guesses      = pi_guesses,
+        g_pert_guesses  = g_pert_guesses,
         log_g_factorial = log_g_factorial
       )
     }
@@ -845,12 +1088,24 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
     em_init_i      <- em_fit$outer_i
     em_pi          <- em_fit$outer_pi
     em_g_pert      <- em_fit$outer_g_pert
-    if (family == "nb") {
+    if (family == "nb-shared") {
       # phi_final reflects all phi updates (= phi_used if n_phi_updates == 0).
       em_phi_pert    <- em_fit$phi_final
       em_phi_nonpert <- em_fit$phi_final
       em_trajectory  <- em_fit$trajectory
       # em_phi_source already set above when phi_used was determined
+    } else if (family == "nb-separate") {
+      # phi0/phi1 are estimated jointly with (pi, gamma) inside each Q-step.
+      em_phi_pert    <- em_fit$outer_phi1
+      em_phi_nonpert <- em_fit$outer_phi0
+      # Length-1 trajectory: one EM pass, no outer phi-update loop.
+      # $phi records the seed value used to initialize both phi0 and phi1.
+      em_trajectory$phi[1L]       <- phi_used
+      em_trajectory$pi[1L]        <- em_fit$outer_pi
+      em_trajectory$g_pert[1L]    <- em_fit$outer_g_pert
+      em_trajectory$log_lik[1L]   <- em_fit$outer_log_lik
+      em_trajectory$converged[1L] <- em_fit$outer_converged
+      em_trajectory$init_i[1L]    <- em_fit$outer_i
     }
   } else {
     assignments <- which(g >= backup_threshold)
@@ -901,22 +1156,26 @@ sceptre_assign_pure_R <- function(grna_matrix,
                                   cl                     = NULL,
                                   keep_fits              = FALSE,
                                   fix_curr_g_pert_bug    = FALSE,
-                                  family                 = c("pois", "nb"),
+                                  family                 = c("pois", "nb-shared", "nb-separate"),
                                   phi                    = NULL,
                                   estimate_phi_fn        = NULL,
                                   n_phi_updates          = 0L,
                                   offset_model_fit_fn    = fit_baseline_glm_pure_R) {
   family <- match.arg(family)
-  if (family == "nb") {
+  if (family %in% c("nb-shared", "nb-separate")) {
     if (is.null(estimate_phi_fn) &&
         (is.null(phi) || length(phi) != 1L || !is.finite(phi) || phi <= 0)) {
-      stop("`family = \"nb\"` requires either `estimate_phi_fn` or a single ",
-           "positive finite `phi` (NB size parameter).")
+      stop("`family = \"", family, "\"` requires either `estimate_phi_fn` or ",
+           "a single positive finite `phi` (NB size parameter).")
     }
   }
   stopifnot(length(n_phi_updates) == 1L, is.finite(n_phi_updates),
             n_phi_updates >= 0L)
   n_phi_updates <- as.integer(n_phi_updates)
+  if (family == "nb-separate" && n_phi_updates > 0L) {
+    stop("`n_phi_updates` must be 0 for `family = \"nb-separate\"` ",
+         "(phi0/phi1 are updated inside each Q-step).")
+  }
 
   # 0. force all promises that will be captured by the worker closure, so
   # they're shipped to PSOCK workers as values rather than as unevaluated

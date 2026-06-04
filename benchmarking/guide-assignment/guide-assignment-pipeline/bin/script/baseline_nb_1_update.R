@@ -40,7 +40,7 @@ assign_grnas_script <- function(response_matrix, grna_matrix, grna_target_df,
     formula_object       = formula,
     cl                   = cl,
     offset_model_fit_fn  = offset_model_fit_fn,
-    family               = "nb",
+    family               = "nb-shared",
     estimate_phi_fn      = estimate_phi_from_offset_fit_sceptre,
     n_phi_updates        = 1L,
     # Fallback used when initial estimate_phi_fn errors / returns a bad value

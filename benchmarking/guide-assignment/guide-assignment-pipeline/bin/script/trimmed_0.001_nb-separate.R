@@ -1,14 +1,15 @@
-# NB-NB mixture EM with a MASS::glm.nb offset model. Theta is estimated
-# jointly with the regression coefficients inside the offset fit, and then
-# reused as the shared overdispersion (phi) for the NB-NB EM.
+# Trimmed Poisson GLM offset (top 0.1% of cells by g dropped before fitting),
+# combined with the NB-NB mixture EM that estimates class-specific
+# overdispersions (phi0 != phi1). Initial seed phi (used to start both phi0
+# and phi1) is estimated per-guide from the trimmed Poisson fit via
+# sceptre's estimate_theta; fallback phi = 5 when that errors.
 
 IMPL_PATH <- file.path(bin_dir, "script", "lib", "sceptre_assign_pure_R.R")
 
 assign_grnas_script <- function(response_matrix, grna_matrix, grna_target_df,
                                 extra_covariates, formula, moi, cpus) {
-  stopifnot(requireNamespace("Matrix",  quietly = TRUE))
-  stopifnot(requireNamespace("MASS",    quietly = TRUE))
-  stopifnot(requireNamespace("sceptre", quietly = TRUE))  # fallback uses sceptre:::estimate_theta
+  stopifnot(requireNamespace("Matrix", quietly = TRUE))
+  stopifnot(requireNamespace("sceptre", quietly = TRUE))  # for sceptre:::estimate_theta
   if (!file.exists(IMPL_PATH)) stop("Implementation not found at: ", IMPL_PATH)
   source(IMPL_PATH)
 
@@ -16,11 +17,13 @@ assign_grnas_script <- function(response_matrix, grna_matrix, grna_target_df,
   cov_df$grna_n_nonzero <- Matrix::colSums(grna_matrix > 0)
   cov_df$grna_n_umis    <- Matrix::colSums(grna_matrix)
 
-  offset_model_fit_fn <- fit_baseline_glm_nb
+  offset_model_fit_fn <- function(g, X) {
+    fit_baseline_glm_trimmed_pure_R(g, X, trim_frac = 0.001)
+  }
   attr(offset_model_fit_fn, "spec") <- list(
-    name        = "fit_baseline_glm_nb",
-    description = "NB GLM via MASS::glm.nb (joint MLE of beta and theta)",
-    params      = list()
+    name        = "fit_baseline_glm_trimmed_pure_R",
+    description = "Poisson MLE GLM fit on cells outside the top trim_frac of g",
+    params      = list(trim_frac = 0.001)
   )
 
   cl <- NULL
@@ -29,8 +32,7 @@ assign_grnas_script <- function(response_matrix, grna_matrix, grna_target_df,
     on.exit(parallel::stopCluster(cl), add = TRUE)
     parallel::clusterCall(cl, source, IMPL_PATH)
     parallel::clusterEvalQ(cl, library(Matrix))
-    parallel::clusterEvalQ(cl, library(MASS))
-    parallel::clusterEvalQ(cl, library(sceptre))  # for the Poisson fallback in fit_baseline_glm_nb
+    parallel::clusterEvalQ(cl, library(sceptre))
   }
 
   results <- sceptre_assign_pure_R(
@@ -40,10 +42,10 @@ assign_grnas_script <- function(response_matrix, grna_matrix, grna_target_df,
     formula_object       = formula,
     cl                   = cl,
     offset_model_fit_fn  = offset_model_fit_fn,
-    family               = "nb-shared",
-    estimate_phi_fn      = estimate_phi_from_offset_fit_theta,
-    # Fallback used when the glm.nb-derived theta is bad (e.g. fit didn't
-    # converge cleanly). Recorded per-guide as em_phi_source = "fallback".
+    family               = "nb-separate",
+    estimate_phi_fn      = estimate_phi_from_offset_fit_sceptre,
+    # Fallback used when the initial estimate_phi_fn errors or returns a bad
+    # value. Recorded per-guide as em_phi_source = "fallback".
     phi                  = 5
   )
 
