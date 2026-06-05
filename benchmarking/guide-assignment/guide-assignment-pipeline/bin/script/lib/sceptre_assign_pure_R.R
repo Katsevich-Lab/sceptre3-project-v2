@@ -626,6 +626,136 @@ run_em_pois_pois_pure_R <- function(g, g_mus_pert0, pi_guesses, g_pert_guesses,
 }
 
 
+# ---- Additive Poisson mixture EM (correct additive M-step) ------------------
+# Mixture: g_i ~ (1 - pi) * Pois(g_mus_pert0_i) + pi * Pois(g_mus_pert0_i + delta),
+# with delta >= 0 an additive count bump. Same outer-loop scaffolding as
+# run_em_pois_pois_pure_R (B starting guesses, sceptre's relative-tol
+# convergence test, label-switch guard, degeneracy bail-out), but:
+#
+#   1. E-step uses Pois(mu0 + delta) for the perturbed component (additive
+#      mean), not Pois(mu0 * exp(gamma)).
+#   2. M-step for delta is the actual MLE: the root of
+#        sum(r * (g / (mu0 + delta) - 1))
+#      via uniroot with adaptive bracket expansion. Boundary check at
+#      delta = min_delta returns the boundary if the score is non-positive
+#      there (kkt-style).
+#
+# Contrast with run_em_pois_pois_pure_R(fix_curr_g_pert_bug = FALSE), which
+# pairs the additive mean with the multiplicative M-step `log(e1) - log(e2)`
+# (the "bugged" variant). This kernel implements the corresponding correct
+# additive M-step.
+#
+# g_pert_guesses is interpreted as log(delta) seeds so the same driver default
+# g_pert_guess_range = log(c(10, 5000)) initializes delta in [10, 5000] count
+# units, a sensible additive scale for sceptre guides.
+run_em_pois_additive_pure_R <- function(g, g_mus_pert0, pi_guesses, g_pert_guesses,
+                                        log_g_factorial = lgamma(g + 1),
+                                        max_iter  = 50L, min_iter = 3L,
+                                        ep_tol    = 0.5e-4,
+                                        min_delta = 1e-10) {
+  n <- length(g)
+  B <- length(pi_guesses)
+  stopifnot(length(g_pert_guesses)  == B,
+            length(g_mus_pert0)     == n,
+            length(log_g_factorial) == n)
+
+  # Floor on baseline mean for log-stability in the Poisson density.
+  mu0     <- pmax(g_mus_pert0, 1e-300)
+  log_mu0 <- log(mu0)
+
+  outer_Ti1s      <- numeric(n)
+  outer_i         <- 0L
+  outer_log_lik   <- -Inf
+  outer_converged <- FALSE
+  outer_pi        <- NA_real_
+  outer_g_pert    <- NA_real_
+
+  # 1D MLE for delta given responsibilities r. Closes over (g, mu0).
+  # Adaptive bracket: hi starts at max(2*old_delta, max(g), ...) and doubles
+  # until the score turns negative, or 100 doublings give up.
+  mstep_delta <- function(r, old_delta) {
+    if (sum(r) <= 0) return(max(old_delta, min_delta))
+    score <- function(d) sum(r * (g / (mu0 + d) - 1))
+
+    s_lo <- score(min_delta)
+    if (!is.finite(s_lo) || s_lo <= 0) return(min_delta)
+
+    hi   <- max(old_delta * 2, max(g), mean(g) + mean(mu0), 1)
+    hi   <- max(hi, min_delta * 2)
+    s_hi <- score(hi)
+    k    <- 0L
+    while (is.finite(s_hi) && s_hi > 0 && k < 100L) {
+      hi <- hi * 2; s_hi <- score(hi); k <- k + 1L
+    }
+    if (!is.finite(s_hi) || s_hi > 0) return(hi)
+    stats::uniroot(score, lower = min_delta, upper = hi, tol = 1e-8)$root
+  }
+
+  for (i in seq_len(B)) {
+    curr_pi      <- pi_guesses[i]
+    curr_delta   <- max(exp(g_pert_guesses[i]), min_delta)
+    prev_log_lik <- -Inf
+    curr_log_lik <- -Inf
+    Ti1s         <- numeric(n)
+    converged    <- FALSE
+    iteration    <- 1L
+
+    repeat {
+      mu1     <- mu0 + curr_delta
+      log_mu1 <- log(mu1)
+
+      # mixture density per cell + total log-lik
+      log_p0 <- log1p(-curr_pi) + g * log_mu0 - mu0 - log_g_factorial
+      log_p1 <- log(curr_pi)    + g * log_mu1 - mu1 - log_g_factorial
+      curr_log_lik <- sum(logaddexp(log_p0, log_p1))
+
+      # E-step: posterior P(perturbed | g_i)
+      Ti1s <- stats::plogis(log_p1 - log_p0)
+
+      if (all(Ti1s <= 1e-100) || any(!is.finite(Ti1s))) {
+        curr_log_lik <- -Inf
+        break
+      }
+
+      # pi update + label-switch guard (mirrors run_em_pois_pois_pure_R)
+      curr_pi <- sum(Ti1s) / n
+      if (curr_pi > 0.5) {
+        Ti1s    <- 1 - Ti1s
+        curr_pi <- 1 - curr_pi
+      }
+
+      tol <- compute_em_tolerance_pure_R(curr_log_lik, prev_log_lik)
+      if (tol < ep_tol && iteration >= min_iter) {
+        converged <- TRUE
+        break
+      }
+      prev_log_lik <- curr_log_lik
+      iteration    <- iteration + 1L
+      if (iteration >= max_iter) break
+
+      # M-step for delta: 1D MLE via uniroot
+      curr_delta <- max(mstep_delta(Ti1s, curr_delta), min_delta)
+    }
+
+    if (converged && curr_log_lik > outer_log_lik) {
+      outer_Ti1s      <- Ti1s
+      outer_i         <- i
+      outer_log_lik   <- curr_log_lik
+      outer_converged <- TRUE
+      outer_pi        <- curr_pi
+      outer_g_pert    <- curr_delta
+    }
+  }
+
+  list(outer_Ti1s      = outer_Ti1s,
+       outer_i         = outer_i,
+       outer_converged = outer_converged,
+       outer_log_lik   = outer_log_lik,
+       outer_pi        = outer_pi,
+       outer_g_pert    = outer_g_pert)
+}
+
+
 # ---- NB primitives (from experiments/pure_R_nb_em.R) ------------------------
 # softplus(x) = log(1 + exp(x)), numerically stable.
 softplus <- function(x) {
@@ -1122,7 +1252,7 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
                                    probability_threshold  = 0.8,
                                    keep_fits              = FALSE,
                                    fix_curr_g_pert_bug    = FALSE,
-                                   family                 = c("pois", "nb-shared", "nb-separate"),
+                                   family                 = c("pois", "pois-additive", "nb-shared", "nb-separate"),
                                    phi                    = NULL,
                                    estimate_phi_fn        = NULL,
                                    n_phi_updates          = 0L,
@@ -1218,6 +1348,14 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
         g_pert_guesses      = g_pert_guesses,
         log_g_factorial     = log_g_factorial,
         fix_curr_g_pert_bug = fix_curr_g_pert_bug
+      )
+    } else if (family == "pois-additive") {
+      run_em_pois_additive_pure_R(
+        g               = g,
+        g_mus_pert0     = g_mus_pert0,
+        pi_guesses      = pi_guesses,
+        g_pert_guesses  = g_pert_guesses,
+        log_g_factorial = log_g_factorial
       )
     } else if (family == "nb-shared") {
       # Always route nb-shared through the update_phi wrapper. With
@@ -1323,7 +1461,7 @@ sceptre_assign_pure_R <- function(grna_matrix,
                                   cl                     = NULL,
                                   keep_fits              = FALSE,
                                   fix_curr_g_pert_bug    = FALSE,
-                                  family                 = c("pois", "nb-shared", "nb-separate"),
+                                  family                 = c("pois", "pois-additive", "nb-shared", "nb-separate"),
                                   phi                    = NULL,
                                   estimate_phi_fn        = NULL,
                                   n_phi_updates          = 0L,
