@@ -17,7 +17,26 @@ run_variant <- function(grna_matrix, extra_covariates, formula, cpus,
                         worker_libraries = "Matrix",
                         ...) {
   for (pkg in worker_libraries) {
-    stopifnot(requireNamespace(pkg, quietly = TRUE))
+    if (!requireNamespace(pkg, quietly = TRUE)) {
+      stop(sprintf(
+        paste0("requireNamespace('%s') failed.\n",
+               "  .libPaths()  : %s\n",
+               "  R.home()     : %s\n",
+               "  R_LIBS_USER  : %s\n",
+               "  R_LIBS_SITE  : %s\n",
+               "  R_LIBS       : %s\n",
+               "  installed?   : %s\n",
+               "  find.package : %s\n"),
+        pkg,
+        paste(.libPaths(), collapse = ":"),
+        R.home(),
+        Sys.getenv("R_LIBS_USER", "<unset>"),
+        Sys.getenv("R_LIBS_SITE", "<unset>"),
+        Sys.getenv("R_LIBS",      "<unset>"),
+        pkg %in% rownames(utils::installed.packages()),
+        tryCatch(find.package(pkg), error = function(e) conditionMessage(e))
+      ))
+    }
   }
   if (!file.exists(IMPL_PATH)) stop("Implementation not found at: ", IMPL_PATH)
   source(IMPL_PATH)
