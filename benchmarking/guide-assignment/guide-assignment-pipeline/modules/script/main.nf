@@ -7,7 +7,7 @@
 process SCRIPT_ASSIGN {
   tag "${method}/${dataset_id}"
 
-  container "${projectDir}/modules/sceptre/sceptre.sif"
+  container params.sceptre_sif
 
   cpus { resources.cpus }
   memory { resources.memory }

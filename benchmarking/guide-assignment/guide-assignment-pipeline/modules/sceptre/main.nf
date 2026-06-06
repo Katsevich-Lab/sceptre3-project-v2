@@ -2,7 +2,7 @@
 process SCEPTRE_ASSIGN {
   tag "${dataset_id}"
 
-  container "${moduleDir}/sceptre.sif"
+  container params.sceptre_sif
 
   cpus { resources.cpus }
   memory { resources.memory }
