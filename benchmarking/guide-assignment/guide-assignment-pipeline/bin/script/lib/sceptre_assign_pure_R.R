@@ -756,6 +756,140 @@ run_em_pois_additive_pure_R <- function(g, g_mus_pert0, pi_guesses, g_pert_guess
 }
 
 
+# ---- Additive ZTP mixture EM (positive counts only) -------------------------
+# Same additive model as run_em_pois_additive_pure_R, but only positive cells
+# enter the mixture; zero cells always get posterior = 0.
+#
+#   g_i | g_i > 0  ~  (1 - rho) * ZTP(mu0_i) + rho * ZTP(mu0_i + delta)
+#
+# rho is the fraction of *positive* cells in the elevated component and can
+# legitimately be large, so:
+#   (a) No label-switch flip — delta >= 0 makes component ordering identifiable.
+#   (b) rho starting guesses are spread evenly across (0.05, 0.95); the driver
+#       default pi_guess_range = c(1e-5, 0.1) is too narrow for this model.
+#
+# M-step for delta: optimize() over log(delta) (unchanged from prototype —
+# ZTP log-lik has no simple closed-form score root). outer_g_pert returns
+# delta (additive count shift).
+run_em_pois_additive_nonzero_pure_R <- function(g, g_mus_pert0, pi_guesses, g_pert_guesses,
+                                                 log_g_factorial = NULL,
+                                                 max_iter  = 50L, min_iter = 3L,
+                                                 ep_tol    = 0.5e-4,
+                                                 min_delta = 1e-10) {
+  n <- length(g)
+  B <- length(pi_guesses)
+  stopifnot(length(g_pert_guesses) == B,
+            length(g_mus_pert0)    == n)
+
+  g   <- as.numeric(g)
+  mu0 <- pmax(as.numeric(g_mus_pert0), 1e-300)
+
+  pos   <- g > 0
+  gp    <- g[pos]
+  mu0p  <- mu0[pos]
+  n_pos <- sum(pos)
+
+  outer_Ti1s      <- numeric(n)
+  outer_i         <- 0L
+  outer_log_lik   <- -Inf
+  outer_converged <- FALSE
+  outer_pi        <- NA_real_
+  outer_g_pert    <- NA_real_
+
+  if (n_pos == 0L) {
+    return(list(outer_Ti1s      = outer_Ti1s,
+                outer_i         = 0L,
+                outer_converged = TRUE,
+                outer_log_lik   = 0,
+                outer_pi        = NA_real_,
+                outer_g_pert    = NA_real_))
+  }
+
+  # Stable log(1 - exp(-mu)) for mu > 0.
+  log1mexp <- function(x) {
+    out        <- numeric(length(x))
+    small      <- x < log(2)
+    out[small]  <- log(-expm1(-x[small]))
+    out[!small] <- log1p(-exp(-x[!small]))
+    out
+  }
+
+  log_ztpois <- function(y, mu) {
+    stats::dpois(y, lambda = mu, log = TRUE) - log1mexp(mu)
+  }
+
+  delta_upper <- max(10, 10 * max(gp), 2 * max(mu0p + gp))
+
+  mstep_delta <- function(r_pos, old_delta) {
+    if (sum(r_pos) < 1e-8) return(old_delta)
+    res <- tryCatch(
+      stats::optimize(
+        f        = function(eta) -sum(r_pos * log_ztpois(gp, mu0p + exp(eta))),
+        interval = c(log(min_delta), log(delta_upper))
+      ),
+      error = function(e) NULL
+    )
+    if (is.null(res)) return(old_delta)
+    max(exp(res$minimum), min_delta)
+  }
+
+  rho_guesses <- seq(0.05, 0.95, length.out = B)
+
+  for (i in seq_len(B)) {
+    curr_rho   <- rho_guesses[i]
+    curr_delta <- max(exp(g_pert_guesses[i]), min_delta)
+    prev_log_lik <- -Inf
+    curr_log_lik <- -Inf
+    Ti1s_pos     <- numeric(n_pos)
+    converged    <- FALSE
+    iteration    <- 1L
+
+    repeat {
+      log0 <- log1p(-curr_rho) + log_ztpois(gp, mu0p)
+      log1 <- log(curr_rho)    + log_ztpois(gp, mu0p + curr_delta)
+      curr_log_lik <- sum(logaddexp(log0, log1))
+      Ti1s_pos <- stats::plogis(log1 - log0)
+
+      if (all(Ti1s_pos <= 1e-100) || any(!is.finite(Ti1s_pos))) {
+        curr_log_lik <- -Inf
+        break
+      }
+
+      curr_rho <- min(max(mean(Ti1s_pos), 1e-10), 1 - 1e-10)
+
+      tol <- compute_em_tolerance_pure_R(curr_log_lik, prev_log_lik)
+      if (tol < ep_tol && iteration >= min_iter) {
+        converged <- TRUE
+        break
+      }
+      prev_log_lik <- curr_log_lik
+      iteration    <- iteration + 1L
+      if (iteration >= max_iter) break
+
+      curr_delta <- mstep_delta(Ti1s_pos, curr_delta)
+    }
+
+    if (converged && curr_log_lik > outer_log_lik) {
+      Ti1s_full       <- numeric(n)
+      Ti1s_full[pos]  <- Ti1s_pos
+      outer_Ti1s      <- Ti1s_full
+      outer_i         <- i
+      outer_log_lik   <- curr_log_lik
+      outer_converged <- TRUE
+      outer_pi        <- curr_rho
+      outer_g_pert    <- curr_delta
+    }
+  }
+
+  list(outer_Ti1s      = outer_Ti1s,
+       outer_i         = outer_i,
+       outer_converged = outer_converged,
+       outer_log_lik   = outer_log_lik,
+       outer_pi        = outer_pi,
+       outer_g_pert    = outer_g_pert)
+}
+
+
 # ---- NB primitives (from experiments/pure_R_nb_em.R) ------------------------
 # softplus(x) = log(1 + exp(x)), numerically stable.
 softplus <- function(x) {
@@ -1252,7 +1386,7 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
                                    probability_threshold  = 0.8,
                                    keep_fits              = FALSE,
                                    fix_curr_g_pert_bug    = FALSE,
-                                   family                 = c("pois", "pois-additive", "nb-shared", "nb-separate"),
+                                   family                 = c("pois", "pois-additive", "pois-additive-nonzero", "nb-shared", "nb-separate"),
                                    phi                    = NULL,
                                    estimate_phi_fn        = NULL,
                                    n_phi_updates          = 0L,
@@ -1351,6 +1485,14 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
       )
     } else if (family == "pois-additive") {
       run_em_pois_additive_pure_R(
+        g               = g,
+        g_mus_pert0     = g_mus_pert0,
+        pi_guesses      = pi_guesses,
+        g_pert_guesses  = g_pert_guesses,
+        log_g_factorial = log_g_factorial
+      )
+    } else if (family == "pois-additive-nonzero") {
+      run_em_pois_additive_nonzero_pure_R(
         g               = g,
         g_mus_pert0     = g_mus_pert0,
         pi_guesses      = pi_guesses,
@@ -1461,7 +1603,7 @@ sceptre_assign_pure_R <- function(grna_matrix,
                                   cl                     = NULL,
                                   keep_fits              = FALSE,
                                   fix_curr_g_pert_bug    = FALSE,
-                                  family                 = c("pois", "pois-additive", "nb-shared", "nb-separate"),
+                                  family                 = c("pois", "pois-additive", "pois-additive-nonzero", "nb-shared", "nb-separate"),
                                   phi                    = NULL,
                                   estimate_phi_fn        = NULL,
                                   n_phi_updates          = 0L,
