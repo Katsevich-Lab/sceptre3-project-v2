@@ -626,6 +626,171 @@ run_em_pois_pois_pure_R <- function(g, g_mus_pert0, pi_guesses, g_pert_guesses,
 }
 
 
+# ---- Weighted quantile + robust (weighted-quantile) gamma M-step ------------
+# Inverse-CDF (type-1) weighted quantile: sort by x, normalize cumulative
+# weights, return the smallest x whose cumulative weight reaches each prob.
+weighted_quantile <- function(x, w, probs = 0.5) {
+  keep <- is.finite(x) & is.finite(w) & w > 0
+  x <- x[keep]
+  w <- w[keep]
+
+  if (length(x) == 0L || sum(w) <= 0) {
+    return(rep(NA_real_, length(probs)))
+  }
+
+  o <- order(x)
+  x <- x[o]
+  w <- w[o]
+
+  cw <- cumsum(w) / sum(w)
+
+  vapply(probs, function(p) {
+    x[which(cw >= p)[1L]]
+  }, numeric(1))
+}
+
+# Robust replacement for the multiplicative Poisson M-step
+#   exp(gamma) = sum(r * y) / sum(r * mu0).
+# That closed form is the weighted MEAN of s_i = y_i / mu0_i with weights
+# w_i = r_i * mu0_i; here we instead take a weighted QUANTILE of s (the
+# weighted median by default), which resists a few high-count cells dragging
+# gamma up. gamma is clamped to [gamma_min, gamma_max]; gamma_min = 0 keeps the
+# perturbed mean at or above baseline. Note: a weighted quantile <= 0.5 can
+# collapse to gamma_min when the perturbed mean is small (many perturbed cells
+# still draw y = 0, so s = 0); raising `prob` steps over that zero-spike.
+gamma_update_weighted_quantile <- function(y, mu0, r, prob = 0.5,
+                                           gamma_min = 0, gamma_max = 30) {
+  mu0 <- pmax(mu0, 1e-300)
+
+  alpha_i <- y / mu0
+  w <- r * mu0
+
+  alpha <- weighted_quantile(alpha_i, w, probs = prob)
+
+  if (!is.finite(alpha)) {
+    return(gamma_min)
+  }
+
+  gamma <- log(alpha)
+
+  min(max(gamma, gamma_min), gamma_max)
+}
+
+
+# ---- Pois-Pois mixture EM with a robust weighted-quantile gamma M-step ------
+# Same scaffolding as run_em_pois_pois_pure_R (outer loop over B starts,
+# sceptre's relative-tol convergence test, degeneracy bail-out), but:
+#
+#   1. E-step is always the multiplicative ("unbugged") model
+#      mu_pert1 = mu0 * exp(gamma); the s = y/mu0, gamma = log(alpha)
+#      formulation has no additive analogue, so there is no
+#      `fix_curr_g_pert_bug` toggle.
+#   2. M-step replaces exp(gamma) = sum(r*y)/sum(r*mu0) (a weighted mean of
+#      y/mu0) with a weighted QUANTILE of y/mu0 -- see
+#      gamma_update_weighted_quantile.
+#
+# The label-switch flip from the Poisson/NB EMs is intentionally dropped:
+# gamma_min = 0 pins component 1 as the elevated (perturbed) component, so
+# flipping would mislabel it.
+#
+# Caveat: a quantile M-step is an M-estimator, not the Q-maximizer, so the
+# observed-data log-likelihood is not guaranteed to increase monotonically;
+# the relative-tol convergence test can in principle oscillate (rare in
+# practice). outer_log_lik is the observed Poisson-mixture loglik of the best
+# converged start, used only to pick among starts. outer_g_pert returns the
+# converged gamma (log-fold-change).
+run_em_pois_pois_wquantile_pure_R <- function(g, g_mus_pert0, pi_guesses, g_pert_guesses,
+                                              log_g_factorial = lgamma(g + 1),
+                                              max_iter = 50L, min_iter = 3L,
+                                              ep_tol = 0.5e-4,
+                                              gamma_update_prob = 0.5,
+                                              gamma_min = 0, gamma_max = 30) {
+  n <- length(g)
+  B <- length(pi_guesses)
+  stopifnot(length(g_pert_guesses) == B,
+            length(g_mus_pert0) == n,
+            length(log_g_factorial) == n)
+
+  log_g_mus_pert0 <- log(g_mus_pert0)
+
+  outer_Ti1s      <- numeric(n)
+  outer_i         <- 0L
+  outer_log_lik   <- -Inf
+  outer_converged <- FALSE
+  outer_pi        <- NA_real_
+  outer_g_pert    <- NA_real_
+
+  for (i in seq_len(B)) {
+    curr_pi      <- pi_guesses[i]
+    curr_g_pert  <- g_pert_guesses[i]
+    prev_log_lik <- -Inf
+    curr_log_lik <- -Inf
+    Ti1s         <- numeric(n)
+    converged    <- FALSE
+    iteration    <- 1L
+
+    repeat {
+      # multiplicative ("unbugged") perturbed mean
+      g_mus_pert1     <- g_mus_pert0 * exp(curr_g_pert)
+      log_g_mus_pert1 <- log(g_mus_pert1)
+
+      p0 <- exp(log(1 - curr_pi) + g * log_g_mus_pert0 - g_mus_pert0 - log_g_factorial)
+      p1 <- exp(log(curr_pi)     + g * log_g_mus_pert1 - g_mus_pert1 - log_g_factorial)
+      s  <- p0 + p1
+      s[s < 1e-100] <- 1e-100
+      curr_log_lik <- sum(log(s))
+
+      # E-step: posterior P(perturbed | g_i), quotient form for stability.
+      quotient <- log(1 - curr_pi) - log(curr_pi) +
+                  g * (log_g_mus_pert0 - log_g_mus_pert1) +
+                  g_mus_pert1 - g_mus_pert0
+      Ti1s <- 1 / (exp(quotient) + 1)
+
+      # bail out if degenerate
+      if (all(Ti1s <= 1e-100) || any(!is.finite(Ti1s))) {
+        curr_log_lik <- -Inf
+        break
+      }
+
+      # update pi (no label-switch flip; see header)
+      curr_pi <- sum(Ti1s) / n
+
+      # convergence check (before the M-step, matching the Poisson EM)
+      tol <- compute_em_tolerance_pure_R(curr_log_lik, prev_log_lik)
+      if (tol < ep_tol && iteration >= min_iter) {
+        converged <- TRUE
+        break
+      }
+      prev_log_lik <- curr_log_lik
+      iteration    <- iteration + 1L
+      if (iteration >= max_iter) break
+
+      # robust M-step: weighted quantile of y/mu0 in place of the weighted mean
+      curr_g_pert <- gamma_update_weighted_quantile(
+        y = g, mu0 = g_mus_pert0, r = Ti1s,
+        prob = gamma_update_prob, gamma_min = gamma_min, gamma_max = gamma_max
+      )
+    }
+
+    if (converged && curr_log_lik > outer_log_lik) {
+      outer_Ti1s      <- Ti1s
+      outer_i         <- i
+      outer_log_lik   <- curr_log_lik
+      outer_converged <- TRUE
+      outer_pi        <- curr_pi
+      outer_g_pert    <- curr_g_pert
+    }
+  }
+
+  list(outer_Ti1s      = outer_Ti1s,
+       outer_i         = outer_i,
+       outer_converged = outer_converged,
+       outer_log_lik   = outer_log_lik,
+       outer_pi        = outer_pi,
+       outer_g_pert    = outer_g_pert)
+}
+
+
 # ---- Additive Poisson mixture EM (correct additive M-step) ------------------
 # Mixture: g_i ~ (1 - pi) * Pois(g_mus_pert0_i) + pi * Pois(g_mus_pert0_i + delta),
 # with delta >= 0 an additive count bump. Same outer-loop scaffolding as
@@ -1386,10 +1551,11 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
                                    probability_threshold  = 0.8,
                                    keep_fits              = FALSE,
                                    fix_curr_g_pert_bug    = FALSE,
-                                   family                 = c("pois", "pois-additive", "pois-additive-nonzero", "nb-shared", "nb-separate"),
+                                   family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate"),
                                    phi                    = NULL,
                                    estimate_phi_fn        = NULL,
                                    n_phi_updates          = 0L,
+                                   gamma_update_prob      = 0.5,
                                    offset_model_fit_fn    = fit_baseline_glm_pure_R) {
   family <- match.arg(family)
   if (family %in% c("nb-shared", "nb-separate")) {
@@ -1499,6 +1665,15 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
         g_pert_guesses  = g_pert_guesses,
         log_g_factorial = log_g_factorial
       )
+    } else if (family == "pois-wq") {
+      run_em_pois_pois_wquantile_pure_R(
+        g                 = g,
+        g_mus_pert0       = g_mus_pert0,
+        pi_guesses        = pi_guesses,
+        g_pert_guesses    = g_pert_guesses,
+        log_g_factorial   = log_g_factorial,
+        gamma_update_prob = gamma_update_prob
+      )
     } else if (family == "nb-shared") {
       # Always route nb-shared through the update_phi wrapper. With
       # n_phi_updates = 0 it runs one EM pass (same as run_em_nb_nb_pure_R)
@@ -1603,10 +1778,11 @@ sceptre_assign_pure_R <- function(grna_matrix,
                                   cl                     = NULL,
                                   keep_fits              = FALSE,
                                   fix_curr_g_pert_bug    = FALSE,
-                                  family                 = c("pois", "pois-additive", "pois-additive-nonzero", "nb-shared", "nb-separate"),
+                                  family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate"),
                                   phi                    = NULL,
                                   estimate_phi_fn        = NULL,
                                   n_phi_updates          = 0L,
+                                  gamma_update_prob      = 0.5,
                                   offset_model_fit_fn    = fit_baseline_glm_pure_R) {
   family <- match.arg(family)
   if (family %in% c("nb-shared", "nb-separate")) {
@@ -1630,7 +1806,7 @@ sceptre_assign_pure_R <- function(grna_matrix,
   force(grna_matrix)
   force(n_nonzero_cells_cutoff); force(backup_threshold); force(probability_threshold)
   force(keep_fits); force(fix_curr_g_pert_bug); force(phi); force(estimate_phi_fn)
-  force(n_phi_updates); force(offset_model_fit_fn)
+  force(n_phi_updates); force(gamma_update_prob); force(offset_model_fit_fn)
 
   # 1. design matrix
   covariate_matrix <- stats::model.matrix(object = formula_object,
@@ -1676,6 +1852,7 @@ sceptre_assign_pure_R <- function(grna_matrix,
       phi                    = phi,
       estimate_phi_fn        = estimate_phi_fn,
       n_phi_updates          = n_phi_updates,
+      gamma_update_prob      = gamma_update_prob,
       offset_model_fit_fn    = offset_model_fit_fn
     )
   }
@@ -1698,6 +1875,7 @@ sceptre_assign_pure_R <- function(grna_matrix,
     estimate_phi_fn        = estimate_phi_fn,
     phi                    = phi,
     n_phi_updates          = n_phi_updates,
+    gamma_update_prob      = gamma_update_prob,
     fix_curr_g_pert_bug    = fix_curr_g_pert_bug,
     n_em_rep               = n_em_rep,
     pi_guess_range         = pi_guess_range,
