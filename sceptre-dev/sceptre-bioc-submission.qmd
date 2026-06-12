@@ -41,36 +41,34 @@ R CMD build  — 0 ERRORS · 0 WARNINGS · 0 NOTES
 BiocCheck    — 1 ERROR  · 1 WARNING  · 7 NOTES
 ```
 
-### We will address / have addressed
+Three PRs are in flight; once merged they bring BiocCheck to **1 ERROR · 1 WARNING · 5 NOTES**.
 
+### We have addressed
+
+- **NOTE: Consider multiples of 4 spaces for line indents (was 2,271 lines / 37%).** Addressed by [PR #213](https://github.com/Katsevich-Lab/sceptre/pull/213).
+- **NOTE: Usage of dontrun / donttest tags found in man page examples.** Addressed by [PR #214](https://github.com/Katsevich-Lab/sceptre/pull/214). The single `\donttest{}` (the package-level SCEPTRE workflow example in `R/sceptre.R`) was removed and outputs were redirected from the home directory to `tempdir()`, as required by Bioc.
+- **Non-BiocCheck submission requirement: Providing code used to generate `inst/extdata`.** Addressed by [PR #215](https://github.com/Katsevich-Lab/sceptre/pull/215), including moving existing `data-raw` scripts to `inst/scripts`, updating the Parse example data to be reproducible, and updating construction of gene position data frames to download reference genomes directly rather than reading personal paths.
+
+### We will address
 - **ERROR: Package dependencies must be on CRAN or Bioconductor.** Will be addressed when `ondisc` lands back on CRAN.
-- **NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.** Tim is subscribed.
 - **Non-BiocCheck submission requirement: Bump version to 0.99.0.** We will do this when the time comes.
 
 ### We will not address
 
 - **WARNING: No Bioconductor dependencies detected.** Tim will justify why ondisc data structure is preferable to Bioconductor data structures.
+- **NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.** This is a false positive; Tim is subscribed.
 - **NOTE: Update R version dependency from 4.1 to 4.6.0.** We want to avoid excluding users.
 - **NOTE: Avoid 'cat' and 'print' outside of 'show' methods.** This note is a "false positive."
-- **NOTE: The recommended function length is 50 lines or less. There are 27 functions greater than 50 lines.** Cosmetic.
-- **NOTE: Consider shorter lines; 829 lines (14%) are > 80 characters long.** Cosmetic.
-- **NOTE: Consider multiples of 4 spaces for line indents; 2,271 lines (37%) are not.** Cosmetic.
-
-### To discuss
-- **NOTE: Usage of dontrun / donttest tags found in man page examples. 3% of man pages use at least one of these tags.** We have just one instance of `donttest`. Can we get rid of it?
-- **Non-BiocCheck submission requirement: Providing code used to generate `inst/extdata`.** Where did the Parse example data come from? Separately, Gene will move `data-raw` to `inst/scripts`, the preferred place for this code.
+- **NOTE: Consider shorter lines (was 829 lines / 14%).**  [PR #213](https://github.com/Katsevich-Lab/sceptre/pull/213) brought it down to 143 lines (2%), but hard to bring it down to zero due to long documentation URLs, generated `R/RcppExports.R`, single-line knitr chunk headers, and a few irreducibly long identifier expressions.
+- **NOTE: The recommended function length is 50 lines or less. There are 48 functions greater than 50 lines (was 27).** Deferred. Note that the increase from 27 is an expected side effect of wrapping long lines to 80 columns.
 
 ## Bioconductor cover letter
 
-`BiocCheck()` yields one warning and six notes, which we justify below:
+The submitted package has 1 warning and 5 notes, for which we request exemptions:
 
-- **WARNING: No Bioconductor dependencies detected.** *Tim should fill in justification.*
+- **WARNING: No Bioconductor dependencies detected.** The primary container for single-cell data in the Bioconductor ecosystem is SingleCellExperiment. Instead of using SingleCellExperiment to store and manipulate the expression data, we implemented several specialized data structures and algorithms better suited to the specific access patterns required of perturb-seq analysis. After data import (e.g., from a collection of 10x Genomics .mtx files), sceptre computes various cell-wise covariates relevant to perturb-seq analysis, including the gRNA with the greatest UMI count in a given cell and the fraction of UMIs attributable to this gRNA. sceptre does so using optimized C++ routines. Next, sceptre converts the sparse gene and gRNA expression matrices from column-accessible format into row-accessible format. This transformation is crucial, as all subsequent steps -- including QC, gRNA assignment, and gRNA-to-gene association testing -- require rowwise access to the gene and gRNA expression matrices. SingleCellExperiment (and allied packages, such as scran) can store these matrices and covariates, but they do not implement the specific, optimized perturb-seq computations of sceptre.
+- **NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.** The maintainer (Timothy Barry, <tbarry@hsph.harvard.edu>) is subscribed to the mailing list.
 - **NOTE: Update R version dependency from 4.1 to 4.6.0.** We would prefer to avoid excluding users with older versions of R, including those in computer clusters where they do not have control over the version of R installed.
-- **NOTE: Avoid 'cat' and 'print' outside of 'show' methods.** The remaining instances are intentional display/output paths rather than computational logging. In `R/s4_helpers.R`, the flagged `cat()` calls are inside the user-facing S4 `print()` method for `sceptre_object`, after delegating to `show(x)`. In `R/s4_analysis_functs_2.R`, the flagged `print()` call is inside a `sink()` block that captures the analysis summary for the output directory. We believe these are false positives in spirit and have left them in place.
-- **NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.** I am subscribed to this mailing list.
-
-We following three notes are cosmetic, so we have deferred addressing them on an initial submission:
-
-- **NOTE: The recommended function length is 50 lines or less. There are 27 functions greater than 50 lines.**
-- **NOTE: Consider shorter lines; 829 lines (14%) are > 80 characters long.**
-- **NOTE: Consider multiples of 4 spaces for line indents; 2,271 lines (37%) are not.**
+- **NOTE: Avoid 'cat' and 'print' outside of 'show' methods.** This NOTE targets `cat()`/`print()` used in place of `message()`/`warning()` for diagnostic logging. Both flagged instances are instead object-display / file-serialization output — the use the `show()`-method exemption is meant to cover. In `R/s4_helpers.R`, the flagged `cat()` calls are inside the S4 `print()` method for `sceptre_object`, which first delegates to `show(x)` and then renders additional detail (an analysis-status checklist and result summaries) that `show()` omits. In `R/s4_analysis_functs_2.R`, the flagged `print()` call sits inside a `sink()` block that serializes the object's summary to `analysis_summary.txt`.
+- **NOTE: Consider shorter lines.** Only 2% of the lines are over 80 characters, and these contain long URLs, generated `R/RcppExports.R`, single-line knitr chunk headers, and a few irreducibly long identifier expressions.
+- **NOTE: The recommended function length is 50 lines or less.** We have deferred addressing this cosmetic, as it would require substantial work.

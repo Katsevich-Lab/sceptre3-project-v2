@@ -1,0 +1,615 @@
+---
+title: "sceptre — Refactor & Development Plan"
+subtitle: "Living document: state of the software, goals, plan, and open decisions"
+author:
+  - name: Eugene Katsevich
+date: today
+date-format: long
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    toc-title: "Contents"
+    number-sections: true
+    number-depth: 3
+    embed-resources: true
+    theme:
+      light: cosmo
+    fontsize: "1.02em"
+    linestretch: 1.55
+    smooth-scroll: true
+    page-layout: article
+    grid:
+      sidebar-width: 260px
+      body-width: 820px
+      margin-width: 220px
+    fig-cap-location: bottom
+    code-fold: false
+    code-tools: false
+    link-external-icon: true
+    link-external-newwindow: true
+    mermaid:
+      theme: neutral
+    css: custom.css
+execute:
+  echo: false
+  warning: false
+---
+
+::: {.callout-note appearance="simple"}
+This is a living plan for `sceptre` development. It captures (1) where the software is today, (2) the goals driving the refactor, (3) the staged plan to get there, and (4) the open decisions that still need input. Numbers in [Section 2](#state) — coverage, R CMD check status, branch verdicts — come from running the tools on a fresh checkout, not estimates. The plan evolves as work lands; sections marked **status** are updated as PRs merge.
+:::
+
+## Executive summary {.unnumbered}
+
+`sceptre` is in a good place statistically and computationally — but a decade of organic growth has left the codebase harder to maintain and extend than it should be, and several patterns now block a Bioconductor submission. The plan is organised around three priority-ordered goals:
+
+1. **Submit to Bioconductor.** Close the hard blockers without changing the public API; submit at `v0.99.0`. Tracked in [Section 4.1](#track-bioc).
+2. **Make the package pleasant to maintain again.** Replace the 41-slot god-class with a composed object model; collapse the duplicated test-runner stack to one driver; unify matrix-backend dispatch. Tracked in [Section 4.2](#track-maint).
+3. **Make it extensible.** Land the substantive open feature PRs (#175 flexible cell assignments, #113 score test) on the refactored seams; introduce `glmGamPoi` for batched NB regressions; optionally drop `ondisc` entirely. Tracked in [Section 4.3](#track-ext).
+
+Bioconductor review runs **in parallel** with the architectural refactor. Open decisions (those that change behaviour, public API, or scope) are listed in [Section 6](#decisions); everything else is mechanical and proceeds as ordinary PRs.
+
+---
+
+## State of the software {#state}
+
+`sceptre` v0.10.3 — 26 R files (≈ 5,600 LoC), 12 C++ files (≈ 1,300 LoC), 10 test files (≈ 3,700 LoC), 28 exported symbols.
+
+The audit didn't surface anything statistically wrong. What it surfaced is **accumulated structural complexity** — stress lines from features grafted onto a procedural pipeline that was never refactored to absorb them — plus a handful of latent bugs and a thin safety net. The findings group into three categories.
+
+### Structural debt
+
+Six patterns are load-bearing in ways that make every new change harder than the last.
+
+#### A 41-slot god-class
+`R/s4_class.R:8-78` defines one S4 class that holds raw data, parameters, intermediates, results, pipeline-status flags, on-disk metadata, and Nextflow plumbing — all in one bag. Slots are loosely typed (`response_matrix = "list"` rather than a class union), there is no `setValidity()`, and there are no S4 generics for any of the public getters. Subclassing or alternative storage backends can't happen without modifying every getter.
+
+#### Scattered `ondisc` dispatch
+Every consumer says `if (methods::is(x, "odm")) ondisc:::… else load_csr_row(…)`, in six places. Six of the eight branches reach into `ondisc`'s **unexported** internals via `:::`. Combined with `Remotes: github::timothy-barry/ondisc` in `DESCRIPTION:52`, this is the single biggest Bioconductor blocker.
+
+#### Test-runner duplication
+`run_perm_test_in_memory` (`R/medium_level_functs_v2.R:15-127`) and `run_crt_in_memory_v2` (`:131-260`) duplicate ~70 lines each of partitioning, mclapply, and rbindlist code; they differ only in the inner kernel. The four "workhorse" functions in `R/association_testing_functions_v2.R:32, 60, 110, 167` differ only in two flags. Any change to one needs to be made in two-to-four places, with no compiler help to keep them in sync.
+
+#### Organic-growth naming scars
+The `_v2`/`_v3`/`_v4` suffixes are scattered across both R and C++ — `medium_level_functs_v2.R`, `association_testing_functions_v2.R`, `s4_analysis_functs_2.R`, `run_low_level_test_full_v4`, `compute_nt_nonzero_matrix_and_n_ok_pairs_v3`, `sample_undercover_pairs_v2`, and more. Several of the v3/v4 names survived into the **public C++ API**, so renaming requires a deprecation cycle. Cumulative effect: any reader (or new contributor) has to reconstruct which version is current and whether the older versions are still called.
+
+#### A 1,028-line plotting monolith
+`R/plotting_functions.R` mixes eight plotters, theme code, and downsample helpers in one file. The size makes navigation hard and reviews shallow; the file also harbours two latent bugs (see below).
+
+#### Implicit pipeline state representation
+`R/s4_helpers.R:196` (`perform_status_check_and_update`) plus the function-rank table consulted by `R/s4_analysis_functs_2.R:540` represent pipeline state as a named-logical vector (`functs_called`) alongside a hardcoded ordering table. The state lives implicitly across two parallel data structures, neither of which is typed; adding a new pipeline step means editing both and remembering to keep them in sync. This is a back-end concern — the user-facing chain-and-auto-advance behaviour is fine and stays unchanged.
+
+### Latent bugs
+
+#### C++ samplers ignore R's `set.seed()`
+Every sampler in `src/generate_samples_functions.cpp:36, 78, 140, 164` and `src/negative_control_functions.cpp:37, 112` hardcodes the MT19937 seed to the literal integer `4`. The `Rcpp::RNGScope` blocks save/restore R's RNG state but the C++ code never *reads* it. **R-side `set.seed()` is silently ignored.** Two parallel `sceptre` runs in different processes get the same null distribution because the seed is constant. Reproducibility currently exists by accident.
+
+#### `set.seed()` inside plot bodies
+`R/plotting_functions.R:838, :1009` call `set.seed()` mid-plot, mutating the user's RNG state. Any caller who runs `set.seed(...)`, plots, then samples sees a corrupted random stream.
+
+### Safety-net gaps
+
+#### Test coverage at 68.5%, gappy in the wrong places
+Measured with `covr::package_coverage()` on a fresh checkout, **with `ondisc` installed**. (Without ondisc the number is identical — 68.54% — because the existing tests never exercise the on-disk branch even when it's available. The 0%-covered files below stay 0% regardless.) The aggregate looks reasonable, but the per-file picture confirms the structural gap: the on-disk and importer paths are essentially untested.
+
+| File | Coverage |
+|------|---------:|
+| `R/ondisc_functs.R` | **0.0%** |
+| `R/pair_constructor_functs.R` | **0.0%** |
+| `R/import_functs.R` | **16.6%** |
+| `R/s4_helpers.R` | **16.3%** |
+| `R/getters_and_setters.R` | **20.7%** |
+| `R/pairwise_qc_functs.R` | 60.8% |
+| `R/mixture_model_functs.R` | 68.1% |
+| `R/check_functions.R` | 73.4% |
+| `R/plotting_functions.R` | 87.4% |
+| `R/cellwise_qc_functs.R` | 100.0% |
+| `R/s4_analysis_functs_1.R` | 92.4% |
+| `src/check_functions.cpp` | **0.0%** (all 4 exports dead) |
+| `src/mixture_functs.cpp` | **0.0%** |
+| `src/pair_construction_functs.cpp` | **0.0%** |
+| `src/pairwise_qc.cpp` | 100.0% |
+| `src/negative_control_functions.cpp` | 100.0% |
+
+The aggregate of 68.5% over-states real safety: every untested file is one we'd want to refactor. Importers, on-disk path, getters, pair constructors, and `write_outputs_to_directory` are below the line where a refactor would have any safety net at all. ~31% of test LoC is the mock-data helper plus tests *of* the helper.
+
+#### CI well below Bioconductor's bar
+`.github/workflows/check-standard.yaml` runs Linux + macOS only (Bioc requires Windows). It uses `actions/checkout@v2` (outdated). It installs `ondisc` only on macOS, so on-disk code paths are never exercised on CI. There is no codecov, no `BiocCheck` workflow, no pkgdown deploy.
+
+### Bioconductor compliance state {#measured}
+
+The binding picture is `BiocCheck`, not `R CMD check`. A local `R CMD check` runs against the installed `sceptre` (which silently brings `ondisc` along via the `Remotes:` line) and reports `Status: OK` — that hides the Bioc-side blocker entirely. Bioconductor's check farm has no `Remotes:` mechanism and won't have `ondisc` available, so it sees the real picture.
+
+After PR #199 merges, `BiocCheck::BiocCheck()` reports:
+
+```
+1 ERROR · 2 WARNINGS · 10 NOTES
+```
+
+- **The ERROR is `Remotes: github::timothy-barry/ondisc`.** ondisc isn't on CRAN or Bioc, so the package can't be submitted as-is. This is the central work of [Track 1](#track-bioc) and is scoped under [Decision 2](#decisions).
+- **The WARNINGS** cover (a) package-code `set.seed()` (5 sites) and (b) `cat()`/`print()` outside `show()` methods (36 sites). Both are addressable mechanically; (a) is gated on [Decision 1](#decisions) (the C++ RNG question).
+- **The NOTES** are the long tail: 27 functions over 50 lines, styler-driven line-length / indentation findings, and the routine items in [Appendix B](#appendix-b). PR #199 already cleared three NOTES (chunk labels, `BugReports:`, `\donttest{}`).
+
+---
+
+## Goals {#goals}
+
+Three goals, in priority order:
+
+1. **Submit to Bioconductor.** Nine of the items in the audit are hard blockers; the rest are warnings. None are deal-breakers structurally, but `Remotes: github::timothy-barry/ondisc` plus eight `:::` calls into `ondisc`'s private API are the binding constraint.
+2. **Make the package pleasant to maintain again.** The signals are: every new feature gets harder than the last; PRs with overlapping touchpoints (#175, #113, #198) compete for the same files; reviewers (and we) lose context across the `_v2/_v3/_v4` scars.
+3. **Make it extensible** — new test statistics, new gRNA-assignment methods, new storage backends — without rewriting the pipeline.
+
+The chaining pattern (`import_data |> set_analysis_parameters |> assign_grnas |> run_qc |> run_calibration_check |> ...`) stays byte-identical throughout. All change is internal until/unless an explicit decision in [Section 6](#decisions) says otherwise.
+
+---
+
+## The plan {#plan}
+
+The work splits into three goal-aligned tracks. Each track has its own exit criterion. **Track 1 (Bioc) and Track 2 (Maintainability) overlap in time:** Bioconductor review (typically 4–8 weeks) runs in parallel with the architectural refactor.
+
+### Track ordering
+
+```{mermaid}
+%%| label: fig-tracks
+%%| fig-cap: "Tracks aligned to the three goals. Bioc review runs in parallel with the architectural refactor."
+flowchart LR
+  S0[Stage 0<br/>Pre-refactor housekeeping]
+  S0 --> T1[Track 1 — Bioc compliance<br/>Submit v0.99.0<br/>· Bioc review in parallel]
+  S0 --> T2[Track 2 — Architectural refactor<br/>A3 → A2 → A4 → A1<br/>· numerics pinned first]
+  T2 --> T3[Track 3 — Extensibility<br/>· glmGamPoi<br/>· PR #175<br/>· PR #113<br/>· optional ondisc absorption]
+
+  classDef bioc fill:#e7f3ff,stroke:#0969da,stroke-width:1px;
+  classDef maint fill:#fff8c5,stroke:#bf8700,stroke-width:1px;
+  classDef ext fill:#d4edda,stroke:#155724,stroke-width:1px;
+  classDef pre fill:#f6f8fa,stroke:#57606a,stroke-width:1px;
+  class S0 pre
+  class T1 bioc
+  class T2 maint
+  class T3 ext
+```
+
+### Stage 0 — Pre-refactor housekeeping
+
+**Goal:** Land the small, correct, in-flight work that any refactor would otherwise have to rebase across.
+
+- Merge **PR #199** (ggplot2 4.0 plotting fix + DESCRIPTION/CITATION/vignette cleanup). Closes several CRAN-incoming sub-findings and unblocks CI.
+- Merge **PR #196** (`parallelly`) once #199 is in. 3 lines, no risk.
+- Merge **PR #198** (multi-target `grna_id`) after requesting a unit test for the new use case.
+- Merge **`feature/cell-cycle-scores`** after a quick integration test.
+- Reject **PR #183** (DESCRIPTION change, mixes `Author` and `Authors@R`).
+- Delete merged-and-redundant branches: `dev`, `unit-tests-calib-power`, `update/unit-testing`, `flexible-cell-assignments` (superseded by `-simpler`).
+
+**Exit criterion:** `main` cleanly contains the small fixes and is the rebase base for everything that follows.
+
+### Track 1 — Bioconductor submission {#track-bioc}
+
+**Goal:** Pass `BiocCheck::BiocCheck('new-package' = TRUE)` with zero ERROR/WARNING, with public API unchanged. Submit at `v0.99.0`.
+
+The full mechanical checklist is in [Appendix B](#appendix-b). Highlights of what's still open after PR #199:
+
+- `DESCRIPTION` cleanup: `Version: 0.99.0`, fix `biocViews:` (add required `Software`, drop invalid `GeneTarget`), drop `Suggests: parallel`/`magrittr`, drop `Imports: BH`.
+- Replace the eight `ondisc:::` calls with `requireNamespace`-gated public-API calls. Remove the `Remotes:` line. Scope of the ondisc decoupling is [Decision 2](#decisions).
+- Replace package-code `set.seed()` (5 sites) with `withr::with_seed()` or seed-as-argument.
+- Route C++ RNG through R's RNG so `set.seed()` is honoured. **(Behavioural change — see [Decision 1](#decisions).)**
+- 36 `cat()` calls → `message()` for non-`show()` paths.
+- Vignette: replace `~/sceptre_outputs` with `tempdir()`.
+- CI: add Windows runner, add `BiocCheck` workflow, add `covr` + Codecov, bump `actions/checkout@v2` → `@v4`.
+
+**Exit criterion:** `BiocCheck` is green on a fresh checkout. CI passes on Windows / Linux / macOS. Submit to Bioconductor at v0.99.0. Bioc review proceeds in parallel with Track 2.
+
+### Track 2 — Architectural refactor (pleasant to maintain) {#track-maint}
+
+**Goal:** Apply the four architectural moves below. Behaviour preserved end-to-end (golden-master tests pin numerics). Public API unchanged.
+
+The proposed architecture is the subject of [Section 5](#architecture). Order of attack:
+
+1. **Pin numerics first.** Add fixed-seed end-to-end tests that snapshot calibration / power / discovery output dataframes for the example datasets at the *current* HEAD with `tolerance = 1e-10`. These become the regression guards for the whole refactor.
+2. **Matrix-backend abstraction (A3).** Easiest with the most leverage. Define `load_response_row()`, `count_nonzero_in_groups()`, etc. as S4 generics; implement methods for `dgRMatrix`/`dgCMatrix`/`matrix` first, then `odm` via `requireNamespace`-gated registration. Every `if (methods::is(x, "odm")) … else …` becomes a single dispatch.
+3. **Test-runner abstraction (A2).** Define a `TestSpec` carrying response-loader, precomputation strategy, resampler, and post-processor. The four workhorses + two near-duplicate drivers collapse to one `run_tests()` driver and three ~15-line spec constructors.
+4. **Explicit pipeline state (A4).** Replace the named-logical `functs_called` vector and the parallel function-rank table with a single typed state representation. Internal change only — user-facing chain-and-auto-advance behaviour is preserved.
+5. **God-class decomposition (A1).** Most invasive; do last. Compose `SceptreData`, `SceptreParams`, `SceptreFitState`, `SceptreResults`, `PipelineState` inside `SceptreObject`; keep all 41 of today's slots accessible via virtual generics for backward compatibility (deprecation cycle of one minor release).
+6. **File renames.** Strip `_v2/_v3/_v4` suffixes; split `plotting_functions.R` (1028 lines) per analysis stage; rename `s4_analysis_functs_{1,2}.R` → `pipeline_lifecycle.R` / `pipeline_runners.R`; etc.
+
+#### Test bulk-up (parallel)
+
+Runs alongside the architectural moves and continues into Track 3:
+
+- Importer tests (cellranger + parse paths).
+- Pair-constructor tests.
+- Getter tests.
+- `write_outputs_to_directory` tests.
+- Edge-case tests: zero-cell, single-gRNA, missing covariates, all `grna_integration_strategy` values, all `multiple_testing_method` values.
+- On-disk path tests (requires test fixtures in `inst/extdata/`).
+- Plot snapshot tests via `vdiffr`.
+
+**Exit criterion:** Golden-master tests pass identically. Public API surface unchanged. Test coverage ≥ 75%.
+
+### Track 3 — Extensibility {#track-ext}
+
+**Goal:** Land the substantive open feature work and the supporting infrastructure on top of the refactored seams. Each item is a *use* of the abstractions built in Track 2 — a payoff for the refactor.
+
+#### glmGamPoi for batched NB regressions
+
+`R/precomputation_functions.R:12-27` (`perform_response_precomputation`) currently fits a Poisson GLM via `stats::glm.fit` per response, then estimates `theta` via the custom Rcpp routine `estimate_theta` (`src/compute_nb_size_param_functions.cpp`). This is called **once per response inside the per-response loop** in the test runners — exactly the operation `glmGamPoi::glm_gp()` was designed to vectorise.
+
+**Why it fits naturally here:**
+
+- `glmGamPoi::glm_gp(Y_matrix, design = X)` returns a `(n_responses × n_coefs)` `Beta` matrix and an `overdispersion` vector in one batched C++ call. The output maps directly onto today's per-response `(fitted_coefs, theta)`.
+- Cache the batched result on `SceptreFitState`. Inside the test-runner loop, *look up* `(fitted_coefs, theta)` instead of re-fitting. `compute_precomputation_pieces()` (lines 52-68) is unchanged — it just consumes `(fitted_coefs, theta)`.
+- It's a strategy choice in the A2 abstraction: `precomp_strategy ∈ {"per_response", "batched_glmgampoi"}` is a `TestSpec` field. Trivial A/B.
+- **Drops the `estimate_theta` C++ kernel** and the last `boost/math` dependency in the package. Glm­GamPoi is on Bioconductor, so this is also a net plus for the submission story.
+- For the score-test path (PR #113), this is exactly the right primitive — fits the null NB model under the alternative.
+
+**Trade-offs to flag:**
+
+- glmGamPoi uses different IRLS step rules + theta MLE than the current Poisson-then-`estimate_theta` two-step. Fitted thetas will differ at ~1e-6 levels; statistically benign, but breaks any golden-master test that pins values. Plan: rebase the golden masters when this lands and document in `NEWS.md`.
+- Total runtime improvement is modest for resampling-based runs (precomputation isn't the bottleneck — probably 20–40% on a discovery analysis), but is large for the `resampling_approximation = "standard_normal"` path from PR #113 where precomputation *is* most of the cost.
+- Sceptre gains a Bioc dependency. That's fine for a Bioc-bound package.
+
+**Sequencing:** lands after A2 (the strategy slot exists) and before PR #113 (so the score-test path is built on glmGamPoi from day one).
+
+#### PR #175 — flexible cell assignments
+
+Rebase `flexible-cell-assignments-simpler` onto refactored main. The C++ signature change to `compute_nt_nonzero_matrix_and_n_ok_pairs_v3` lands cleanly because A3 has unified the matrix dispatch.
+
+**Sequencing:** any time after A3.
+
+#### PR #113 — vanilla score test
+
+Rebase `score-test` onto refactored main. The new `response_regression_method` and `resampling_approximation = "standard_normal"` become strategies in the A2 framework — natural fits.
+
+**Sequencing:** after A2 and after glmGamPoi.
+
+#### Optional — drop the `ondisc` dependency entirely
+
+A more aggressive endgame than the minimal Bioc-compliance ondisc decoupling in Track 1. Goal: land a Bioc-native on-disk path with no `ondisc` dependency.
+
+- Reimplement the four `ondisc` C++ kernels (`threshold_count_matrix_cpp`, `compute_n_trt_cells_matrix_ondisc`, `compute_n_ok_pairs_ondisc`, `compute_nt_nonzero_matrix_and_n_ok_pairs_ondisc`) inside `sceptre`'s `src/`, linked against `Rhdf5lib`.
+- Replace `ondisc::create_odm_from_cellranger` with `DropletUtils::read10xCounts`.
+- Provide a `sceptre`-owned thin wrapper for `HDF5Array`/`DelayedArray` consumption — or just consume those directly via the A3 generics.
+- Coordinate `sceptre-pipeline/` updates: keep `read_ondisc_backed_sceptre_object` as a deprecated alias for one release.
+
+Scope of this piece is [Decision 2](#decisions).
+
+**Exit criterion (Track 3):** Open feature-PR queue is empty. All long-tail features documented in `NEWS.md`. The refactored seams are demonstrably load-bearing — each new feature is a clean addition rather than a touch-everything diff.
+
+---
+
+## Architecture proposal {#architecture}
+
+Five composed parts replace the 41-slot god class. The user-facing class `SceptreObject` is a thin S4 composition that delegates to the parts.
+
+### Today vs. proposed object model
+
+::: {.panel-tabset}
+
+#### Today
+
+```{mermaid}
+%%| fig-cap: "Today: one S4 class with 41 slots covering all concerns."
+flowchart TB
+  SO["sceptre_object<br/>(41 slots, no validity)"]
+  SO --- RAW["raw data<br/>response_matrix<br/>grna_matrix<br/>covariates"]
+  SO --- PARAMS["parameters<br/>B1 B2 B3<br/>formula<br/>method choices"]
+  SO --- INT["intermediates<br/>grna_assignments<br/>cells_in_use<br/>pairs_with_info<br/>response_precomputations"]
+  SO --- RES["results<br/>calibration_result<br/>power_result<br/>discovery_result"]
+  SO --- FLAGS["pipeline state<br/>functs_called<br/>last_function_called"]
+  SO --- ODM["ondisc-specific<br/>integer_id<br/>nuclear<br/>nf_pipeline"]
+
+  classDef bag fill:#fff3cd,stroke:#bf8700,stroke-width:1px;
+  class SO bag;
+```
+
+#### Proposed
+
+```{mermaid}
+%%| fig-cap: "Proposed: composition with five focused parts, each with its own lifecycle."
+flowchart TB
+  SO["SceptreObject<br/>thin S4 composition"]
+  SO --> Data["SceptreData<br/>raw inputs<br/>(immutable after import_data)"]
+  SO --> Params["SceptreParams<br/>analysis parameters<br/>(immutable after config)"]
+  SO --> Fit["SceptreFitState<br/>computed intermediates<br/>(written by assign+qc)"]
+  SO --> Res["SceptreResults<br/>test outputs<br/>(appended by each runner)"]
+  SO --> State["PipelineState<br/>explicit enum<br/>+ history log"]
+
+  classDef good fill:#d4edda,stroke:#155724,stroke-width:1px;
+  class SO,Data,Params,Fit,Res,State good;
+```
+
+:::
+
+### Pipeline data flow
+
+```{mermaid}
+%%| fig-cap: "Each public function reads from some parts and writes to one. Reads are immutable; writes return a new SceptreObject."
+flowchart LR
+  User((user))
+  User --> Imp[import_data]
+  Imp -- writes --> Data[(SceptreData)]
+  Imp --> SAP[set_analysis_parameters]
+  Data -. reads .-> SAP
+  SAP -- writes --> Params[(SceptreParams)]
+  SAP --> AG[assign_grnas]
+  Data -. reads .-> AG
+  Params -. reads .-> AG
+  AG -- writes --> Fit[(SceptreFitState)]
+  AG --> QC[run_qc]
+  Data -. reads .-> QC
+  Params -. reads .-> QC
+  Fit -. reads .-> QC
+  QC -- writes --> Fit
+  QC --> Tests[run_calibration_check<br/>run_power_check<br/>run_discovery_analysis]
+  Data -. reads .-> Tests
+  Params -. reads .-> Tests
+  Fit -. reads .-> Tests
+  Tests -- writes --> Results[(SceptreResults)]
+  Tests --> Out[write_outputs_to_directory]
+  Out --> Disk[(disk)]
+```
+
+### Test-runner abstraction (A2)
+
+The cross-product `{calibration, power, discovery} × {perm, crt} × {nt-cells, complement}` collapses to one driver parameterised by a `TestSpec`.
+
+```{mermaid}
+%%| fig-cap: "One run_tests() driver. Concrete TestSpec instances for each public test type."
+flowchart TB
+  subgraph Specs["TestSpec instances"]
+    direction LR
+    CS["calibration_spec()<br/>resampler perm or crt<br/>post nt-cells or complement"]
+    PS["power_spec()<br/>iterator pos_ctrl_pairs"]
+    DS["discovery_spec()<br/>iterator discovery_pairs"]
+  end
+  Specs --> Driver["run_tests(spec, obj)<br/><br/>partitions work<br/>parallelism (mclapply / future)<br/>log file plumbing<br/>gc + rbindlist"]
+  Driver --> Out[(result data.frame)]
+```
+
+### Matrix-backend dispatch (A3)
+
+Single S4 generics dispatched on the matrix's class. The `if (methods::is(x, "odm")) … else …` branches scattered across six files collapse to method tables.
+
+```{mermaid}
+%%| fig-cap: "S4 method dispatch replaces the scattered ondisc branches."
+flowchart TB
+  Generic["load_response_row()<br/>count_nonzero_in_groups()<br/>threshold_count_matrix()<br/>(S4 generics)"]
+  Generic --> M1["method dgRMatrix / dgCMatrix<br/>(in-memory; uses load_csr_row)"]
+  Generic --> M2["method odm<br/>(loaded only if ondisc installed)"]
+  Generic --> M3["method DelayedMatrix<br/>(optional — Bioc-native)"]
+```
+
+### Pipeline state machine (A4)
+
+```{mermaid}
+%%| fig-cap: "The implicit named-logical + function-rank table is replaced by an explicit typed state. User-facing transitions (including auto-advance) unchanged."
+stateDiagram-v2
+  [*] --> fresh
+  fresh --> imported : import_data
+  imported --> configured : set_analysis_parameters
+  configured --> assigned : assign_grnas
+  assigned --> qc_done : run_qc
+  qc_done --> tested : run_calibration_check
+  qc_done --> tested : run_power_check
+  qc_done --> tested : run_discovery_analysis
+  tested --> tested : (re-entrant)
+```
+
+### What the user types (unchanged)
+
+```r
+sceptre_object <- import_data(response_matrix, grna_matrix,
+                              grna_target_data_frame, moi = "low",
+                              extra_covariates = ...)
+sceptre_object <- sceptre_object |>
+  set_analysis_parameters(discovery_pairs = ..., side = "both") |>
+  assign_grnas(method = "mixture") |>
+  run_qc() |>
+  run_calibration_check() |>
+  run_power_check() |>
+  run_discovery_analysis()
+
+write_outputs_to_directory(sceptre_object, tempfile())
+```
+
+The public function names, signatures, and chaining behaviour stay byte-identical. Subclassing, alternative storage backends, and new test types plug in via S4 method tables and `TestSpec` constructors rather than `if/else` branches.
+
+---
+
+## Near-term mechanical work {#near-term}
+
+A queue of small, isolated, independently-mergeable PRs. Each is either a bug fix, mechanical Bioc compliance, or self-inflicted noise from the audit itself — none require a design conversation.
+
+The queue is updated as items land. Items already covered by **PR #199** are crossed off.
+
+### Tier 1 — green CI
+
+1. ~~**Fix 8 plotting test expectations broken by ggplot2 4.0 / cowplot 1.2.0.**~~ *(PR #199.)*
+2. **Add `REFACTOR_PLAN.md` and `report-for-tim/` to `.Rbuildignore`.** Self-inflicted; closes one R CMD check NOTE.
+3. **Rebase and merge PR #196 (`parallelly`)** once #199 lands. Three-line correctness fix.
+
+### Tier 2 — close mechanical Bioc findings
+
+4. ~~**`inst/CITATION`: switch `citEntry()` → `bibentry()`** and update the two 301-redirected URLs.~~ *(PR #199.)*
+5. ~~**Capitalise the `Description:` field.**~~ *(PR #199.)*
+6. **Drop `Imports: BH`** (BH is `LinkingTo:` only) and `import(BH)` from NAMESPACE.
+7. ~~**Drop the legacy `Author:` field** in DESCRIPTION; keep only `Authors@R`.~~ *(PR #199.)*
+8. **Drop unused `Suggests: parallel`** (base R) and **`Suggests: magrittr`** (no `%>%` anywhere in `R/`).
+9. **Switch `@docType package` to `"_PACKAGE"` sentinel** in `R/sceptre.R`.
+
+### Tier 3 — dead-code removal (no behaviour change)
+
+10. **Delete `src/low_level_distilled_test.cpp`** (entirely commented-out).
+11. **Demote dead `Rcpp::export` tags** in `src/check_functions.cpp` (4 unused), `src/shared_low_level_functions.cpp` (4 unused), `src/sparse_matrix_functs.cpp` (`compute_colwise_max`), `src/mixture_functs.cpp` (`compute_tolerance_cpp`). Verified by covr: `src/check_functions.cpp` is **0% covered**, confirming the exports are dead.
+12. **Remove unused `calibration_check_run` parameter** from `check_discovery_analysis_inputs` (`R/check_functions.R:339`).
+13. **Remove `using namespace Rcpp;` from `src/shared_low_level_functions.h:2`** and `using namespace std;` from `src/sparse_matrix_functs.cpp:2`. Replace per-declaration `#ifndef` guards in the header with one whole-file guard.
+
+### Tier 4 — small structural / doc improvements
+
+14. **Document `gene_position_data_frame_grch37`** to match the existing `gene_position_data_frame_grch38.Rd`. Closes an R CMD check warning if `--as-cran` ever notices.
+15. **Gzip `inst/extdata/parse_example/gene_mat.mtx`** (528 KB → ~50 KB) and update the parse importer to accept `.mtx.gz`.
+16. **Gate `crayon` on `interactive()`** so colour codes don't leak into `sink()`-ed log files via `print(sceptre_object)` in `write_outputs_to_directory`.
+
+### What's blocked on a decision
+
+- Anything in [Section 6 (Decisions)](#decisions).
+- `set.seed()` / RNG changes (touches user-visible behaviour — Decision 1).
+- `cat()` → `message()` migration (visible UX change for some users).
+- Anything that touches the `_v2`/`_v3`/`_v4` files or the `sceptre_object` slot list.
+- Closing PR #183 or deleting branches.
+
+After Tiers 1–4 land, the BiocCheck NOTE count drops further (`BH`, `Suggests` cleanup, dead code, etc.). The 1 ERROR (`Remotes: ondisc`) and the WARNINGS for package-code `set.seed()` and `cat()`/`print()` remain — they are Track 1 work gated on [Decision 1](#decisions) and [Decision 2](#decisions).
+
+---
+
+## Open decisions {#decisions}
+
+These are the items that need explicit input — they change behaviour, public API, or scope. Mechanical follow-ups are in [Section 7](#near-term) and [Appendix B](#appendix-b).
+
+### Decisions that change behaviour or public API
+
+::: {.callout-warning appearance="minimal"}
+**1. C++ RNG: honour `set.seed()` or not?**
+
+Today the MT19937 seed is hardcoded to `4` in every C++ sampler — R's `set.seed()` is silently ignored. Fixing this is a real behavioural change: any user or test that relied on the old constant-seed determinism will see different numbers.
+
+- *Option A:* Route the C++ RNG through R's RNG via `unif_rand()`. Cleanest. Is a behavioural change.
+- *Option B:* Add an explicit `seed = NULL` argument to public functions; default to a draw from R's RNG. Preserves the C++ inner loop's purity.
+- *Option C:* Document the current behaviour and leave it. Lowest cost. Still has to be defended to Bioc reviewers.
+
+**Lean:** Option B. Explicit, testable, makes the seed part of the contract. NEWS.md note for the change.
+:::
+
+::: {.callout-warning appearance="minimal"}
+**2. `ondisc` decoupling — minimal vs. aggressive?**
+
+Three viable paths, each closes the Bioc blocker:
+
+- *Minimal (Track 1):* Move the eight `:::` calls behind public API or `requireNamespace` gating. Drop `Remotes:`. Keep `ondisc` in `Suggests:`. Lowest cost; Bioc reviewers may still ask why a non-CRAN/Bioc Suggests dependency exists.
+- *Medium (Track 1 + Track 3 ondisc absorption):* Same as minimal, then absorb the four `ondisc` C++ kernels into `sceptre`. Drop `ondisc` entirely.
+- *Push `ondisc` to Bioc:* The ondisc author pushes it to Bioc; sceptre then treats it as a normal Bioc dep. Highest external cost, cleanest end state.
+
+**Lean:** Minimal in Track 1 to unblock submission, then Medium in Track 3 unless there's an active reason to keep `ondisc` separate.
+:::
+
+::: {.callout-warning appearance="minimal"}
+**3. Decomposing the 41-slot `sceptre_object`.**
+
+Splitting into `SceptreData` / `SceptreParams` / `SceptreFitState` / `SceptreResults` / `PipelineState` is a real architectural call. Even with virtual-generic backcompat for one minor release, the user-visible class becomes a composition.
+
+- The cut points need a closer pass. E.g. is `cells_in_use` data or fit-state? (Currently leaning fit-state — depends on QC.) Is `mitochondrial_gene` data or params? (Currently in data.) Is `nf_pipeline` part of `PipelineState` or a separate `PipelineConfig`?
+- Is the deprecation cycle worth the cost? An alternative is to keep all 41 slots on the outer class and only split internally.
+
+**Lean:** Worth doing — but pin the cut points before any code change.
+:::
+
+::: {.callout-warning appearance="minimal"}
+**4. Test-runner abstraction (A2).**
+
+Collapsing the perm/CRT × workhorse cross-product into one driver is the highest-leverage code dedup but it touches the most statistically delicate file (`R/medium_level_functs_v2.R`). The v2/v3/v4 evolution carries differences that need to be classified as accidental vs. load-bearing before factoring.
+
+**Lean:** Walk through the four workhorses together; identify the load-bearing differences before factoring.
+:::
+
+::: {.callout-warning appearance="minimal"}
+**5. Bioconductor submission timing and naming.**
+
+Bioc review can run in parallel with the architectural refactor in Track 2. Two related questions:
+
+- Does the parallel CRAN-installable GitHub release stay at `0.10.x` while Bioc review runs at `0.99.x`?
+- Which org maintains the package on Bioc — Katsevich-Lab or Tim's account?
+:::
+
+::: {.callout-warning appearance="minimal"}
+**6. PR #175 and PR #113 — sequencing within Track 3.**
+
+Both substantive, both touch overlapping seams. Order matters:
+
+- *#175 first:* easier rebase (smaller). Risk: the `update_idxs(sort = FALSE)` ordering invariant is subtle.
+- *#113 first:* statistical infra (proper score test, asymptotic option). Risk: bigger diff, includes binary artifacts that need cleaning.
+
+**Lean:** #175 → #113, after Track 2 and after glmGamPoi.
+:::
+
+::: {.callout-warning appearance="minimal"}
+**7. SingleCellExperiment as a primary class?**
+
+Tempting for Bioc-purity but high cost. Recommendation: support `SCE` as an *input* via a converter; keep `sceptre_object` as the primary user-facing class. Bioc reviewers may push back; revisit on review feedback.
+:::
+
+### Heads-up only (no design call needed)
+
+These are FYIs, not debate points:
+
+- File renames and stripping `_v2`/`_v3`/`_v4` suffixes from function names (anyone with local branches will hit conflicts).
+- Splitting `R/plotting_functions.R` (1028 lines) by analysis stage.
+- `setValidity()` invariants for `sceptre_object` (will share the chosen invariants in the PR).
+- Closing PR #183 (legacy `Author:` field) and deleting merged-and-redundant branches (`dev`, `unit-tests-calib-power`, `update/unit-testing`, `flexible-cell-assignments`).
+- Retiring `\dontrun{}` in favour of runnable `\donttest{}` examples (implies tightening some long-running examples).
+- Removing dead C++ code (`src/low_level_distilled_test.cpp`; four uncalled exports in `src/check_functions.cpp`; ~6 dead `Rcpp::export` tags on internal-only helpers).
+- Boost (`BH`) removal: every Boost surface in the package is replaceable by `<random>`, `Rmath.h`, and a 6-line FNV-1a hash. Cuts ~15 minutes off Bioc build-farm builds.
+- Gzipping `inst/extdata/parse_example/gene_mat.mtx` (528 KB → ~50 KB).
+
+### Just do it (mechanical)
+
+Listed for completeness in [Appendix B](#appendix-b). These are PR-level items that proceed case-by-case rather than design calls.
+
+---
+
+## Appendix A — What the audit looked at {#appendix-a .unnumbered}
+
+Five parallel investigations, each producing a written report:
+
+1. **R architecture & modularity** — high-level structure, S4 design, module boundaries, function design, naming, dependency surface.
+2. **C++/Rcpp layer** — build flags, RNG behaviour, BH dependency, code duplication, dead exports.
+3. **Tests, docs, vignettes, CI** — coverage, gaps, CI matrix, vignette portability.
+4. **Branches and open PRs** — `dev`, `code-cov`, `feature/cell-cycle-scores`, `flexible-cell-assignments[-simpler]`, `resid_statistic`, `unit-tests-calib-power`, `update/unit-testing`, plus PRs #199, #198, #196, #183, #175, #113.
+5. **Related packages** — `ondisc` and `sceptre-pipeline`; sceptre's actual surface against each.
+
+Plus a Bioconductor compliance pass against the official submission guidelines (general, R-code, DESCRIPTION).
+
+---
+
+## Appendix B — Concrete checklist for the Bioc track {#appendix-b .unnumbered}
+
+Bioconductor blockers/warnings, in roughly the order they should be tackled. Every line is a single PR-sized fix. Items closed by **PR #199** are marked.
+
+| # | File / location | Action | Status |
+|---|---|---|---|
+| B1 | `DESCRIPTION:52` | Remove `Remotes: github::timothy-barry/ondisc` | open |
+| B2 | `R/{assign_grna,import,neg_control,pairwise_qc}_functs.R` (8 sites) | Replace `ondisc:::` with public API or `requireNamespace`-gated calls | open |
+| B3 | `R/aux_functions.R:88` | Replace `parallel::detectCores()` with `parallelly::availableCores()` (PR #196) | PR open |
+| B4 | `NAMESPACE:33`, `DESCRIPTION:28` | Remove `import(BH)` and `Imports: BH` (BH is `LinkingTo` only) | open |
+| B5 | `DESCRIPTION:26` | Replace `biocViews:` — add `Software`, drop invalid `GeneTarget` | open |
+| B6 | `DESCRIPTION` | Bump to `Version: 0.99.0`; add `BugReports:`; add pkgdown URL | partial — `BugReports:` done in #199 |
+| B7 | `vignettes/sceptre.Rmd:34, 381-384, 390` | Replace `~/sceptre_outputs` with `tempdir()`; remove `system("rm -rf …")` | open |
+| B8 | `R/aux_functions.R:90`, `R/assign_grna_functions.R:179`, `R/mixture_model_functs.R:102`, `R/plotting_functions.R:838,1009` | `set.seed()` → `withr::with_seed()` or seed-as-argument | open (Decision 1) |
+| B9 | `src/generate_samples_functions.cpp:36,78,140,164`; `src/negative_control_functions.cpp:37,112` | Honour R-side `set.seed()` (per Decision 1) | open (Decision 1) |
+| B10 | 36 sites | `cat()` → `message()` for non-`show()` paths | open |
+| B11 | `man/sceptre-package.Rd` | `\dontrun{}` → `\donttest{}` | done in #199 |
+| B12 | `DESCRIPTION:3-4` vs `:6-19` | Remove legacy `Author:` field; keep only `Authors@R` | done in #199 |
+| B13 | `DESCRIPTION:48,50` | Drop `Suggests: parallel`, `Suggests: magrittr` | open |
+| B14 | `data/gene_position_data_frame_grch37.rda` | Add `man/gene_position_data_frame_grch37.Rd` | open |
+| B15 | (new file) | Add `man/sceptre_object-class.Rd` | open |
+| B16 | `R/s4_class.R` | Add `setValidity()` with cheap invariants | open |
+| B17 | `.github/workflows/check-standard.yaml` | Add Windows runner; bump `actions/checkout@v2`→`@v4`; install ondisc on all OSes (or none, post-decoupling) | open |
+| B18 | `.github/workflows/` (new) | Add `BiocCheck` workflow | open |
+| B19 | `.github/workflows/` (new) | Add `covr` + Codecov workflow | open |
+| B20 | `R/check_functions.R:339` | Remove unused `calibration_check_run` parameter | open |
+| B21 | `R/check_functions.R:316,353` | Reconcile `grna_group` vs `grna_target` column names | open |
+| B22 | `src/low_level_distilled_test.cpp` | Delete (entirely commented-out file) | open |
+| B23 | `src/check_functions.cpp` | Delete four uncalled `Rcpp::export`s | open |
+| B24 | `src/shared_low_level_functions.{h,cpp}`, `src/sparse_matrix_functs.cpp`, `src/mixture_functs.cpp` | Demote dead `Rcpp::export` tags to internal C++ helpers | open |
+| B25 | `src/shared_low_level_functions.h:2` | Remove `using namespace Rcpp;` from header | open |
+| B26 | `src/sparse_matrix_functs.cpp:2` | Remove `using namespace std;` | open |
+| B27 | `src/shared_low_level_functions.h:4-36` | Replace per-declaration `#ifndef` guards with one whole-file guard | open |
+| B28 | `src/generate_samples_functions.cpp:30`, `R/RcppExports.R:30` | Fix typo `fisher_yates_samlper` (with deprecation alias) | open |
+| B29 | `inst/extdata/parse_example/gene_mat.mtx` | Gzip (528 KB → ~50 KB); update parse importer | open |
+| B30 | `R/s4_helpers.R` | Gate `crayon` on `interactive()` so colours don't leak into `sink()`-ed log files | open |
+| B31 | `DESCRIPTION:57` | `LazyDataCompression: gzip` → `xz` | open |
+| B32 | `R/sceptre.R` | Switch `@docType package` to `"_PACKAGE"` sentinel (RoxygenNote 7.3.1 supports it) | open |
+| B33 | `inst/CITATION` | `citEntry()` → `bibentry()`; refresh redirected URLs | done in #199 |
+| B34 | `DESCRIPTION` | Capitalize `Description:` field | done in #199 |
+| B35 | `tests/testthat/test-plotting_functions.R` + `R/plotting_functions.R` | ggplot2 4.0 / cowplot 1.2.0 compatibility | done in #199 |
+| B36 | `vignettes/sceptre.Rmd` | Label all chunks (BiocCheck) | done in #199 |

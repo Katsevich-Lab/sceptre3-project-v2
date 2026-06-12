@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Eugene Katsevich">
-<meta name="dcterms.date" content="2026-06-04">
+<meta name="dcterms.date" content="2026-06-12">
 
 <title>sceptre — Bioconductor Submission Plan</title>
 <style>
@@ -2298,9 +2298,9 @@ margin: 2em 0;
   <ul>
   <li><a href="#current-state" id="toc-current-state" class="nav-link active" data-scroll-target="#current-state"><span class="header-section-number">1</span> Current state</a>
   <ul class="collapse">
-  <li><a href="#we-will-address-have-addressed" id="toc-we-will-address-have-addressed" class="nav-link" data-scroll-target="#we-will-address-have-addressed"><span class="header-section-number">1.1</span> We will address / have addressed</a></li>
-  <li><a href="#we-will-not-address" id="toc-we-will-not-address" class="nav-link" data-scroll-target="#we-will-not-address"><span class="header-section-number">1.2</span> We will not address</a></li>
-  <li><a href="#to-discuss" id="toc-to-discuss" class="nav-link" data-scroll-target="#to-discuss"><span class="header-section-number">1.3</span> To discuss</a></li>
+  <li><a href="#we-have-addressed" id="toc-we-have-addressed" class="nav-link" data-scroll-target="#we-have-addressed"><span class="header-section-number">1.1</span> We have addressed</a></li>
+  <li><a href="#we-will-address" id="toc-we-will-address" class="nav-link" data-scroll-target="#we-will-address"><span class="header-section-number">1.2</span> We will address</a></li>
+  <li><a href="#we-will-not-address" id="toc-we-will-not-address" class="nav-link" data-scroll-target="#we-will-not-address"><span class="header-section-number">1.3</span> We will not address</a></li>
   </ul></li>
   <li><a href="#bioconductor-cover-letter" id="toc-bioconductor-cover-letter" class="nav-link" data-scroll-target="#bioconductor-cover-letter"><span class="header-section-number">2</span> Bioconductor cover letter</a></li>
   </ul>
@@ -2329,7 +2329,7 @@ margin: 2em 0;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">June 4, 2026</p>
+      <p class="date">June 12, 2026</p>
     </div>
   </div>
   
@@ -2345,47 +2345,44 @@ margin: 2em 0;
 <h2 data-number="1" class="anchored" data-anchor-id="current-state"><span class="header-section-number">1</span> Current state</h2>
 <pre><code>R CMD build  — 0 ERRORS · 0 WARNINGS · 0 NOTES
 BiocCheck    — 1 ERROR  · 1 WARNING  · 7 NOTES</code></pre>
-<section id="we-will-address-have-addressed" class="level3" data-number="1.1">
-<h3 data-number="1.1" class="anchored" data-anchor-id="we-will-address-have-addressed"><span class="header-section-number">1.1</span> We will address / have addressed</h3>
+<p>Three PRs are in flight; once merged they bring BiocCheck to <strong>1 ERROR · 1 WARNING · 5 NOTES</strong>.</p>
+<section id="we-have-addressed" class="level3" data-number="1.1">
+<h3 data-number="1.1" class="anchored" data-anchor-id="we-have-addressed"><span class="header-section-number">1.1</span> We have addressed</h3>
+<ul>
+<li><strong>NOTE: Consider multiples of 4 spaces for line indents (was 2,271 lines / 37%).</strong> Addressed by <a href="https://github.com/Katsevich-Lab/sceptre/pull/213">PR #213</a>.</li>
+<li><strong>NOTE: Usage of dontrun / donttest tags found in man page examples.</strong> Addressed by <a href="https://github.com/Katsevich-Lab/sceptre/pull/214">PR #214</a>. The single <code>\donttest{}</code> (the package-level SCEPTRE workflow example in <code>R/sceptre.R</code>) was removed and outputs were redirected from the home directory to <code>tempdir()</code>, as required by Bioc.</li>
+<li><strong>Non-BiocCheck submission requirement: Providing code used to generate <code>inst/extdata</code>.</strong> Addressed by <a href="https://github.com/Katsevich-Lab/sceptre/pull/215">PR #215</a>, including moving existing <code>data-raw</code> scripts to <code>inst/scripts</code>, updating the Parse example data to be reproducible, and updating construction of gene position data frames to download reference genomes directly rather than reading personal paths.</li>
+</ul>
+</section>
+<section id="we-will-address" class="level3" data-number="1.2">
+<h3 data-number="1.2" class="anchored" data-anchor-id="we-will-address"><span class="header-section-number">1.2</span> We will address</h3>
 <ul>
 <li><strong>ERROR: Package dependencies must be on CRAN or Bioconductor.</strong> Will be addressed when <code>ondisc</code> lands back on CRAN.</li>
-<li><strong>NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.</strong> Tim is subscribed.</li>
 <li><strong>Non-BiocCheck submission requirement: Bump version to 0.99.0.</strong> We will do this when the time comes.</li>
 </ul>
 </section>
-<section id="we-will-not-address" class="level3" data-number="1.2">
-<h3 data-number="1.2" class="anchored" data-anchor-id="we-will-not-address"><span class="header-section-number">1.2</span> We will not address</h3>
+<section id="we-will-not-address" class="level3" data-number="1.3">
+<h3 data-number="1.3" class="anchored" data-anchor-id="we-will-not-address"><span class="header-section-number">1.3</span> We will not address</h3>
 <ul>
 <li><strong>WARNING: No Bioconductor dependencies detected.</strong> Tim will justify why ondisc data structure is preferable to Bioconductor data structures.</li>
+<li><strong>NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.</strong> This is a false positive; Tim is subscribed.</li>
 <li><strong>NOTE: Update R version dependency from 4.1 to 4.6.0.</strong> We want to avoid excluding users.</li>
 <li><strong>NOTE: Avoid ‘cat’ and ‘print’ outside of ‘show’ methods.</strong> This note is a “false positive.”</li>
-<li><strong>NOTE: The recommended function length is 50 lines or less. There are 27 functions greater than 50 lines.</strong> Cosmetic.</li>
-<li><strong>NOTE: Consider shorter lines; 829 lines (14%) are &gt; 80 characters long.</strong> Cosmetic.</li>
-<li><strong>NOTE: Consider multiples of 4 spaces for line indents; 2,271 lines (37%) are not.</strong> Cosmetic.</li>
-</ul>
-</section>
-<section id="to-discuss" class="level3" data-number="1.3">
-<h3 data-number="1.3" class="anchored" data-anchor-id="to-discuss"><span class="header-section-number">1.3</span> To discuss</h3>
-<ul>
-<li><strong>NOTE: Usage of dontrun / donttest tags found in man page examples. 3% of man pages use at least one of these tags.</strong> We have just one instance of <code>donttest</code>. Can we get rid of it?</li>
-<li><strong>Non-BiocCheck submission requirement: Providing code used to generate <code>inst/extdata</code>.</strong> Where did the Parse example data come from? Separately, Gene will move <code>data-raw</code> to <code>inst/scripts</code>, the preferred place for this code.</li>
+<li><strong>NOTE: Consider shorter lines (was 829 lines / 14%).</strong> <a href="https://github.com/Katsevich-Lab/sceptre/pull/213">PR #213</a> brought it down to 143 lines (2%), but hard to bring it down to zero due to long documentation URLs, generated <code>R/RcppExports.R</code>, single-line knitr chunk headers, and a few irreducibly long identifier expressions.</li>
+<li><strong>NOTE: The recommended function length is 50 lines or less. There are 48 functions greater than 50 lines (was 27).</strong> Deferred. Note that the increase from 27 is an expected side effect of wrapping long lines to 80 columns.</li>
 </ul>
 </section>
 </section>
 <section id="bioconductor-cover-letter" class="level2" data-number="2">
 <h2 data-number="2" class="anchored" data-anchor-id="bioconductor-cover-letter"><span class="header-section-number">2</span> Bioconductor cover letter</h2>
-<p><code>BiocCheck()</code> yields one warning and six notes, which we justify below:</p>
+<p>The submitted package has 1 warning and 5 notes, for which we request exemptions:</p>
 <ul>
-<li><strong>WARNING: No Bioconductor dependencies detected.</strong> <em>Tim should fill in justification.</em></li>
+<li><strong>WARNING: No Bioconductor dependencies detected.</strong> The primary container for single-cell data in the Bioconductor ecosystem is SingleCellExperiment. Instead of using SingleCellExperiment to store and manipulate the expression data, we implemented several specialized data structures and algorithms better suited to the specific access patterns required of perturb-seq analysis. After data import (e.g., from a collection of 10x Genomics .mtx files), sceptre computes various cell-wise covariates relevant to perturb-seq analysis, including the gRNA with the greatest UMI count in a given cell and the fraction of UMIs attributable to this gRNA. sceptre does so using optimized C++ routines. Next, sceptre converts the sparse gene and gRNA expression matrices from column-accessible format into row-accessible format. This transformation is crucial, as all subsequent steps – including QC, gRNA assignment, and gRNA-to-gene association testing – require rowwise access to the gene and gRNA expression matrices. SingleCellExperiment (and allied packages, such as scran) can store these matrices and covariates, but they do not implement the specific, optimized perturb-seq computations of sceptre.</li>
+<li><strong>NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.</strong> The maintainer (Timothy Barry, <a href="mailto:tbarry@hsph.harvard.edu" class="email">tbarry@hsph.harvard.edu</a>) is subscribed to the mailing list.</li>
 <li><strong>NOTE: Update R version dependency from 4.1 to 4.6.0.</strong> We would prefer to avoid excluding users with older versions of R, including those in computer clusters where they do not have control over the version of R installed.</li>
-<li><strong>NOTE: Avoid ‘cat’ and ‘print’ outside of ‘show’ methods.</strong> The remaining instances are intentional display/output paths rather than computational logging. In <code>R/s4_helpers.R</code>, the flagged <code>cat()</code> calls are inside the user-facing S4 <code>print()</code> method for <code>sceptre_object</code>, after delegating to <code>show(x)</code>. In <code>R/s4_analysis_functs_2.R</code>, the flagged <code>print()</code> call is inside a <code>sink()</code> block that captures the analysis summary for the output directory. We believe these are false positives in spirit and have left them in place.</li>
-<li><strong>NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.</strong> I am subscribed to this mailing list.</li>
-</ul>
-<p>We following three notes are cosmetic, so we have deferred addressing them on an initial submission:</p>
-<ul>
-<li><strong>NOTE: The recommended function length is 50 lines or less. There are 27 functions greater than 50 lines.</strong></li>
-<li><strong>NOTE: Consider shorter lines; 829 lines (14%) are &gt; 80 characters long.</strong></li>
-<li><strong>NOTE: Consider multiples of 4 spaces for line indents; 2,271 lines (37%) are not.</strong></li>
+<li><strong>NOTE: Avoid ‘cat’ and ‘print’ outside of ‘show’ methods.</strong> This NOTE targets <code>cat()</code>/<code>print()</code> used in place of <code>message()</code>/<code>warning()</code> for diagnostic logging. Both flagged instances are instead object-display / file-serialization output — the use the <code>show()</code>-method exemption is meant to cover. In <code>R/s4_helpers.R</code>, the flagged <code>cat()</code> calls are inside the S4 <code>print()</code> method for <code>sceptre_object</code>, which first delegates to <code>show(x)</code> and then renders additional detail (an analysis-status checklist and result summaries) that <code>show()</code> omits. In <code>R/s4_analysis_functs_2.R</code>, the flagged <code>print()</code> call sits inside a <code>sink()</code> block that serializes the object’s summary to <code>analysis_summary.txt</code>.</li>
+<li><strong>NOTE: Consider shorter lines.</strong> Only 2% of the lines are over 80 characters, and these contain long URLs, generated <code>R/RcppExports.R</code>, single-line knitr chunk headers, and a few irreducibly long identifier expressions.</li>
+<li><strong>NOTE: The recommended function length is 50 lines or less.</strong> We have deferred addressing this cosmetic, as it would require substantial work.</li>
 </ul>
 </section>
 
