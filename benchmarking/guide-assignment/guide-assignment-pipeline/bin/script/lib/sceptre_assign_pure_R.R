@@ -664,6 +664,51 @@ fit_baseline_glm_pois_capped_pure_R <- function(g, covariate_matrix, y_max = 100
 }
 
 
+# ---- Threshold-based Poisson GLM baseline fit -------------------------------
+# Poisson analogue of fit_baseline_glm_nb_threshold_pure_R: fit stats::glm.fit
+# (Poisson) only on cells with g <= y_max, then evaluate fitted means on ALL
+# cells. Drops the high-count tail (the perturbed cells) from the "no
+# perturbation" offset fit, rather than capping them. No NB size is produced;
+# pair with a Poisson family, or with nb-fixed0 via
+# estimate_phi_from_offset_means_nb. Falls back to fitting on all cells if the
+# kept set is empty or all zeros, flagged via effective_y_max = Inf.
+fit_baseline_glm_pois_threshold_pure_R <- function(g, covariate_matrix, y_max = 100) {
+  stopifnot(length(y_max) == 1L, is.finite(y_max), y_max >= 0)
+  n <- length(g)
+
+  keep <- g <= y_max
+
+  effective_y_max <- y_max
+  if (!any(keep) || all(g[keep] == 0)) {
+    keep            <- rep(TRUE, n)
+    effective_y_max <- Inf
+  }
+
+  fit <- suppressWarnings(stats::glm.fit(
+    y      = g[keep],
+    x      = covariate_matrix[keep, , drop = FALSE],
+    family = stats::poisson()
+  ))
+
+  coef <- fit$coefficients
+  coef[is.na(coef)] <- 0
+  eta_all <- as.numeric(covariate_matrix %*% coef)
+  fit$fitted.values     <- exp(eta_all)
+  fit$linear.predictors <- eta_all
+  fit$y_max             <- effective_y_max
+  fit$n_trimmed         <- sum(!keep)
+  fit$offset_model_summary <- list(
+    coefficients    = fit$coefficients,
+    deviance        = fit$deviance,
+    iter            = fit$iter,
+    converged       = fit$converged,
+    effective_y_max = effective_y_max,
+    n_trimmed       = sum(!keep)
+  )
+  fit
+}
+
+
 # ---- Capped log1p-OLS baseline fit ------------------------------------------
 # A non-GLM offset: cap the counts at y_max, take log1p, and run ordinary least
 # squares (stats::lm.fit) of log1p(pmin(g, y_max)) on the covariate matrix. The
