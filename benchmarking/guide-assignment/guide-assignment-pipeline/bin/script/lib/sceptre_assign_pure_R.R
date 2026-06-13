@@ -465,6 +465,251 @@ fit_baseline_glm_nb_trimmed_pure_R <- function(g, covariate_matrix, trim_frac = 
 }
 
 
+# ---- Threshold-based NB GLM baseline fit ------------------------------------
+# NB analogue of fit_baseline_glm_nb_trimmed_pure_R, but with a raw count
+# threshold instead of a rank-based trim fraction: fit MASS::glm.nb only to
+# cells with g <= y_max, then evaluate fitted means on ALL cells (high-count
+# cells receive a baseline prediction extrapolated from the bulk, not
+# influenced by themselves). This treats the extreme cells -- which are exactly
+# the perturbed ones we don't want contaminating the "no perturbation" offset
+# -- as out-of-sample.
+#
+# Same Poisson + sceptre:::estimate_theta fallback as fit_baseline_glm_nb when
+# glm.nb fails; the resulting `$theta` is preserved so
+# estimate_phi_from_offset_fit_theta works downstream. Falls back to fitting on
+# all cells if the kept set is empty or all zeros, flagged via
+# effective_y_max = Inf in the returned summary.
+fit_baseline_glm_nb_threshold_pure_R <- function(g, covariate_matrix, y_max = 100) {
+  stopifnot(length(y_max) == 1L, is.finite(y_max), y_max >= 0)
+  if (!requireNamespace("MASS", quietly = TRUE)) {
+    stop("`fit_baseline_glm_nb_threshold_pure_R` requires the `MASS` package.")
+  }
+  n <- length(g)
+
+  keep <- g <= y_max
+
+  effective_y_max <- y_max
+  if (!any(keep) || all(g[keep] == 0)) {
+    keep            <- rep(TRUE, n)
+    effective_y_max <- Inf
+  }
+
+  safe_names <- paste0("X", seq_len(ncol(covariate_matrix)))
+  df <- as.data.frame(covariate_matrix[keep, , drop = FALSE])
+  colnames(df) <- safe_names
+  df$.y <- g[keep]
+  fml <- stats::as.formula(
+    paste0(".y ~ -1 + ", paste(safe_names, collapse = " + "))
+  )
+
+  fit <- tryCatch(
+    suppressWarnings(MASS::glm.nb(formula = fml, data = df)),
+    error = function(e) NULL
+  )
+  if (is.null(fit)) {
+    if (!requireNamespace("sceptre", quietly = TRUE)) {
+      stop("fit_baseline_glm_nb_threshold_pure_R's Poisson fallback requires the `sceptre` package.")
+    }
+    fit <- suppressWarnings(stats::glm.fit(
+      y      = g[keep],
+      x      = covariate_matrix[keep, , drop = FALSE],
+      family = stats::poisson()
+    ))
+    fit$theta <- tryCatch(
+      sceptre:::estimate_theta(
+        y     = g[keep],
+        mu    = fit$fitted.values,
+        dfr   = fit$df.residual,
+        limit = 50L,
+        eps   = .Machine$double.eps^(1/4)
+      )[[1]],
+      error = function(e) NA_real_
+    )
+    fit$SE.theta  <- NA_real_
+    fit$twologlik <- NA_real_
+  }
+
+  coef <- fit$coefficients
+  coef[is.na(coef)] <- 0
+  eta_all <- as.numeric(covariate_matrix %*% coef)
+  fit$fitted.values     <- exp(eta_all)
+  fit$linear.predictors <- eta_all
+  fit$y_max             <- effective_y_max
+  fit$n_trimmed         <- sum(!keep)
+  fit$offset_model_summary <- list(
+    coefficients    = fit$coefficients,
+    deviance        = fit$deviance,
+    iter            = fit$iter,
+    converged       = fit$converged,
+    theta           = fit$theta,
+    SE_theta        = fit$SE.theta,
+    twologlik       = fit$twologlik,
+    effective_y_max = effective_y_max,
+    n_trimmed       = sum(!keep)
+  )
+  fit
+}
+
+
+# ---- Capped NB GLM baseline fit ---------------------------------------------
+# Like fit_baseline_glm_nb_threshold_pure_R, but instead of DROPPING cells with
+# g > y_max it CAPS them: fit MASS::glm.nb on pmin(g, y_max). All n cells are
+# kept -- capping just bounds the influence (leverage) of any single large
+# count on the baseline fit, rather than excluding those cells entirely.
+#
+# Same Poisson + sceptre:::estimate_theta fallback as fit_baseline_glm_nb when
+# glm.nb fails (run on the capped response); the resulting `$theta` is preserved
+# so estimate_phi_from_offset_fit_theta works downstream. Note theta here is the
+# dispersion of the CAPPED counts, which is generally larger (less overdispersed)
+# than the raw-count theta.
+fit_baseline_glm_nb_capped_pure_R <- function(g, covariate_matrix, y_max = 100) {
+  stopifnot(length(y_max) == 1L, is.finite(y_max), y_max >= 0)
+  if (!requireNamespace("MASS", quietly = TRUE)) {
+    stop("`fit_baseline_glm_nb_capped_pure_R` requires the `MASS` package.")
+  }
+  n       <- length(g)
+  n_capped <- sum(g > y_max)
+  g_cap   <- pmin(g, y_max)
+
+  safe_names <- paste0("X", seq_len(ncol(covariate_matrix)))
+  df <- as.data.frame(covariate_matrix)
+  colnames(df) <- safe_names
+  df$.y <- g_cap
+  fml <- stats::as.formula(
+    paste0(".y ~ -1 + ", paste(safe_names, collapse = " + "))
+  )
+
+  fit <- tryCatch(
+    suppressWarnings(MASS::glm.nb(formula = fml, data = df)),
+    error = function(e) NULL
+  )
+  if (is.null(fit)) {
+    if (!requireNamespace("sceptre", quietly = TRUE)) {
+      stop("fit_baseline_glm_nb_capped_pure_R's Poisson fallback requires the `sceptre` package.")
+    }
+    fit <- suppressWarnings(stats::glm.fit(
+      y      = g_cap,
+      x      = covariate_matrix,
+      family = stats::poisson()
+    ))
+    fit$theta <- tryCatch(
+      sceptre:::estimate_theta(
+        y     = g_cap,
+        mu    = fit$fitted.values,
+        dfr   = fit$df.residual,
+        limit = 50L,
+        eps   = .Machine$double.eps^(1/4)
+      )[[1]],
+      error = function(e) NA_real_
+    )
+    fit$SE.theta  <- NA_real_
+    fit$twologlik <- NA_real_
+  }
+
+  coef <- fit$coefficients
+  coef[is.na(coef)] <- 0
+  eta_all <- as.numeric(covariate_matrix %*% coef)
+  fit$fitted.values     <- exp(eta_all)
+  fit$linear.predictors <- eta_all
+  fit$y_max             <- y_max
+  fit$n_capped          <- n_capped
+  fit$offset_model_summary <- list(
+    coefficients = fit$coefficients,
+    deviance     = fit$deviance,
+    iter         = fit$iter,
+    converged    = fit$converged,
+    theta        = fit$theta,
+    SE_theta     = fit$SE.theta,
+    twologlik    = fit$twologlik,
+    y_max        = y_max,
+    n_capped     = n_capped
+  )
+  fit
+}
+
+
+# ---- Capped Poisson GLM baseline fit ----------------------------------------
+# Poisson analogue of fit_baseline_glm_nb_capped_pure_R: cap the response
+# (pmin(g, y_max)) and fit stats::glm.fit with a Poisson family on all n cells.
+# Capping bounds the leverage of any single large count without dropping cells.
+# No NB size is produced; pair with a Poisson family, or with nb-fixed0 using
+# estimate_phi_from_offset_means_nb (theta0 from the means).
+fit_baseline_glm_pois_capped_pure_R <- function(g, covariate_matrix, y_max = 100) {
+  stopifnot(length(y_max) == 1L, is.finite(y_max), y_max >= 0)
+  n_capped <- sum(g > y_max)
+  g_cap    <- pmin(g, y_max)
+
+  fit <- suppressWarnings(stats::glm.fit(
+    y      = g_cap,
+    x      = covariate_matrix,
+    family = stats::poisson()
+  ))
+
+  coef <- fit$coefficients
+  coef[is.na(coef)] <- 0                  # guard against rank-deficient fits
+  eta_all <- as.numeric(covariate_matrix %*% coef)
+  fit$fitted.values     <- exp(eta_all)
+  fit$linear.predictors <- eta_all
+  fit$y_max             <- y_max
+  fit$n_capped          <- n_capped
+  fit$offset_model_summary <- list(
+    coefficients = fit$coefficients,
+    deviance     = fit$deviance,
+    iter         = fit$iter,
+    converged    = fit$converged,
+    y_max        = y_max,
+    n_capped     = n_capped
+  )
+  fit
+}
+
+
+# ---- Capped log1p-OLS baseline fit ------------------------------------------
+# A non-GLM offset: cap the counts at y_max, take log1p, and run ordinary least
+# squares (stats::lm.fit) of log1p(pmin(g, y_max)) on the covariate matrix. The
+# OLS prediction estimates E[log1p(count)]; the baseline MEAN is recovered as
+# mu0 = expm1(prediction) (the inverse of log1p), floored at a small positive
+# value so log(mu0) is finite for the EM. fitted.values therefore holds mu0
+# (the mean), consistent with the GLM offset fits.
+#
+# No NB size is produced (this isn't an NB fit), so $theta is absent: pair this
+# offset with a Poisson family, or with nb-fixed0 using
+# estimate_phi_from_offset_means_nb (which derives theta0 from the means, not a
+# stored $theta).
+fit_baseline_lm_log1p_capped_pure_R <- function(g, covariate_matrix, y_max = 100,
+                                                mu_floor = 1e-8) {
+  stopifnot(length(y_max) == 1L, is.finite(y_max), y_max >= 0)
+  n        <- length(g)
+  n_capped <- sum(g > y_max)
+  z        <- log1p(pmin(g, y_max))
+
+  fit <- stats::lm.fit(x = covariate_matrix, y = z)
+
+  coef <- fit$coefficients
+  coef[is.na(coef)] <- 0                  # guard against rank-deficient fits
+  eta_log1p <- as.numeric(covariate_matrix %*% coef)   # predicted log1p(count)
+  mu0       <- pmax(expm1(eta_log1p), mu_floor)        # back to the count mean
+
+  fit$fitted_log1p      <- eta_log1p      # OLS prediction on the log1p scale
+  fit$fitted.values     <- mu0            # baseline mean mu0 (EM uses this)
+  fit$linear.predictors <- log(mu0)       # eta = log(mu0), the actual offset
+  fit$y_max             <- y_max
+  fit$n_capped          <- n_capped
+
+  # residual SD on the log1p scale, for diagnostics
+  resid_df <- n - sum(!is.na(fit$coefficients))
+  sigma    <- if (resid_df > 0) sqrt(sum((z - eta_log1p)^2) / resid_df) else NA_real_
+
+  fit$offset_model_summary <- list(
+    coefficients = fit$coefficients,
+    sigma_log1p  = sigma,
+    y_max        = y_max,
+    n_capped     = n_capped
+  )
+  fit
+}
+
+
 # ---- NB phi (= theta) estimators --------------------------------------------
 # An `estimate_phi_fn` is called per guide as
 #   estimate_phi_fn(g, offset_model_fit) -> scalar phi
@@ -494,6 +739,39 @@ estimate_phi_from_offset_fit_sceptre <- function(g, offset_model_fit,
 # already estimated theta jointly (e.g. fit_baseline_glm_nb -> MASS::glm.nb).
 estimate_phi_from_offset_fit_theta <- function(g, offset_model_fit) {
   offset_model_fit$theta
+}
+
+# Estimate the non-pert NB size from the per-cell baseline MEANS rather than the
+# counts. The "data" are mu0_i = exp(offset_i) = offset_model_fit$fitted.values,
+# treated as a sample from a single NB with a fixed mean m = exp(mean(offset))
+# (the value you proposed). theta is then identified by method of moments:
+#   Var = m + m^2 / theta   =>   theta = m^2 / (Var - m),
+# where Var is the empirical variance of the mu0_i. Using the fitted means
+# instead of g means perturbed cells -- whose large counts otherwise crush
+# theta -- cannot contaminate the estimate.
+#
+# Why a mean is needed: NB is a two-parameter family and the size theta is not
+# identified from a variance alone (Var mixes mean and dispersion), so a mean
+# must be pinned. Here it is fixed at exp(mean(offset)) per your spec rather
+# than estimated as the sample mean.
+#
+# Note: exp(offset) is a smooth function of the covariates and is usually far
+# LESS variable than a count with that mean would be, so Var <= m is common; in
+# that case theta is undefined/negative and we return theta_cap (effectively
+# Poisson, i.e. a tight non-pert component). g is unused (kept for the
+# estimate_phi_fn contract).
+estimate_phi_from_offset_means_nb <- function(g, offset_model_fit,
+                                              theta_cap = 1e6,
+                                              min_theta = 1e-4) {
+  mu0    <- offset_model_fit$fitted.values
+  offset <- log(mu0)
+  m      <- exp(mean(offset))      # fixed NB mean = exp(mean(offset))
+  v      <- stats::var(mu0)        # empirical dispersion of the baseline means
+  if (!is.finite(m) || !is.finite(v) || v <= m) {
+    return(theta_cap)
+  }
+  theta <- m^2 / (v - m)
+  min(max(theta, min_theta), theta_cap)
 }
 
 
@@ -1495,6 +1773,416 @@ run_em_nb_separate_pure_R <- function(g, g_mus_pert0, phi,
 }
 
 
+# ---- NB-NB mixture EM with FIXED nonpert size (theta0), free theta1 ---------
+# Sits between nb-shared (a single shared size) and nb-separate (both sizes
+# free): the nonpert size theta0 is held FIXED at the value supplied by the
+# offset model, and only the perturbed size theta1 is estimated.
+#   nonpert cells: g_i ~ NB(mean = g_mus_pert0_i,            size = theta0)  [FIXED]
+#   pert    cells: g_i ~ NB(mean = exp(gamma)*g_mus_pert0_i, size = theta1)  [free]
+# Both the offset (o_i = log g_mus_pert0_i) and theta0 are treated as known.
+# theta0 enters via the `phi` argument -- intended to come from an NB offset
+# fit's $theta (e.g. fit_baseline_glm_nb_threshold_pure_R) through
+# estimate_phi_from_offset_fit_theta. The EM fits (gamma, pi, theta1).
+#
+# Same outer-loop scaffolding as run_em_nb_separate_pure_R (B starts, sceptre's
+# relative-tol convergence test, degeneracy bail-out), but with NO phi0 M-step.
+# The (gamma, theta1) M-step maximizes the weighted perturbed-component NB
+# log-likelihood -- valid because the nonpert term (theta0, mu0 both fixed) is
+# constant in (gamma, theta1). It is solved jointly via box-constrained optim
+# with gamma >= 0; the gamma >= 0 constraint pins component 1 as the elevated
+# (perturbed) one, so (as in nb-separate) there is no label-switch flip. pi is
+# the closed-form clipped mean(Ti1s).
+run_em_nb_fixed0_pure_R <- function(g, g_mus_pert0, phi,
+                                    pi_guesses, g_pert_guesses,
+                                    log_g_factorial = NULL,
+                                    max_iter = 50L, min_iter = 3L,
+                                    ep_tol = 0.5e-4,
+                                    max_gamma = 20, min_theta = 1e-4, max_theta = 1e6,
+                                    mstep_maxit = 100L) {
+  n <- length(g)
+  B <- length(pi_guesses)
+  stopifnot(length(g_pert_guesses) == B,
+            length(g_mus_pert0)    == n,
+            length(phi) == 1L, is.finite(phi), phi > 0)
+
+  theta0 <- phi
+  mu0    <- g_mus_pert0
+
+  outer_Ti1s      <- numeric(n)
+  outer_i         <- 0L
+  outer_log_lik   <- -Inf
+  outer_converged <- FALSE
+  outer_pi        <- NA_real_
+  outer_g_pert    <- NA_real_
+  outer_phi0      <- NA_real_
+  outer_phi1      <- NA_real_
+
+  for (i in seq_len(B)) {
+    curr_pi     <- min(max(pi_guesses[i], 1e-8), 1 - 1e-8)
+    curr_gamma  <- max(0, min(g_pert_guesses[i], max_gamma))
+    curr_theta1 <- min(max(theta0, min_theta), max_theta)
+    prev_log_lik <- -Inf
+    curr_log_lik <- -Inf
+    Ti1s        <- numeric(n)
+    converged   <- FALSE
+    iteration   <- 1L
+
+    repeat {
+      # E-step + observed log-lik (nonpert size fixed at theta0)
+      mu1      <- mu0 * exp(curr_gamma)
+      log_dnb0 <- stats::dnbinom(g, mu = mu0, size = theta0,      log = TRUE)
+      log_dnb1 <- stats::dnbinom(g, mu = mu1, size = curr_theta1, log = TRUE)
+      log_p0   <- log1p(-curr_pi) + log_dnb0
+      log_p1   <- log(curr_pi)    + log_dnb1
+      curr_log_lik <- sum(logaddexp(log_p0, log_p1))
+      Ti1s     <- stats::plogis(log_p1 - log_p0)
+
+      # bail-out on degenerate posteriors
+      if (all(Ti1s <= 1e-100) || any(!is.finite(Ti1s))) {
+        curr_log_lik <- -Inf
+        break
+      }
+
+      # pi update (closed-form, clipped; no flip with gamma >= 0)
+      curr_pi <- min(max(mean(Ti1s), 1e-8), 1 - 1e-8)
+
+      # convergence check (sceptre's relative-tol form)
+      tol <- compute_em_tolerance_pure_R(curr_log_lik, prev_log_lik)
+      if (tol < ep_tol && iteration >= min_iter) {
+        converged <- TRUE
+        break
+      }
+      prev_log_lik <- curr_log_lik
+      iteration    <- iteration + 1L
+      if (iteration >= max_iter) break
+
+      # M-step for (gamma, theta1): maximize the weighted perturbed-component
+      # NB log-lik (the nonpert term is constant in these params). Joint
+      # box-constrained optim over (gamma, log theta1), gamma >= 0.
+      neg_q <- function(par) {
+        mu_c <- mu0 * exp(par[1])
+        -sum(Ti1s * stats::dnbinom(g, mu = mu_c, size = exp(par[2]), log = TRUE))
+      }
+      opt <- tryCatch(
+        stats::optim(
+          par     = c(curr_gamma, log(curr_theta1)),
+          fn      = neg_q,
+          method  = "L-BFGS-B",
+          lower   = c(0,         log(min_theta)),
+          upper   = c(max_gamma, log(max_theta)),
+          control = list(maxit = mstep_maxit)
+        ),
+        error = function(e) NULL
+      )
+      if (is.null(opt)) {
+        curr_log_lik <- -Inf
+        break
+      }
+      curr_gamma  <- opt$par[1]
+      curr_theta1 <- exp(opt$par[2])
+    }
+
+    if (converged && curr_log_lik > outer_log_lik) {
+      outer_Ti1s      <- Ti1s
+      outer_i         <- i
+      outer_log_lik   <- curr_log_lik
+      outer_converged <- TRUE
+      outer_pi        <- curr_pi
+      outer_g_pert    <- curr_gamma
+      outer_phi0      <- theta0       # fixed
+      outer_phi1      <- curr_theta1  # estimated
+    }
+  }
+
+  list(outer_Ti1s      = outer_Ti1s,
+       outer_i         = outer_i,
+       outer_converged = outer_converged,
+       outer_log_lik   = outer_log_lik,
+       outer_pi        = outer_pi,
+       outer_g_pert    = outer_g_pert,
+       outer_phi0      = outer_phi0,
+       outer_phi1      = outer_phi1)
+}
+
+
+# ---- Poisson-null / NB-pert mixture EM --------------------------------------
+# Mixture with a POISSON non-pert component and an NB perturbed component:
+#   nonpert cells: g_i ~ Pois(mu0_i)                        [no free parameter]
+#   pert    cells: g_i ~ NB(mean = exp(gamma)*mu0_i, size = theta)
+# where mu0_i = exp(o_i) is the fixed offset mean. The EM fits (gamma, pi,
+# theta) -- like nb-fixed0, but the non-pert component is exactly Poisson
+# rather than NB with a fixed theta0, so there is no phi/theta0 input at all.
+#
+# Same outer-loop scaffolding as run_em_nb_fixed0_pure_R: the (gamma, theta)
+# M-step maximizes the weighted perturbed-component NB log-likelihood (valid
+# because the Poisson non-pert term, mu0 fixed, is constant in gamma/theta),
+# solved jointly via box-constrained optim with gamma >= 0 (which pins the
+# perturbed component as the elevated one, so no label-switch flip). pi is the
+# closed-form clipped mean(Ti1s). The non-pert Poisson log-density never changes
+# across iterations, so it is precomputed once. outer_phi0 is reported as Inf
+# (Poisson = NB with theta -> Inf); outer_phi1 is the estimated perturbed theta.
+#
+# Minority guard (pi_max): the Poisson non-pert component is rigid (variance =
+# mean), so a perturbed NB with gamma -> 0 and tiny theta can collapse into a
+# fat-tailed component that swallows the MAJORITY of cells at higher observed
+# log-likelihood than the true minority-perturbation solution. To reject that
+# degenerate optimum, only converged starts with pi <= pi_max (default 0.5) are
+# eligible for selection -- the perturbation fraction for a guide is essentially
+# never a majority. If no start qualifies, outer_converged stays FALSE and
+# outer_Ti1s is all zeros (fail-safe: no assignments, rather than ~all cells).
+run_em_pois_nb_pure_R <- function(g, g_mus_pert0, pi_guesses, g_pert_guesses,
+                                  log_g_factorial = NULL,
+                                  max_iter = 50L, min_iter = 3L,
+                                  ep_tol = 0.5e-4,
+                                  max_gamma = 20, min_theta = 1e-4, max_theta = 1e6,
+                                  mstep_maxit = 100L, pi_max = 0.5) {
+  n <- length(g)
+  B <- length(pi_guesses)
+  stopifnot(length(g_pert_guesses) == B, length(g_mus_pert0) == n)
+
+  mu0 <- g_mus_pert0
+  # Poisson non-pert log-density: fixed (mu0 known), so compute once.
+  log_f0 <- stats::dpois(g, lambda = mu0, log = TRUE)
+
+  outer_Ti1s      <- numeric(n)
+  outer_i         <- 0L
+  outer_log_lik   <- -Inf
+  outer_converged <- FALSE
+  outer_pi        <- NA_real_
+  outer_g_pert    <- NA_real_
+  outer_phi0      <- NA_real_
+  outer_phi1      <- NA_real_
+
+  for (i in seq_len(B)) {
+    curr_pi    <- min(max(pi_guesses[i], 1e-8), 1 - 1e-8)
+    curr_gamma <- max(0, min(g_pert_guesses[i], max_gamma))
+    curr_theta <- min(max(1, min_theta), max_theta)
+    prev_log_lik <- -Inf
+    curr_log_lik <- -Inf
+    Ti1s       <- numeric(n)
+    converged  <- FALSE
+    iteration  <- 1L
+
+    repeat {
+      # E-step + observed log-lik
+      mu1    <- mu0 * exp(curr_gamma)
+      log_f1 <- stats::dnbinom(g, mu = mu1, size = curr_theta, log = TRUE)
+      log_p0 <- log1p(-curr_pi) + log_f0
+      log_p1 <- log(curr_pi)    + log_f1
+      curr_log_lik <- sum(logaddexp(log_p0, log_p1))
+      Ti1s   <- stats::plogis(log_p1 - log_p0)
+
+      # bail-out on degenerate posteriors
+      if (all(Ti1s <= 1e-100) || any(!is.finite(Ti1s))) {
+        curr_log_lik <- -Inf
+        break
+      }
+
+      # pi update (closed-form, clipped; no flip with gamma >= 0)
+      curr_pi <- min(max(mean(Ti1s), 1e-8), 1 - 1e-8)
+
+      # convergence check (sceptre's relative-tol form)
+      tol <- compute_em_tolerance_pure_R(curr_log_lik, prev_log_lik)
+      if (tol < ep_tol && iteration >= min_iter) {
+        converged <- TRUE
+        break
+      }
+      prev_log_lik <- curr_log_lik
+      iteration    <- iteration + 1L
+      if (iteration >= max_iter) break
+
+      # M-step for (gamma, theta): maximize the weighted perturbed-component
+      # NB log-lik (the Poisson non-pert term is constant in these params).
+      neg_q <- function(par) {
+        mu_c <- mu0 * exp(par[1])
+        -sum(Ti1s * stats::dnbinom(g, mu = mu_c, size = exp(par[2]), log = TRUE))
+      }
+      opt <- tryCatch(
+        stats::optim(
+          par     = c(curr_gamma, log(curr_theta)),
+          fn      = neg_q,
+          method  = "L-BFGS-B",
+          lower   = c(0,         log(min_theta)),
+          upper   = c(max_gamma, log(max_theta)),
+          control = list(maxit = mstep_maxit)
+        ),
+        error = function(e) NULL
+      )
+      if (is.null(opt)) {
+        curr_log_lik <- -Inf
+        break
+      }
+      curr_gamma <- opt$par[1]
+      curr_theta <- exp(opt$par[2])
+    }
+
+    # Minority guard: reject the degenerate "NB swallows the majority" optimum.
+    if (converged && curr_pi <= pi_max && curr_log_lik > outer_log_lik) {
+      outer_Ti1s      <- Ti1s
+      outer_i         <- i
+      outer_log_lik   <- curr_log_lik
+      outer_converged <- TRUE
+      outer_pi        <- curr_pi
+      outer_g_pert    <- curr_gamma
+      outer_phi0      <- Inf          # Poisson non-pert = NB(theta -> Inf)
+      outer_phi1      <- curr_theta   # estimated perturbed size
+    }
+  }
+
+  list(outer_Ti1s      = outer_Ti1s,
+       outer_i         = outer_i,
+       outer_converged = outer_converged,
+       outer_log_lik   = outer_log_lik,
+       outer_pi        = outer_pi,
+       outer_g_pert    = outer_g_pert,
+       outer_phi0      = outer_phi0,
+       outer_phi1      = outer_phi1)
+}
+
+
+# ---- Poisson-null / NB-pert mixture EM, zeros forced non-pert ("pois0-nb") --
+# Same model as run_em_pois_nb_pure_R -- (1-pi) Pois(mu0) + pi NB(mu0 e^gamma,
+# theta) -- but cells with g == 0 are forced to the non-pert component: a 0-UMI
+# cell cannot carry the guide. Because zeros never enter the perturbed
+# component, the EM only ever touches the POSITIVE cells with the (expensive)
+# dnbinom/optim calls; the zeros enter only through closed-form O(1) terms. For
+# the sparse guide-count regime (often >99% zeros) this makes the per-iteration
+# cost scale with n_pos rather than n.
+#
+# Bookkeeping that the hard-zero constraint makes exact and cheap:
+#   * pi M-step: pi = sum(Ti1s_pos) / n  (zeros contribute weight 0). This is
+#     the exact MLE of pi for the constrained model -- the n_zero "votes" for
+#     non-pert enter the pi-score only through the n_zero * log(1 - pi) term,
+#     whose derivative gives pi = sum(w)/n.
+#   * observed log-lik: sum over positives of the 2-component mixture, plus the
+#     zeros' (definitely-non-pert) contribution n_zero * log(1 - pi) + sum(log
+#     dpois(0; mu0_zero)) = n_zero * log(1 - pi) - sum(mu0_zero). The second
+#     piece is a constant (precomputed); only n_zero * log(1 - pi) updates, so
+#     no per-iteration pass over the zeros is needed.
+#
+# Same (gamma, theta) joint box-constrained optim M-step (gamma >= 0, no flip)
+# and the pi_max minority guard as run_em_pois_nb_pure_R. outer_phi0 = Inf
+# (Poisson non-pert); outer_phi1 = estimated perturbed theta.
+run_em_pois0_nb_pure_R <- function(g, g_mus_pert0, pi_guesses, g_pert_guesses,
+                                   log_g_factorial = NULL,
+                                   max_iter = 50L, min_iter = 3L,
+                                   ep_tol = 0.5e-4,
+                                   max_gamma = 20, min_theta = 1e-4, max_theta = 1e6,
+                                   mstep_maxit = 100L, pi_max = 0.5) {
+  n <- length(g)
+  B <- length(pi_guesses)
+  stopifnot(length(g_pert_guesses) == B, length(g_mus_pert0) == n)
+
+  mu0      <- g_mus_pert0
+  is_pos   <- g > 0
+  n_zero   <- sum(!is_pos)
+  y_pos    <- g[is_pos]
+  mu0_pos  <- mu0[is_pos]
+  # Fixed Poisson non-pert log-density on positives; zeros' non-pert log-density
+  # dpois(0; mu0) = -mu0 enters the log-lik only as the constant below.
+  log_f0_pos     <- stats::dpois(y_pos, lambda = mu0_pos, log = TRUE)
+  loglik_zero_const <- -sum(mu0[!is_pos])
+
+  outer_Ti1s      <- numeric(n)
+  outer_i         <- 0L
+  outer_log_lik   <- -Inf
+  outer_converged <- FALSE
+  outer_pi        <- NA_real_
+  outer_g_pert    <- NA_real_
+  outer_phi0      <- NA_real_
+  outer_phi1      <- NA_real_
+
+  for (i in seq_len(B)) {
+    curr_pi    <- min(max(pi_guesses[i], 1e-8), 1 - 1e-8)
+    curr_gamma <- max(0, min(g_pert_guesses[i], max_gamma))
+    curr_theta <- min(max(1, min_theta), max_theta)
+    prev_log_lik <- -Inf
+    curr_log_lik <- -Inf
+    Ti1s_pos   <- numeric(length(y_pos))
+    converged  <- FALSE
+    iteration  <- 1L
+
+    repeat {
+      # E-step over POSITIVE cells only (zeros are forced non-pert).
+      mu1_pos    <- mu0_pos * exp(curr_gamma)
+      log_f1_pos <- stats::dnbinom(y_pos, mu = mu1_pos, size = curr_theta, log = TRUE)
+      log_p0_pos <- log1p(-curr_pi) + log_f0_pos
+      log_p1_pos <- log(curr_pi)    + log_f1_pos
+      Ti1s_pos   <- stats::plogis(log_p1_pos - log_p0_pos)
+
+      # Observed log-lik: positives' mixture + zeros' (non-pert) contribution.
+      curr_log_lik <- sum(logaddexp(log_p0_pos, log_p1_pos)) +
+                      n_zero * log1p(-curr_pi) + loglik_zero_const
+
+      # bail-out on degenerate posteriors
+      if (length(Ti1s_pos) == 0L || all(Ti1s_pos <= 1e-100) ||
+          any(!is.finite(Ti1s_pos))) {
+        curr_log_lik <- -Inf
+        break
+      }
+
+      # pi over ALL n cells (zeros contribute 0): exact MLE = sum(w_pos) / n
+      curr_pi <- min(max(sum(Ti1s_pos) / n, 1e-8), 1 - 1e-8)
+
+      tol <- compute_em_tolerance_pure_R(curr_log_lik, prev_log_lik)
+      if (tol < ep_tol && iteration >= min_iter) {
+        converged <- TRUE
+        break
+      }
+      prev_log_lik <- curr_log_lik
+      iteration    <- iteration + 1L
+      if (iteration >= max_iter) break
+
+      # M-step for (gamma, theta): POSITIVE cells only (zeros have weight 0).
+      neg_q <- function(par) {
+        mu_c <- mu0_pos * exp(par[1])
+        -sum(Ti1s_pos * stats::dnbinom(y_pos, mu = mu_c, size = exp(par[2]), log = TRUE))
+      }
+      opt <- tryCatch(
+        stats::optim(
+          par     = c(curr_gamma, log(curr_theta)),
+          fn      = neg_q,
+          method  = "L-BFGS-B",
+          lower   = c(0,         log(min_theta)),
+          upper   = c(max_gamma, log(max_theta)),
+          control = list(maxit = mstep_maxit)
+        ),
+        error = function(e) NULL
+      )
+      if (is.null(opt)) {
+        curr_log_lik <- -Inf
+        break
+      }
+      curr_gamma <- opt$par[1]
+      curr_theta <- exp(opt$par[2])
+    }
+
+    # Minority guard: reject the degenerate "NB swallows the majority" optimum.
+    if (converged && curr_pi <= pi_max && curr_log_lik > outer_log_lik) {
+      Ti1s_full          <- numeric(n)
+      Ti1s_full[is_pos]  <- Ti1s_pos     # zeros stay 0 (forced non-pert)
+      outer_Ti1s      <- Ti1s_full
+      outer_i         <- i
+      outer_log_lik   <- curr_log_lik
+      outer_converged <- TRUE
+      outer_pi        <- curr_pi
+      outer_g_pert    <- curr_gamma
+      outer_phi0      <- Inf          # Poisson non-pert = NB(theta -> Inf)
+      outer_phi1      <- curr_theta   # estimated perturbed size
+    }
+  }
+
+  list(outer_Ti1s      = outer_Ti1s,
+       outer_i         = outer_i,
+       outer_converged = outer_converged,
+       outer_log_lik   = outer_log_lik,
+       outer_pi        = outer_pi,
+       outer_g_pert    = outer_g_pert,
+       outer_phi0      = outer_phi0,
+       outer_phi1      = outer_phi1)
+}
+
+
 # ---- Per-guide assignment (mirrors obtain_em_assignments) --------------------
 # Returns the assignments + a small per-guide summary by default. Set
 # keep_fits = TRUE to also retain the full offset-model fit object and full
@@ -1551,14 +2239,14 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
                                    probability_threshold  = 0.8,
                                    keep_fits              = FALSE,
                                    fix_curr_g_pert_bug    = FALSE,
-                                   family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate"),
+                                   family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate", "nb-fixed0", "pois-nb", "pois0-nb"),
                                    phi                    = NULL,
                                    estimate_phi_fn        = NULL,
                                    n_phi_updates          = 0L,
                                    gamma_update_prob      = 0.5,
                                    offset_model_fit_fn    = fit_baseline_glm_pure_R) {
   family <- match.arg(family)
-  if (family %in% c("nb-shared", "nb-separate")) {
+  if (family %in% c("nb-shared", "nb-separate", "nb-fixed0")) {
     if (is.null(estimate_phi_fn) &&
         (is.null(phi) || length(phi) != 1L || !is.finite(phi) || phi <= 0)) {
       stop("`family = \"", family, "\"` requires either `estimate_phi_fn` or ",
@@ -1568,9 +2256,9 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
   stopifnot(length(n_phi_updates) == 1L, is.finite(n_phi_updates),
             n_phi_updates >= 0L)
   n_phi_updates <- as.integer(n_phi_updates)
-  if (family == "nb-separate" && n_phi_updates > 0L) {
-    stop("`n_phi_updates` must be 0 for `family = \"nb-separate\"` ",
-         "(phi0/phi1 are updated inside each Q-step).")
+  if (family %in% c("nb-separate", "nb-fixed0", "pois-nb", "pois0-nb") && n_phi_updates > 0L) {
+    stop("`n_phi_updates` must be 0 for `family = \"", family, "\"` ",
+         "(theta1 is updated inside each Q-step; theta0 is fixed/estimated jointly).")
   }
 
   t_start   <- Sys.time()
@@ -1615,7 +2303,7 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
     # If estimation errors / returns a non-finite value, fall back to the
     # caller's `phi` scalar and record that via em_phi_source.
     phi_used <- NA_real_
-    if (family %in% c("nb-shared", "nb-separate")) {
+    if (family %in% c("nb-shared", "nb-separate", "nb-fixed0")) {
       if (!is.null(estimate_phi_fn)) {
         phi_estimate <- tryCatch(
           estimate_phi_fn(g, offset_model_fit),
@@ -1688,11 +2376,36 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
         n_phi_updates   = n_phi_updates,
         log_g_factorial = log_g_factorial
       )
-    } else {  # "nb-separate"
+    } else if (family == "nb-separate") {
       run_em_nb_separate_pure_R(
         g               = g,
         g_mus_pert0     = g_mus_pert0,
         phi             = phi_used,
+        pi_guesses      = pi_guesses,
+        g_pert_guesses  = g_pert_guesses,
+        log_g_factorial = log_g_factorial
+      )
+    } else if (family == "nb-fixed0") {
+      run_em_nb_fixed0_pure_R(
+        g               = g,
+        g_mus_pert0     = g_mus_pert0,
+        phi             = phi_used,
+        pi_guesses      = pi_guesses,
+        g_pert_guesses  = g_pert_guesses,
+        log_g_factorial = log_g_factorial
+      )
+    } else if (family == "pois-nb") {
+      run_em_pois_nb_pure_R(
+        g               = g,
+        g_mus_pert0     = g_mus_pert0,
+        pi_guesses      = pi_guesses,
+        g_pert_guesses  = g_pert_guesses,
+        log_g_factorial = log_g_factorial
+      )
+    } else {  # "pois0-nb"
+      run_em_pois0_nb_pure_R(
+        g               = g,
+        g_mus_pert0     = g_mus_pert0,
         pi_guesses      = pi_guesses,
         g_pert_guesses  = g_pert_guesses,
         log_g_factorial = log_g_factorial
@@ -1716,12 +2429,15 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
       em_phi_nonpert <- em_fit$phi_final
       em_trajectory  <- em_fit$trajectory
       # em_phi_source already set above when phi_used was determined
-    } else if (family == "nb-separate") {
-      # phi0/phi1 are estimated jointly with (pi, gamma) inside each Q-step.
+    } else if (family %in% c("nb-separate", "nb-fixed0", "pois-nb", "pois0-nb")) {
+      # nb-separate:      phi0/phi1 both estimated inside each Q-step.
+      # nb-fixed0:        phi0 (= phi_used) held fixed; only phi1 estimated.
+      # pois-nb/pois0-nb: phi0 = Inf (Poisson non-pert); only phi1 estimated.
       em_phi_pert    <- em_fit$outer_phi1
       em_phi_nonpert <- em_fit$outer_phi0
       # Length-1 trajectory: one EM pass, no outer phi-update loop.
-      # $phi records the seed value used to initialize both phi0 and phi1.
+      # $phi records the seed/fixed value (initializes phi0/phi1 for
+      # nb-separate; is the fixed phi0 for nb-fixed0).
       em_trajectory$phi[1L]       <- phi_used
       em_trajectory$pi[1L]        <- em_fit$outer_pi
       em_trajectory$g_pert[1L]    <- em_fit$outer_g_pert
@@ -1778,14 +2494,14 @@ sceptre_assign_pure_R <- function(grna_matrix,
                                   cl                     = NULL,
                                   keep_fits              = FALSE,
                                   fix_curr_g_pert_bug    = FALSE,
-                                  family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate"),
+                                  family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate", "nb-fixed0", "pois-nb", "pois0-nb"),
                                   phi                    = NULL,
                                   estimate_phi_fn        = NULL,
                                   n_phi_updates          = 0L,
                                   gamma_update_prob      = 0.5,
                                   offset_model_fit_fn    = fit_baseline_glm_pure_R) {
   family <- match.arg(family)
-  if (family %in% c("nb-shared", "nb-separate")) {
+  if (family %in% c("nb-shared", "nb-separate", "nb-fixed0")) {
     if (is.null(estimate_phi_fn) &&
         (is.null(phi) || length(phi) != 1L || !is.finite(phi) || phi <= 0)) {
       stop("`family = \"", family, "\"` requires either `estimate_phi_fn` or ",
@@ -1795,9 +2511,9 @@ sceptre_assign_pure_R <- function(grna_matrix,
   stopifnot(length(n_phi_updates) == 1L, is.finite(n_phi_updates),
             n_phi_updates >= 0L)
   n_phi_updates <- as.integer(n_phi_updates)
-  if (family == "nb-separate" && n_phi_updates > 0L) {
-    stop("`n_phi_updates` must be 0 for `family = \"nb-separate\"` ",
-         "(phi0/phi1 are updated inside each Q-step).")
+  if (family %in% c("nb-separate", "nb-fixed0", "pois-nb", "pois0-nb") && n_phi_updates > 0L) {
+    stop("`n_phi_updates` must be 0 for `family = \"", family, "\"` ",
+         "(theta1 is updated inside each Q-step; theta0 is fixed/estimated jointly).")
   }
 
   # 0. force all promises that will be captured by the worker closure, so

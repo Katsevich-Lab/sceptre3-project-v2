@@ -1,0 +1,9 @@
+method,dataset,cpus,memory
+script_baseline,replogle-rd7_sims_from_clns_50k_4_mu,2,3.GB
+script_baseline_debugged,replogle-rd7_sims_from_clns_50k_4_mu,2,3.GB
+script_trimmed_0.001_debugged,replogle-rd7_sims_from_clns_50k_4_mu,2,3.GB
+script_trimmed_0.001_bugged,replogle-rd7_sims_from_clns_50k_4_mu,2,3.GB
+script_baseline_nb,replogle-rd7_sims_from_clns_50k_4_mu,2,3.GB
+script_nb_glm_nb,replogle-rd7_sims_from_clns_50k_4_mu,2,3.GB
+script_baseline_nb_1_update,replogle-rd7_sims_from_clns_50k_4_mu,2,3.GB
+script_trimmed_0.001_nb-separate,replogle-rd7_sims_from_clns_50k_4_mu,2,3.GB

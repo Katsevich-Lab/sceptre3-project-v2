@@ -1,0 +1,11 @@
+method,dataset,cpus,memory
+script_threshglmnb_poisnb,replogle-rd7_sims_from_clns_50k_4_mu,8,5.GB
+script_threshglmnb_pois0nb,replogle-rd7_sims_from_clns_50k_4_mu,8,5.GB
+script_capglmnb_poisnb,replogle-rd7_sims_from_clns_50k_4_mu,8,5.GB
+script_capglmnb_pois0nb,replogle-rd7_sims_from_clns_50k_4_mu,8,5.GB
+script_capglmpois_poisnb,replogle-rd7_sims_from_clns_50k_4_mu,8,5.GB
+script_capglmpois_pois0nb,replogle-rd7_sims_from_clns_50k_4_mu,8,5.GB
+script_caplmlog1p_poisnb,replogle-rd7_sims_from_clns_50k_4_mu,8,5.GB
+script_caplmlog1p_pois0nb,replogle-rd7_sims_from_clns_50k_4_mu,8,5.GB
+script_caplmlog1p_poisbug,replogle-rd7_sims_from_clns_50k_4_mu,8,5.GB
+script_caplmlog1p_nbsep,replogle-rd7_sims_from_clns_50k_4_mu,8,5.GB
