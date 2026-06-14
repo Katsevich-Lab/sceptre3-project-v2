@@ -97,7 +97,8 @@ grna_simulator_iid_sum_process <- function(num_guides, lib_sizes_scaled, params,
 }
 
 make_grna_simulation_sum_process <- function(
-    dataset_name, params_list, num_cells, num_guides_per_param, scep, seed, output_base_dir = NULL
+    dataset_name, params_list, num_cells, num_guides_per_param, scep, seed, output_base_dir = NULL,
+    use_response_covariates = TRUE
 ) {
   
   set.seed(seed)
@@ -219,7 +220,11 @@ make_grna_simulation_sum_process <- function(
     )
   )
   
-  assign_fmla <- "~ log(response_n_umis_full + 1) + log(response_n_nonzero_full + 1) + log(grna_n_umis + 1) + log(grna_n_nonzero + 1)"
+  assign_fmla <- if (use_response_covariates) {
+    "~ log(response_n_umis_full + 1) + log(response_n_nonzero_full + 1) + log(grna_n_umis + 1) + log(grna_n_nonzero + 1)"
+  } else {
+    "~ log(grna_n_umis + 1) + log(grna_n_nonzero + 1)"
+  }
   
   grna_target_df <- data.frame(
     grna_id = rownames(grna_sims),

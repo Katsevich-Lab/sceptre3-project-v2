@@ -46,15 +46,6 @@ if (!file.exists(variant_file)) {
   stop("Variant file not found: ", variant_file)
 }
 
-# Determine dataset for MOI lookup
-DATASET_NAMES <- c("gasperini", "replogle")
-dataset_name <- DATASET_NAMES[sapply(DATASET_NAMES, function(name) {
-  grepl(name, dataset_id, ignore.case = TRUE)
-})]
-if (length(dataset_name) != 1) {
-  stop("Could not determine dataset from dataset_id: ", dataset_id)
-}
-
 # Load data ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 cat("Loading data from:", input_dir, "\n")
 response_matrix <- readRDS(file.path(input_dir, "response_matrix.rds"))
@@ -89,10 +80,18 @@ if (file.exists(formula_fp)) {
 cat("  formula:", as.character(assign_grnas_fmla), "\n")
 
 # MOI lookup mirrors run_sceptre.R
-use_simulation_moi <- grepl("simulat", dataset_id, ignore.case = TRUE)
+use_simulation_moi <- grepl("simulat", dataset_id, ignore.case = TRUE) |
+  grepl("^sim", dataset_id, ignore.case = TRUE)
 if (use_simulation_moi) {
   moi <- "high"
 } else {
+  DATASET_NAMES <- c("gasperini", "replogle")
+  dataset_name <- DATASET_NAMES[sapply(DATASET_NAMES, function(name) {
+    grepl(name, dataset_id, ignore.case = TRUE)
+  })]
+  if (length(dataset_name) != 1) {
+    stop("Could not determine dataset from dataset_id: ", dataset_id)
+  }
   moi_lookup <- list(gasperini = "high", replogle = "low")
   if (!(dataset_name %in% names(moi_lookup))) {
     stop("MOI lookup missing ", dataset_name, ".")
