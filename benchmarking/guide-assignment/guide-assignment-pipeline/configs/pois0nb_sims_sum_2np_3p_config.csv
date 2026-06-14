@@ -1,0 +1,8 @@
+method,dataset,cpus,memory
+sceptre,sims_sum_2np_3p,8,6.GB
+crispat,sims_sum_2np_3p,8,6.GB
+script_glmpois_poisbug,sims_sum_2np_3p,8,6.GB
+script_trimglmpois_pois0nb,sims_sum_2np_3p,8,6.GB
+script_threshglmpois_pois0nb,sims_sum_2np_3p,8,6.GB
+script_threshglmpois500_pois0nb,sims_sum_2np_3p,8,6.GB
+script_threshglmnb_pois0nb,sims_sum_2np_3p,8,6.GB
