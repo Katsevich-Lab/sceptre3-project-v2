@@ -8,13 +8,6 @@ input_dir <- args[1]  # Directory containing sceptre-compatible data
 dataset_id <- args[2] # Dataset identifier
 
 
-# determine which dataset this is
-DATASET_NAMES = c("gasperini", "replogle")
-dataset_name <- DATASET_NAMES[sapply(DATASET_NAMES, function(name) grepl(name, dataset_id, ignore.case = TRUE))]
-if(length(dataset_name) != 1) {
-	stop("Could not determine dataset from the input path.")
-}
-
 # Load data ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 cat("Loading data from:", input_dir, "\n")
 
@@ -62,19 +55,22 @@ if(file.exists(assign_grnas_fmla_fp <- file.path(input_dir, "formula_object.rds"
 }
 cat("  Using assign_grnas(..., formula_object =", as.character(assign_grnas_fmla), "\b).\n")
 
-use_simulation_moi <- grepl("simulat", dataset_id, ignore.case = TRUE)
+use_simulation_moi <- grepl("simulat", dataset_id, ignore.case = TRUE) |
+  grepl("^sim", dataset_id, ignore.case = TRUE)
 if(use_simulation_moi) {
 	moi <- "high"
 } else {
-moi_lookup <- list(
-  gasperini = "high",
-  replogle = "low"
-)
-if(dataset_name %in% names(moi_lookup)) {
-        moi <- moi_lookup[[dataset_name]]
-} else {
-        stop("MOI lookup missing ", dataset_name, ".")
-}
+  DATASET_NAMES <- c("gasperini", "replogle")
+  dataset_name <- DATASET_NAMES[sapply(DATASET_NAMES, function(name) grepl(name, dataset_id, ignore.case = TRUE))]
+  if(length(dataset_name) != 1) {
+    stop("Could not determine dataset from the input path.")
+  }
+  moi_lookup <- list(gasperini = "high", replogle = "low")
+  if(dataset_name %in% names(moi_lookup)) {
+    moi <- moi_lookup[[dataset_name]]
+  } else {
+    stop("MOI lookup missing ", dataset_name, ".")
+  }
 }
 cat("  MOI = ", moi, "\b.\n")
 
