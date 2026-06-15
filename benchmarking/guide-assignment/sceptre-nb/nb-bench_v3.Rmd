@@ -1,0 +1,672 @@
+---
+title: "nb-bench-v3"
+output:
+  pdf_document: default
+  html_document: default
+date: "2026-06-15"
+---
+
+
+results from more extensive simulations and maybe real data
+
+
+```{r, echo=FALSE, cache=TRUE}
+rm(list=ls())
+library(tidyverse)
+
+
+source("~/.Rprofile")
+source("~/katsevich-lab/code/sceptre3-project-v2/benchmarking/guide-assignment/assignment-analysis/script_runs_analysis_functions.R")
+source("~/katsevich-lab/code/sceptre3-project-v2/benchmarking/guide-assignment/sceptre-nb/nb-bench_v3-helpers.R")
+load_assns_crispat <- function(path_to_assns, all_guides, cell_name_to_idx) {
+  crisp_assign_raw <- read.csv(path_to_assns) |>
+     left_join(cell_name_to_idx, by=join_by(cell_id == cell_name)) |>
+     dplyr::select(-cell_id)
+      # mutate(cell_idx = gsub("cell_idx_", "", cell_id) |> as.integer())
+  unordered_cell_list <- split(crisp_assign_raw$cell_idx, crisp_assign_raw$grna_id)
+  
+  guide_to_assns = vector("list", length(all_guides)) |>
+    setNames(all_guides)
+  
+  guide_to_assns[names(unordered_cell_list)] <- unordered_cell_list
+  guide_to_assns
+}
+
+load_run <- function(run_name, dataset_name) {
+  base_path = file.path(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "guide_assignment/outputs"
+  )
+  input_data_path = file.path(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "guide_assignment/input_data",
+    dataset_name
+  )
+  if(file.exists(true_perts_fp <- file.path(input_data_path, "true_pert_matrix.rds"))) {
+    true_perts = read_rds(true_perts_fp)
+  }
+  grna_matrix = file.path(input_data_path, "sceptre/grna_matrix.rds") |>
+    read_rds()
+  
+  
+  data_path = file.path(base_path, run_name)
+  
+  cov_df <- read_csv(file.path(input_data_path, "sceptre/cell_covariates.csv"), show_col_types = FALSE) |>
+    mutate(
+      grna_n_nonzero_subset = Matrix::colSums(grna_matrix > 0),
+      grna_n_umis_subset = Matrix::colSums(grna_matrix)
+    )
+  
+  
+  
+  
+  fnames = dir(data_path)
+  
+  # 1. load assignment matrices
+  assn_mat_fnames = fnames[grepl("^assignment_matrix", fnames) & grepl(dataset_name, fnames, fixed = TRUE)]
+  all_assns = list()
+  guide_names = rownames(grna_matrix)
+  for(i in seq_along(assn_mat_fnames)) {
+    curr_fname = assn_mat_fnames[i]
+    script_name = gsub("^assignment_matrix_", "", curr_fname) |>
+      gsub(pattern = "^script_", replacement="", fixed=TRUE) |>
+      gsub(pattern =paste0("_", dataset_name, ".rds"), replacement="", fixed=TRUE)
+    
+    mat = read_rds(file.path(data_path, curr_fname))
+    
+    curr_assns = lapply(guide_names, function(guide) which(mat[guide,]) |> as.integer()) |>
+      setNames(guide_names) |>
+      list() |>
+      setNames(script_name)
+    
+    all_assns = c(all_assns, curr_assns)
+    
+  }
+  
+  # 2. load extras from script runs
+  extras_fnames = fnames[grepl("^assignment_extras", fnames) & grepl(dataset_name, fnames, fixed = TRUE)]
+  extras_all <- lapply(extras_fnames, function(fname) read_rds(file.path(data_path, fname)))
+  names(extras_all) <- gsub("assignment_extras_script_", "", extras_fnames) |>
+    gsub(pattern = paste0("_", dataset_name, ".rds"), replacement="", fixed=TRUE)
+  
+  
+  # 3. load other methods if there
+  
+  # i need this to change cell name assignments to cell index assignments
+  
+  cell_name_to_idx <- data.frame(
+    cell_name = colnames(grna_matrix),
+    cell_idx = 1:ncol(grna_matrix)
+  )
+  
+  if(length(fname_crispat <- fnames[grepl("crispat", fnames)]) > 0) {
+    all_assns$crispat <- load_assns_crispat(file.path(data_path, fname_crispat), guide_names, cell_name_to_idx)
+  }
+  
+  out = list(
+    run_name = run_name, dataset_name = dataset_name,
+    input_data_path = input_data_path,
+    grna_matrix = grna_matrix,
+    cov_df = cov_df,
+    all_assns = all_assns,
+    all_extras = extras_all
+  )
+  if(exists("true_perts")) {
+    out$true_perts = true_perts
+    
+    out$true_assns = lapply(guide_names, function(guide) {
+      which(true_perts[guide,] == 1 & grna_matrix[guide,] > 0) |> as.integer()
+      # which(sim_results$true_perts[guide,] == 1 ) |> as.integer()
+    }) |>
+      setNames(guide_names)
+    
+    
+  }
+  out
+}
+
+
+# sim_old <- load_run(
+#   run_name =  "script_full_matrix",
+# dataset_name = "replogle-rd7_sims_from_clns_50k_4_mu"
+# )
+# sim_results <- sim_old_sims_results
+
+sim_pois0nb_2np_3p <- load_run(
+  run_name =  "pois0nb_sims_sum_2np_3p",
+  dataset_name = "sims_sum_2np_3p"
+)
+# sim_results <- sim_pois0nb_results
+
+
+# sim_results <- load_run(
+#   run_name =  "script_test",
+#   dataset_name = "sims_sum_1np_3p_disp"
+# )
+
+sim_pois0nb_1np_3p_disp <-  load_run(
+  run_name =  "pois0nb_sims_sum_1np_3p_disp",
+  dataset_name = "sims_sum_1np_3p_disp"
+)
+
+
+
+sim_pois0nb_repeat_old <-  load_run(
+  run_name =  "pois0nb_sims_repeat_old",
+  dataset_name = "sims_sum_repeat_old"
+)
+
+# guide_names = rownames(sim_results$grna_matrix)
+
+sim_pois0nb_2np_3p$all_assns$thresh_10 <- lapply(rownames(sim_pois0nb_2np_3p$grna_matrix), function(guide) {
+  which(sim_pois0nb_2np_3p$grna_matrix[guide,] > 10)
+}) |>
+  setNames(rownames(sim_pois0nb_2np_3p$grna_matrix))
+sim_pois0nb_1np_3p_disp$all_assns$thresh_10 <- lapply(rownames(sim_pois0nb_1np_3p_disp$grna_matrix), function(guide) {
+  which(sim_pois0nb_1np_3p_disp$grna_matrix[guide,] > 10)
+}) |>
+  setNames(rownames(sim_pois0nb_1np_3p_disp$grna_matrix))
+
+```
+
+
+
+# 0. introduce my new simulations
+
+
+main problem: no single nice distribution looks anything like the NPs
+
+The point of this plot: to show how we need the complexity of the summed process.
+
+```{r, echo=FALSE, fig.cap="Standard distributions do not decay so rapidly but then become nearly uniform. A single Pois or NB will not provide a realistic non-pertrubed model."}
+
+grna_odm_repl = ondisc::initialize_odm_from_backing_file(
+  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline/grna.odm"
+)
+
+repl_guide_stats = read_csv(
+  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline/grna_summary_stats.csv",
+  show_col_types = FALSE
+)
+
+grna_odm_gasp = ondisc::initialize_odm_from_backing_file(
+  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/gasperini/sceptre-pipeline/grna.odm"
+)
+
+gasp_guide_stats = read_csv(
+  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/gasperini/sceptre-pipeline/grna_summary_stats.csv",
+  show_col_types = FALSE
+)
+
+get_guides <- function(guide_stats, n, min_idx = 200) {
+   guide_stats |>
+  arrange(grna_total) |>
+  pull(grna) %>%
+  `[`(seq(min_idx, nrow(guide_stats) - 50, length = n) |> round())
+}
+
+# let's pick a sequence of guides in terms of expression
+repl_guides <- get_guides(repl_guide_stats, 4)
+
+gasp_guides <-  get_guides(gasp_guide_stats, 4) 
+
+
+plotlist <- c(
+  lapply(seq_along(repl_guides), function(i) {
+    plot_umi_histogram(grna_odm_repl[repl_guides[i],],
+                       title = paste0("Replogle: ", i, " / ", length(repl_guides)),
+                       x_breaks = c(1,10,100,1000,10000,100000))
+  }),
+  lapply(seq_along(gasp_guides), function(i) {
+    plot_umi_histogram(grna_odm_gasp[gasp_guides[i],],
+                       title = paste0("Gasperini: ", i, " / ", length(gasp_guides)),
+                       x_breaks = c(1,10,100,1000,10000,100000))
+  })
+)
+
+cowplot::plot_grid(plotlist = plotlist)
+```
+
+
+
+so what am i doing now? inspired by Cellbender model:
+
+$$
+Y_i = \text{Pois}(L_i \mu_{\text{exo}}) + \text{Ber}(\pi_{\text{endo}}) \text{Pois}(L_i \mu_{\text{endo}}) + \text{Ber}(\pi_{\text{pert}}) \text{NB}(L_i \mu_{\text{pert}}, \theta_{\text{pert}})
+$$
+
+
+The idea: 
+
+- the perturbed distribution is the same: NegBin with cell-specific library size rescaling factors 
+
+- but now the NP is a sum of two processes:
+  
+  - exogeneous noise, representing random stray bits getting in there. $\mu_{\text{exo}}$ is small
+  
+  - endogenous noise, from droplet contamination, chimeras, etc, giving rare but larger values. $\pi_{\text{endo}}$ is very small but $\mu_{\text{endo}}$ is larger.
+
+
+
+I am able to get satisfying looking distributions from this, and in particular I can now simulate distributions where precision is the hard part. Before, with such light tails, precision was often trivial because the NPs were so concentrated near zero.
+
+```{r, echo=FALSE, fig.cap="Example of my new simulations. Note that now precision will not be trivial.", include=FALSE, eval=FALSE}
+
+# sim_dataset_name <- "replogle-rd7_sims_from_clns_50k_4_mu"
+# 
+# grna_matrix_sims <- read_rds(
+#   file.path( "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data",
+#              sim_dataset_name, "sceptre/grna_matrix.rds")
+# )
+# 
+# true_perts_sim <- read_rds(
+#    file.path( "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data",
+#              sim_dataset_name, "true_pert_matrix.rds")
+# )
+# 
+# i=1
+# plot_umi_histogram_real_vs_sim(
+#   umis_real = grna_odm_repl[tail(repl_guides, 1),],
+#   umis_sim = grna_matrix_sims[i,],
+#   is_pert = true_perts_sim[i,],
+#   title = paste0("Repl. vs ", rownames(grna_matrix_sims)[i])
+# )
+
+```
+
+
+```{r, echo=FALSE, fig.cap="example simulation datasets, both new and old"}
+plot_umi_histogram_real_vs_sim_list(
+  umis_real = grna_odm_repl[tail(repl_guides, 1),],
+  sim_list = list(
+    NP_lowvar_P_low = list(
+      umis_sim = sim_pois0nb_2np_3p$grna_matrix["sim_NPlowvar_P1_1",],
+  is_pert = sim_pois0nb_2np_3p$true_perts["sim_NPlowvar_P1_1",]
+    ),
+      NP_lowvar_P_high = list(
+      umis_sim = sim_pois0nb_2np_3p$grna_matrix["sim_NPlowvar_P3_2",],
+  is_pert = sim_pois0nb_2np_3p$true_perts["sim_NPlowvar_P3_2",]
+    ),
+    NP_highvar_P_low = list(
+      umis_sim = sim_pois0nb_2np_3p$grna_matrix["sim_NPhighvar_P1_1",],
+  is_pert = sim_pois0nb_2np_3p$true_perts["sim_NPhighvar_P1_1",]
+    ),
+      NP_highvar_P_high = list(
+      umis_sim = sim_pois0nb_2np_3p$grna_matrix["sim_NPhighvar_P3_1",],
+  is_pert = sim_pois0nb_2np_3p$true_perts["sim_NPhighvar_P3_1",]
+    )
+  ),
+   title = "Real vs simulated: sims_sum_2np_3p"
+)
+
+plot_umi_histogram_real_vs_sim_list(
+  umis_real = grna_odm_repl[tail(repl_guides, 1),],
+  sim_list = list(
+    NP_highvar_P_lowdisp = list(
+      umis_sim = sim_pois0nb_1np_3p_disp$grna_matrix["sim_NPhighvar_Plowdisp_1",],
+  is_pert = sim_pois0nb_1np_3p_disp$true_perts["sim_NPhighvar_Plowdisp_1",]
+    ),
+      NP_highvar_P_meddisp = list(
+      umis_sim = sim_pois0nb_1np_3p_disp$grna_matrix["sim_NPhighvar_Pmeddisp_1",],
+  is_pert = sim_pois0nb_1np_3p_disp$true_perts["sim_NPhighvar_Pmeddisp_1",]
+    ),
+    NP_highvar_P_highdisp = list(
+      umis_sim = sim_pois0nb_1np_3p_disp$grna_matrix["sim_NPhighvar_Phighdisp_1",],
+  is_pert = sim_pois0nb_1np_3p_disp$true_perts["sim_NPhighvar_Phighdisp_1",]
+    )
+  ),
+   title = "Real vs simulated: sims_sum_1np_3p_disp"
+)
+
+
+
+plot_umi_histogram_real_vs_sim_list(
+  umis_real = grna_odm_repl[tail(repl_guides, 1),],
+  sim_list = list(
+    NP_pois_P_small = list(
+      umis_sim = sim_pois0nb_repeat_old$grna_matrix["sim_NPpois_Psmall_1",],
+  is_pert = sim_pois0nb_repeat_old$true_perts["sim_NPpois_Psmall_1",]
+    ),
+      NP_pois_P_med = list(
+      umis_sim = sim_pois0nb_repeat_old$grna_matrix["sim_NPpois_Pmed_74",],
+  is_pert = sim_pois0nb_repeat_old$true_perts["sim_NPpois_Pmed_74",]
+    ),
+    NP_pois_P_large = list(
+      umis_sim = sim_pois0nb_repeat_old$grna_matrix["sim_NPpois_Plarge_26",],
+  is_pert = sim_pois0nb_repeat_old$true_perts["sim_NPpois_Plarge_26",]
+    )
+  ),
+   title = "Real vs simulated: sims_repeat_old"
+)
+```
+
+
+
+
+# 1. summary metrics
+
+
+```{r, echo=FALSE, fig.cap="Comparing sceptre, crispat, and the bset new method I've found, on the new simulations sims_sum_2np_3p"}
+# for "pois0nb_sims_sum_2np_3p" ~~~~~~~~~~~~~~~~~~~~~~
+
+P_to_mean <- tibble(
+  p = c("P1", "P2", "P3"),
+  mu_pert = c(500, 750, 1000)
+)
+
+guide_meta <- tibble(
+  grna_id = rownames(sim_pois0nb_2np_3p$grna_matrix),
+  np = extract_part(grna_id, 2),
+  p = extract_part(grna_id, 3)
+) %>%
+  left_join(P_to_mean, by = "p")
+
+
+## get metrics and avg ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+guide_metric_tbl <- make_guide_metric_tbl(sim_pois0nb_2np_3p) |>
+  left_join(guide_meta, by = "grna_id")
+
+
+avg_metrics_tbl <- summarize_metric_tbl(
+  guide_metric_tbl,
+  group_vars = c("method_name", "np", "p", "mu_pert")
+)
+
+
+plot_df <- avg_metrics_tbl %>%
+  mutate(
+    ci = 2 * sd / sqrt(n_nonmissing),
+    ymin = pmax(0, mean - ci),
+    ymax = pmin(1, mean + ci)
+  )
+
+
+## 1. comparing the ones we're most interested in
+
+
+plot_df |>
+  filter(
+    method_name %in% c("crispat", "sceptre", "script_threshglmpois1000_pois0nb", "thresh_10")
+  ) |>
+make_avg_metrics_plot() +
+  ggtitle("Metrics for key methods on sims_sum_2np_3p")
+
+
+
+## 2. different thresholds
+
+# plot_df |>
+#   filter(
+#     grepl("threshglmpois", method_name),
+#     grepl("pois0nb", method_name)
+#   ) |>
+# make_avg_metrics_plot() +
+#   ggtitle("Metrics for key methods")
+
+
+
+```
+
+```{r, echo=FALSE, fig.cap = "simulations with much bigger and more overdispersed values in sims_sum_1np_3p_disp"}
+# for "sims_sum_1np_3p_disp" ~~~~~~~~~~~~~~~~~~~~~~
+
+P_to_mean <- tibble(
+  p = c("Phighdisp", "Pmeddisp", "Plowdisp"),
+  mu_pert = c(10001000, 1001000, 101000)
+)
+
+guide_meta <- tibble(
+  grna_id = rownames(sim_pois0nb_1np_3p_disp$grna_matrix),
+  np = extract_part(grna_id, 2),
+  p = extract_part(grna_id, 3)
+) %>%
+  left_join(P_to_mean, by = "p")
+
+
+## get metrics and avg ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+guide_metric_tbl <- make_guide_metric_tbl(sim_pois0nb_1np_3p_disp) |>
+  left_join(guide_meta, by = "grna_id")
+
+
+avg_metrics_tbl <- summarize_metric_tbl(
+  guide_metric_tbl,
+  group_vars = c("method_name", "np", "p", "mu_pert")
+)
+
+
+plot_df <- avg_metrics_tbl %>%
+  mutate(
+    ci = 2 * sd / sqrt(n_nonmissing),
+    ymin = pmax(0, mean - ci),
+    ymax = pmin(1, mean + ci)
+  )
+
+
+## 1. comparing the ones we're most interested in
+
+
+plot_df |>
+  filter(
+    method_name %in% c(
+      "crispat", "script_threshglmpois1000_pois0nb", "script_glmpois_poisbug", "thresh_10" # "thresh_10" #  "script_threshglmpois_pois0nb",
+    )
+  ) |>
+  mutate(method_name = ifelse(method_name == "script_glmpois_poisbug", "sceptre", method_name)) |>
+make_avg_metrics_plot(x_breaks = c(1e3,1e4,1e5,1e6,1e7)) +
+  ggtitle("Metrics for more overdispersed data")
+
+
+
+
+```
+
+
+
+```{r, echo=FALSE, fig.cap="repeating old simulations"}
+# for "sims_repeat_old" ~~~~~~~~~~~~~~~~~~~~~~
+
+P_to_mean <- tibble(
+  p = c("Plarge", "Pmed", "Psmall"),
+  mu_pert = c(970, 970/4, 970/8)
+)
+
+guide_meta <- tibble(
+  grna_id = rownames(sim_pois0nb_repeat_old$grna_matrix),
+  np = extract_part(grna_id, 2),
+  p = extract_part(grna_id, 3)
+) %>%
+  left_join(P_to_mean, by = "p")
+
+
+## get metrics and avg ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+guide_metric_tbl <- make_guide_metric_tbl(sim_pois0nb_repeat_old) |>
+  left_join(guide_meta, by = "grna_id")
+
+
+avg_metrics_tbl <- summarize_metric_tbl(
+  guide_metric_tbl,
+  group_vars = c("method_name", "np", "p", "mu_pert")
+)
+
+
+plot_df <- avg_metrics_tbl %>%
+  mutate(
+    ci = 2 * sd / sqrt(n_nonmissing),
+    ymin = pmax(0, mean - ci),
+    ymax = pmin(1, mean + ci)
+  )
+
+
+## 1. comparing the ones we're most interested in
+
+
+plot_df |>
+  # filter(
+  #   method_name %in% c(
+  #     "crispat", "script_threshglmpois_pois0nb", "script_threshglmpois1000_pois0nb", "script_glmpois_poisbug", "thresh_10"
+  #   )
+  # ) |>
+make_avg_metrics_plot(x_breaks = c(1e3,1e4,1e5,1e6,1e7)) +
+  ggtitle("Metrics for old simulations")
+
+
+
+
+```
+
+
+
+
+
+
+
+
+# 1.5 why does bugged work so well?
+
+
+```{r, echo=FALSE, fig.cap="these plots show the poor precision on some guides for the current sceptre"}
+plot_y_vs_o_one_run(
+  extras = sim_pois0nb_repeat_old$all_extras$glmpois_poisbug,
+  grna_matrix = sim_pois0nb_repeat_old$grna_matrix,
+  true_perts           = sim_pois0nb_repeat_old$true_perts,
+  input_dir            = file.path(sim_pois0nb_repeat_old$input_data_path, "sceptre"),
+  # covariate_matrix     = NULL,
+  grna_ids             = rownames(sim_pois0nb_repeat_old$grna_matrix)[c(1:6)],
+  # n_guides             = 6L,
+  max_points_per_panel = 10000L,
+  name_                = NULL,
+  # log_y                = TRUE,
+  cap_y                = 1000,
+  facet_scales         = "free",
+  show_est="p",
+  color_is_pert = TRUE,
+  # exclude_0 = TRUE,
+  seed                 = 1L
+) 
+plot_y_vs_o_one_run(
+  extras = sim_pois0nb_repeat_old$all_extras$threshglmpois1000_pois0nb,
+  grna_matrix = sim_pois0nb_repeat_old$grna_matrix,
+  true_perts           = sim_pois0nb_repeat_old$true_perts,
+  input_dir            = file.path(sim_pois0nb_repeat_old$input_data_path, "sceptre"),
+  # covariate_matrix     = NULL,
+  grna_ids             = rownames(sim_pois0nb_repeat_old$grna_matrix)[c(1:6)],
+  # n_guides             = 6L,
+  max_points_per_panel = 10000L,
+  name_                = NULL,
+  # log_y                = TRUE,
+  cap_y                = 1000,
+  facet_scales         = "free",
+  show_est="p",
+    color_is_pert = TRUE,
+  seed                 = 1L
+) 
+```
+
+
+some guides sceptre failed on:
+
+```{r, echo=FALSE}
+plot_umi_histogram_real_vs_sim_list(
+  umis_real = grna_odm_repl[tail(repl_guides, 1),],
+  sim_list = list(
+    high_prec = list(
+      umis_sim = sim_pois0nb_repeat_old$grna_matrix["sim_NPpois_Plarge_2",],
+  is_pert = sim_pois0nb_repeat_old$true_perts["sim_NPpois_Plarge_2",]
+    ),
+      low_prec = list(
+      umis_sim = sim_pois0nb_repeat_old$grna_matrix["sim_NPpois_Plarge_6",],
+  is_pert = sim_pois0nb_repeat_old$true_perts["sim_NPpois_Plarge_6",]
+    )
+  ),
+   title = "old simulated guides with good and bad scep prec"
+)
+```
+
+
+
+<!-- Does bugged reduce the meaning of the offsets? -->
+
+<!-- For bugged, we use the ratio -->
+<!-- $$ -->
+<!-- \frac{\text{Pois}(y|e^{o_i} + \gamma)}{\text{Pois}(y|e^{o_i})} = \frac{}{} -->
+<!-- $$ -->
+
+
+
+```{r, echo=FALSE, fig.cap="these plots show the performance on more realistic simulations."}
+plot_y_vs_o_one_run(
+  extras = sim_pois0nb_2np_3p$all_extras$glmpois_poisbug,
+  grna_matrix = sim_pois0nb_2np_3p$grna_matrix,
+  true_perts           = sim_pois0nb_2np_3p$true_perts,
+  input_dir            = file.path(sim_pois0nb_2np_3p$input_data_path, "sceptre"),
+  # covariate_matrix     = NULL,
+  grna_ids             = rownames(sim_pois0nb_2np_3p$grna_matrix)[c(1,2,101,102,201,202)],
+  # n_guides             = 6L,
+  max_points_per_panel = 10000L,
+  name_                = NULL,
+  # log_y                = TRUE,
+  cap_y                = 1000,
+  facet_scales         = "free",
+  show_est="p",
+  color_is_pert = TRUE,
+  # exclude_0 = TRUE,
+  seed                 = 1L
+) 
+plot_y_vs_o_one_run(
+  extras = sim_pois0nb_2np_3p$all_extras$threshglmpois1000_pois0nb,
+  grna_matrix = sim_pois0nb_2np_3p$grna_matrix,
+  true_perts           = sim_pois0nb_2np_3p$true_perts,
+  input_dir            = file.path(sim_pois0nb_2np_3p$input_data_path, "sceptre"),
+  # covariate_matrix     = NULL,
+  grna_ids             = rownames(sim_pois0nb_2np_3p$grna_matrix)[c(1,2,101,102,201,202)],
+  # n_guides             = 6L,
+  max_points_per_panel = 10000L,
+  name_                = NULL,
+  # log_y                = TRUE,
+  cap_y                = 1000,
+  facet_scales         = "free",
+  show_est="p",
+    color_is_pert = TRUE,
+  seed                 = 1L
+) 
+```
+
+
+
+
+
+
+
+
+# 2. offset exploration
+
+
+how do my different thresholdings work?
+
+<!-- do i see evidence that a small ridge penalty would be worth it? what about a way to check that the coefs are well-behaved? -->
+
+```{r, echo=FALSE}
+plot_coef_vs_coef(
+  extras_x = sim_pois0nb_2np_3p$all_extras$threshglmpois1000_pois0nb,
+  extras_y = sim_pois0nb_2np_3p$all_extras$glmpois_poisbug,
+  "2np_3_p sims: new method", "current sceptre",
+                  coef_names = colnames(build_covariate_matrix(file.path(sim_pois0nb_2np_3p$input_data_path, "sceptre"))))
+
+plot_coef_vs_coef(
+  extras_x = sim_pois0nb_1np_3p_disp$all_extras$threshglmpois1000_pois0nb,
+  extras_y = sim_pois0nb_1np_3p_disp$all_extras$glmpois_poisbug,
+  label_x = "Overdisp sims: new method", label_y = "current sceptre",
+                  coef_names = colnames(build_covariate_matrix(file.path(sim_pois0nb_1np_3p_disp$input_data_path, "sceptre"))))
+
+```
+
+
+The betas vary a lot, but that doesn't seem to be a huge performance effect. Maybe because bugged is robust to them?
+
+
+
+
+
