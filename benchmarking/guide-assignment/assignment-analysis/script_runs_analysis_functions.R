@@ -1101,3 +1101,204 @@ plot_groups_log1py_vs_o <- function(extras_x, extras_y,
     ggplot2::theme_bw() +
     ggplot2::theme(strip.text.y = ggplot2::element_text(angle = 0))
 }
+
+
+# ---- single-run y vs offset, coloured by estimated perturbation -------------
+
+# For a selection of guides, scatter the observed guide count y_i (y-axis)
+# against the offset o_i = eta_i (x-axis, link scale), one facet per guide.
+# Each point is COLOURED by the run's ESTIMATED perturbation status (whether the
+# cell is in per_guide[[g]]$assignments) and, when ground truth is available,
+# SHAPED by the TRUE perturbation status (true_perts[g, i] == 1). This is the
+# single-run analog of plot_assignment_groups_y_vs_o: it works on ONE extras
+# object, so it is usable on real data where `true_perts` is unknown (omit it and
+# the shape aesthetic is dropped, leaving estimated status as colour only).
+#
+#   extras                 : a loaded extras object
+#   grna_matrix            : sparse gRNA count matrix (y_i source; rownames = grna_ids)
+#   true_perts             : optional latent perturbation matrix [gRNA x cell];
+#                            NULL (default) => no ground truth, no shape aesthetic
+#   input_dir              : dataset dir (loads X for o_i if covariate_matrix NULL)
+#   covariate_matrix       : optional precomputed X (skips that reload)
+#   grna_ids / n_guides    : which / how many guides (facets); default first n_guides
+#   max_points_per_panel   : subsample cap per guide facet
+#   name_                  : run label for the title (default run_label())
+#   log_y                  : log1p y-axis (counts include zeros); default TRUE
+#   cap_y                  : optional cap on y_i (counts pmin()'d before plotting)
+#   show_true              : restrict cells by TRUE perturbation status:
+#                            "both" (default) keeps all cells; "np" keeps only
+#                            truly non-perturbed (is_pert == 0); "p" keeps only
+#                            truly perturbed (is_pert == 1). "np"/"p" require
+#                            `true_perts` (errors otherwise).
+#   show_est               : restrict cells by ESTIMATED perturbation status (the
+#                            run's own assignments), same values as `show_true`:
+#                            "both" (default) keeps all; "np" keeps only cells
+#                            estimated non-perturbed; "p" only those estimated
+#                            perturbed. Always available (no ground truth needed).
+#   exclude_0              : if TRUE, drop all cells with y_i == 0 (applied on top
+#                            of `show_true` / `show_est`); default FALSE
+#   color_is_pert          : controls which status maps to which aesthetic. FALSE
+#                            (default): colour = estimated status, shape = true
+#                            status. TRUE: colour = true status, shape = estimated
+#                            status. The TRUE-status aesthetic only appears when
+#                            `true_perts` is supplied; TRUE here requires it.
+#   facet_scales           : passed to facet_wrap (default "free")
+#   seed                   : RNG seed for subsampling
+plot_y_vs_o_one_run <- function(extras,
+                                grna_matrix,
+                                true_perts           = NULL,
+                                input_dir            = NULL,
+                                covariate_matrix     = NULL,
+                                grna_ids             = NULL,
+                                n_guides             = 6L,
+                                max_points_per_panel = 2000L,
+                                name_                = NULL,
+                                log_y                = TRUE,
+                                cap_y                = NULL,
+                                show_true            = c("both", "np", "p"),
+                                show_est             = c("both", "np", "p"),
+                                exclude_0            = FALSE,
+                                color_is_pert        = FALSE,
+                                facet_scales         = "free",
+                                seed                 = 1L) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("plot_y_vs_o_one_run requires the ggplot2 package.")
+  }
+  show_true <- match.arg(show_true)
+  show_est  <- match.arg(show_est)
+  if (is.null(covariate_matrix)) {
+    if (is.null(input_dir)) {
+      stop("Provide `covariate_matrix`, or `input_dir` to build it from.")
+    }
+    covariate_matrix <- build_covariate_matrix(input_dir)
+  }
+  if (is.null(name_)) name_ <- run_label(extras)
+  has_truth <- !is.null(true_perts)
+  if (show_true != "both" && !has_truth) {
+    stop("show_true = '", show_true, "' filters by true perturbation status, ",
+         "but `true_perts` was not supplied.")
+  }
+
+  eta_all <- reconstruct_offset_eta(extras, covariate_matrix)
+  common  <- intersect(names(eta_all), rownames(grna_matrix))
+  if (length(common) == 0L) {
+    stop("No guides with offset fits also present in grna_matrix.")
+  }
+  if (is.null(grna_ids)) {
+    grna_ids <- utils::head(common, n_guides)
+  } else {
+    grna_ids <- intersect(grna_ids, common)
+    if (length(grna_ids) == 0L) {
+      stop("None of the requested grna_ids have offset fits / are in grna_matrix.")
+    }
+  }
+
+  # Facet labels carry each guide's converged gamma.
+  g_pert <- extract_em_g_pert(extras)
+  facet_labels <- stats::setNames(
+    sprintf("%s\ng=%.2f", grna_ids, g_pert[grna_ids]),
+    grna_ids
+  )
+
+  n_cells <- nrow(covariate_matrix)
+  set.seed(seed)
+  per_guide_df <- lapply(grna_ids, function(id) {
+    o   <- eta_all[[id]]                            # offset (link scale)
+    y   <- as.numeric(grna_matrix[id, ])            # observed guide count
+    est <- logical(n_cells); est[extras$per_guide[[id]]$assignments] <- TRUE
+    tp  <- if (has_truth) as.numeric(true_perts[id, ]) == 1 else NA
+    gdf <- data.frame(grna_id = id, facet_label = facet_labels[[id]],
+                      o = o, y = y, est_pert = est, true_pert = tp,
+                      row.names = NULL)
+    if (show_true == "np") {
+      gdf <- gdf[!gdf$true_pert, , drop = FALSE]
+    } else if (show_true == "p") {
+      gdf <- gdf[gdf$true_pert, , drop = FALSE]
+    }
+    if (show_est == "np") {
+      gdf <- gdf[!gdf$est_pert, , drop = FALSE]
+    } else if (show_est == "p") {
+      gdf <- gdf[gdf$est_pert, , drop = FALSE]
+    }
+    if (exclude_0) {
+      gdf <- gdf[gdf$y != 0, , drop = FALSE]
+    }
+    if (nrow(gdf) > max_points_per_panel) {
+      gdf <- gdf[sample.int(nrow(gdf), max_points_per_panel), , drop = FALSE]
+    }
+    gdf
+  })
+  df <- do.call(rbind, per_guide_df)
+  df$facet_label <- factor(df$facet_label, levels = unname(facet_labels))
+  df$est_pert    <- factor(df$est_pert, levels = c(FALSE, TRUE))
+  if (has_truth) df$true_pert <- factor(df$true_pert, levels = c(FALSE, TRUE))
+
+  if (!is.null(cap_y)) df$y <- pmin(cap_y, df$y)
+
+  # color_is_pert decides which status drives colour vs shape. The TRUE-status
+  # aesthetic only appears when ground truth is available; the ESTIMATED-status
+  # aesthetic is always present.
+  if (color_is_pert && !has_truth) {
+    stop("color_is_pert = TRUE colours by true perturbation status, but ",
+         "`true_perts` was not supplied.")
+  }
+  colour_var <- if (color_is_pert) "true_pert" else "est_pert"
+  shape_var  <- if (color_is_pert) "est_pert"  else "true_pert"
+  colour_lab <- if (color_is_pert) "true perturbed" else "estimated perturbed"
+  shape_lab  <- if (color_is_pert) "estimated perturbed" else "true perturbed"
+
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = o, y = y,
+                                        colour = .data[[colour_var]])) +
+    ggplot2::geom_point(alpha = 0.5) +
+    ggplot2::scale_colour_manual(
+      name   = colour_lab,
+      values = c(`FALSE` = "#F8766D", `TRUE` = "#00BFC4"),  # ggplot2 default hues
+      drop   = FALSE
+    ) +
+    ggplot2::facet_wrap(~ facet_label, scales = facet_scales) +
+    ggplot2::labs(
+      x     = "offset  o_i = eta_i  (link scale)",
+      y     = "observed guide count  y_i",
+      title = sprintf("y vs offset, coloured by %s (%s)", colour_lab, name_),
+      subtitle = paste0(length(grna_ids), " guides; up to ",
+                        max_points_per_panel, " cells per panel")
+    ) +
+    ggplot2::theme_bw()
+
+  # The shape aesthetic needs the TRUE status; add it only when available.
+  if (has_truth) {
+    p <- p + ggplot2::aes(shape = .data[[shape_var]]) +
+      ggplot2::scale_shape_manual(
+        name   = shape_lab,
+        values = c(`FALSE` = 1, `TRUE` = 2),
+        drop   = FALSE
+      )
+  }
+
+  # Y axis: always anchored at 0, with readable ticks. Breaks are supplied as
+  # functions so they recompute per panel under facet_scales = "free"; we then
+  # force 0 into every panel's range with expand_limits() rather than a global
+  # `limits` (which would defeat the free scales).
+  if (log_y) {
+    # Under log1p the default breaks bunch up at the top; lay down 1-3-10 style
+    # breaks spanning [0, panel max].
+    cand <- c(0, 1, 3, 10, 30, 100, 300, 1000, 3000,
+              10000, 30000, 1e5, 3e5, 1e6)
+    log1p_breaks <- function(limits) {
+      b <- cand[cand <= max(limits, na.rm = TRUE)]
+      if (length(b) < 2L) c(0, max(limits, na.rm = TRUE)) else b
+    }
+    p <- p + ggplot2::scale_y_continuous(
+      trans  = "log1p",
+      breaks = log1p_breaks,
+      expand = ggplot2::expansion(mult = c(0, 0.02))
+    )
+  } else {
+    p <- p + ggplot2::scale_y_continuous(
+      breaks = scales::pretty_breaks(n = 6),
+      expand = ggplot2::expansion(mult = c(0, 0.02))
+    )
+  }
+  p <- p + ggplot2::expand_limits(y = 0)
+  p
+}
