@@ -2284,7 +2284,8 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
                                    probability_threshold  = 0.8,
                                    keep_fits              = FALSE,
                                    fix_curr_g_pert_bug    = FALSE,
-                                   family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate", "nb-fixed0", "pois-nb", "pois0-nb"),
+                                   use_log_gamma          = FALSE,
+                                   family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate", "nb-fixed0", "pois-nb", "pois0-nb", "poissum"),
                                    phi                    = NULL,
                                    estimate_phi_fn        = NULL,
                                    n_phi_updates          = 0L,
@@ -2447,13 +2448,32 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
         g_pert_guesses  = g_pert_guesses,
         log_g_factorial = log_g_factorial
       )
-    } else {  # "pois0-nb"
+    } else if (family == "pois0-nb") {
       run_em_pois0_nb_pure_R(
         g               = g,
         g_mus_pert0     = g_mus_pert0,
         pi_guesses      = pi_guesses,
         g_pert_guesses  = g_pert_guesses,
         log_g_factorial = log_g_factorial
+      )
+    } else {  # "poissum"
+      # Sum-of-Poissons additive-signal mixture (fit_pois_additive_signal_em in
+      # em_variants.R). Single EM fit (no multi-start), offset = log(mu0).
+      # use_log_gamma routes the log-scale classification. Adapt its richer
+      # return to the outer_* contract the dispatch below consumes; assignments
+      # are driven by posterior_classification, which honours use_log_gamma.
+      fit <- fit_pois_additive_signal_em(
+        y             = g,
+        offset        = log(g_mus_pert0),
+        use_log_gamma = use_log_gamma
+      )
+      list(
+        outer_Ti1s      = fit$posterior_classification,
+        outer_i         = 1L,
+        outer_converged = fit$converged,
+        outer_log_lik   = fit$loglik,
+        outer_pi        = fit$pi,
+        outer_g_pert    = fit$gamma
       )
     }
 
@@ -2539,7 +2559,8 @@ sceptre_assign_pure_R <- function(grna_matrix,
                                   cl                     = NULL,
                                   keep_fits              = FALSE,
                                   fix_curr_g_pert_bug    = FALSE,
-                                  family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate", "nb-fixed0", "pois-nb", "pois0-nb"),
+                                  use_log_gamma          = FALSE,
+                                  family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate", "nb-fixed0", "pois-nb", "pois0-nb", "poissum"),
                                   phi                    = NULL,
                                   estimate_phi_fn        = NULL,
                                   n_phi_updates          = 0L,
@@ -2566,7 +2587,8 @@ sceptre_assign_pure_R <- function(grna_matrix,
   # expressions that try to look up symbols (e.g. `scep_sims`) on the worker.
   force(grna_matrix)
   force(n_nonzero_cells_cutoff); force(backup_threshold); force(probability_threshold)
-  force(keep_fits); force(fix_curr_g_pert_bug); force(phi); force(estimate_phi_fn)
+  force(keep_fits); force(fix_curr_g_pert_bug); force(use_log_gamma)
+  force(phi); force(estimate_phi_fn)
   force(n_phi_updates); force(gamma_update_prob); force(offset_model_fit_fn)
 
   # 1. design matrix
@@ -2609,6 +2631,7 @@ sceptre_assign_pure_R <- function(grna_matrix,
       probability_threshold  = probability_threshold,
       keep_fits              = keep_fits,
       fix_curr_g_pert_bug    = fix_curr_g_pert_bug,
+      use_log_gamma          = use_log_gamma,
       family                 = family,
       phi                    = phi,
       estimate_phi_fn        = estimate_phi_fn,
@@ -2638,6 +2661,7 @@ sceptre_assign_pure_R <- function(grna_matrix,
     n_phi_updates          = n_phi_updates,
     gamma_update_prob      = gamma_update_prob,
     fix_curr_g_pert_bug    = fix_curr_g_pert_bug,
+    use_log_gamma          = use_log_gamma,
     n_em_rep               = n_em_rep,
     pi_guess_range         = pi_guess_range,
     g_pert_guess_range     = g_pert_guess_range,

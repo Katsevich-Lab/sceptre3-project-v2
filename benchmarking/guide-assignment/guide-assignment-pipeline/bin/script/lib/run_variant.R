@@ -9,7 +9,8 @@
 # the variant into the global environment; the variant in turn source()s this
 # file. We resolve IMPL_PATH here so workers can re-source the implementation.
 
-IMPL_PATH <- file.path(bin_dir, "script", "lib", "sceptre_assign_pure_R.R")
+IMPL_PATH        <- file.path(bin_dir, "script", "lib", "sceptre_assign_pure_R.R")
+EM_VARIANTS_PATH <- file.path(bin_dir, "script", "lib", "em_variants.R")
 
 run_variant <- function(grna_matrix, extra_covariates, formula, cpus,
                         offset_model_fit_fn,
@@ -40,6 +41,7 @@ run_variant <- function(grna_matrix, extra_covariates, formula, cpus,
   }
   if (!file.exists(IMPL_PATH)) stop("Implementation not found at: ", IMPL_PATH)
   source(IMPL_PATH)
+  if (file.exists(EM_VARIANTS_PATH)) source(EM_VARIANTS_PATH)
 
   cov_df <- extra_covariates
   cov_df$grna_n_nonzero <- Matrix::colSums(grna_matrix > 0)
@@ -52,6 +54,9 @@ run_variant <- function(grna_matrix, extra_covariates, formula, cpus,
     cl <- parallel::makeCluster(cpus)
     on.exit(parallel::stopCluster(cl), add = TRUE)
     parallel::clusterCall(cl, source, IMPL_PATH)
+    if (file.exists(EM_VARIANTS_PATH)) {
+      parallel::clusterCall(cl, source, EM_VARIANTS_PATH)
+    }
     for (pkg in worker_libraries) {
       parallel::clusterCall(cl, library, pkg, character.only = TRUE)
     }
