@@ -99,7 +99,7 @@ load_run <- function(run_name, dataset_name) {
     cell_idx = 1:ncol(grna_matrix)
   )
   
-  if(length(fname_crispat <- fnames[grepl("crispat", fnames)]) > 0) {
+  if(length(fname_crispat <- fnames[grepl("crispat", fnames) & grepl(dataset_name, fnames)]) > 0) {
     all_assns$crispat <- load_assns_crispat(file.path(data_path, fname_crispat), guide_names, cell_name_to_idx)
   }
   
@@ -126,23 +126,11 @@ load_run <- function(run_name, dataset_name) {
 }
 
 
-# sim_old <- load_run(
-#   run_name =  "script_full_matrix",
-# dataset_name = "replogle-rd7_sims_from_clns_50k_4_mu"
-# )
-# sim_results <- sim_old_sims_results
-
 sim_pois0nb_2np_3p <- load_run(
   run_name =  "pois0nb_sims_sum_2np_3p",
   dataset_name = "sims_sum_2np_3p"
 )
-# sim_results <- sim_pois0nb_results
 
-
-# sim_results <- load_run(
-#   run_name =  "script_test",
-#   dataset_name = "sims_sum_1np_3p_disp"
-# )
 
 sim_pois0nb_1np_3p_disp <-  load_run(
   run_name =  "pois0nb_sims_sum_1np_3p_disp",
@@ -156,16 +144,26 @@ sim_pois0nb_repeat_old <-  load_run(
   dataset_name = "sims_sum_repeat_old"
 )
 
+
+repl_results <-  load_run(
+  run_name =  "script_real_data",
+  dataset_name = "replogle-rd7_assign_nguides=800_ncells=100k"
+)
+
+gasp_results <-  load_run(
+  run_name =  "script_real_data",
+  dataset_name = "gasperini_assign_nguides=800_ncells=100k"
+)
 # guide_names = rownames(sim_results$grna_matrix)
 
-sim_pois0nb_2np_3p$all_assns$thresh_10 <- lapply(rownames(sim_pois0nb_2np_3p$grna_matrix), function(guide) {
-  which(sim_pois0nb_2np_3p$grna_matrix[guide,] > 10)
-}) |>
-  setNames(rownames(sim_pois0nb_2np_3p$grna_matrix))
-sim_pois0nb_1np_3p_disp$all_assns$thresh_10 <- lapply(rownames(sim_pois0nb_1np_3p_disp$grna_matrix), function(guide) {
-  which(sim_pois0nb_1np_3p_disp$grna_matrix[guide,] > 10)
-}) |>
-  setNames(rownames(sim_pois0nb_1np_3p_disp$grna_matrix))
+# sim_pois0nb_2np_3p$all_assns$thresh_10 <- lapply(rownames(sim_pois0nb_2np_3p$grna_matrix), function(guide) {
+#   which(sim_pois0nb_2np_3p$grna_matrix[guide,] > 10)
+# }) |>
+#   setNames(rownames(sim_pois0nb_2np_3p$grna_matrix))
+# sim_pois0nb_1np_3p_disp$all_assns$thresh_10 <- lapply(rownames(sim_pois0nb_1np_3p_disp$grna_matrix), function(guide) {
+#   which(sim_pois0nb_1np_3p_disp$grna_matrix[guide,] > 10)
+# }) |>
+#   setNames(rownames(sim_pois0nb_1np_3p_disp$grna_matrix))
 
 ```
 
@@ -387,7 +385,8 @@ plot_df <- avg_metrics_tbl %>%
 
 plot_df |>
   filter(
-    method_name %in% c("crispat", "sceptre", "script_threshglmpois1000_pois0nb", "thresh_10")
+    method_name %in% c("crispat", "sceptre", "script_threshglmpois1000_pois0nb", "script_threshglmpois1000_poisbug", "script_threshglmpois1000_poissumlog", 
+                       "script_glmpois_poissumlog")
   ) |>
 make_avg_metrics_plot() +
   ggtitle("Metrics for key methods on sims_sum_2np_3p")
@@ -450,7 +449,7 @@ plot_df <- avg_metrics_tbl %>%
 plot_df |>
   filter(
     method_name %in% c(
-      "crispat", "script_threshglmpois1000_pois0nb", "script_glmpois_poisbug", "thresh_10" # "thresh_10" #  "script_threshglmpois_pois0nb",
+      "crispat", "script_threshglmpois1000_pois0nb", "script_glmpois_poisbug", "thresh_10", "script_threshglmpois1000_poissumlog", "script_threshglmpois1000_poisbug", "script_glmpois_poissumlog" # "thresh_10" #  "script_threshglmpois_pois0nb",
     )
   ) |>
   mutate(method_name = ifelse(method_name == "script_glmpois_poisbug", "sceptre", method_name)) |>
@@ -504,11 +503,13 @@ plot_df <- avg_metrics_tbl %>%
 
 
 plot_df |>
-  # filter(
-  #   method_name %in% c(
-  #     "crispat", "script_threshglmpois_pois0nb", "script_threshglmpois1000_pois0nb", "script_glmpois_poisbug", "thresh_10"
-  #   )
-  # ) |>
+  # filter(! method_name %in% c("script_trimglmpois_poisfix", "script_glmpois_poisbug")) |>
+  filter(
+    method_name %in% c(
+      "crispat", "sceptre", "script_threshglmpois1000_pois0nb", "script_threshglmpois1000_poissumlog",
+      "script_threshglmpois1000_poisbug", "script_glmpois_poissumlog"
+    )
+  ) |>
 make_avg_metrics_plot(x_breaks = c(1e3,1e4,1e5,1e6,1e7)) +
   ggtitle("Metrics for old simulations")
 
@@ -529,6 +530,26 @@ make_avg_metrics_plot(x_breaks = c(1e3,1e4,1e5,1e6,1e7)) +
 
 ```{r, echo=FALSE, fig.cap="these plots show the poor precision on some guides for the current sceptre"}
 plot_y_vs_o_one_run(
+  extras = sim_pois0nb_repeat_old$all_extras$trimglmpois_poisfix,
+  grna_matrix = sim_pois0nb_repeat_old$grna_matrix,
+  true_perts           = sim_pois0nb_repeat_old$true_perts,
+  input_dir            = file.path(sim_pois0nb_repeat_old$input_data_path, "sceptre"),
+  # covariate_matrix     = NULL,
+  grna_ids             = rownames(sim_pois0nb_repeat_old$grna_matrix)[c(1:6)],
+  # n_guides             = 6L,
+  max_points_per_panel = 10000L,
+  name_                = NULL,
+  # log_y                = TRUE,
+  cap_y                = 1000,
+  facet_scales         = "free",
+  show_est="p",
+  color_is_pert = TRUE,
+  # exclude_0 = TRUE,
+  seed                 = 1L
+) 
+
+
+plot_y_vs_o_one_run(
   extras = sim_pois0nb_repeat_old$all_extras$glmpois_poisbug,
   grna_matrix = sim_pois0nb_repeat_old$grna_matrix,
   true_perts           = sim_pois0nb_repeat_old$true_perts,
@@ -546,6 +567,27 @@ plot_y_vs_o_one_run(
   # exclude_0 = TRUE,
   seed                 = 1L
 ) 
+
+plot_y_vs_o_one_run(
+  extras = sim_pois0nb_repeat_old$all_extras$glmpois_poissumlog,
+  grna_matrix = sim_pois0nb_repeat_old$grna_matrix,
+  true_perts           = sim_pois0nb_repeat_old$true_perts,
+  input_dir            = file.path(sim_pois0nb_repeat_old$input_data_path, "sceptre"),
+  # covariate_matrix     = NULL,
+  grna_ids             = rownames(sim_pois0nb_repeat_old$grna_matrix)[c(1:6)],
+  # n_guides             = 6L,
+  max_points_per_panel = 10000L,
+  name_                = NULL,
+  # log_y                = TRUE,
+  cap_y                = 1000,
+  facet_scales         = "free",
+  show_est="p",
+  color_is_pert = TRUE,
+  # exclude_0 = TRUE,
+  seed                 = 1L
+) 
+
+
 plot_y_vs_o_one_run(
   extras = sim_pois0nb_repeat_old$all_extras$threshglmpois1000_pois0nb,
   grna_matrix = sim_pois0nb_repeat_old$grna_matrix,
@@ -563,7 +605,176 @@ plot_y_vs_o_one_run(
     color_is_pert = TRUE,
   seed                 = 1L
 ) 
+
+
+
+
+
+
+
 ```
+
+
+
+
+
+experiment: what if we just do 
+$$
+\mathbf 1\{y_i \geq 2 \max\{\mu_i, \gamma\}\}
+$$
+or something?
+
+```{r}
+thresh_est_func <- function(sim_results, run_name, glm_thresh = 1000) {
+  
+  grna_matrix = sim_results$grna_matrix
+  cov_df <- build_covariate_matrix(file.path(sim_results$input_data_path, "sceptre"))
+  
+  assns <- vector("list", nrow(grna_matrix)) |>
+    setNames(rownames(grna_matrix))
+  extras <- list(
+    per_guide = assns
+  )
+  for(i in 1:nrow(grna_matrix)) {
+    
+    y = grna_matrix[i,]
+    keep <- y <= glm_thresh
+    mod <- glm.fit(x = cov_df[keep,], y = y[keep])
+    
+    # are these lined up? i think so...
+    stopifnot(colnames(cov_df) == names(mod$coefficients))
+    offsets <- as.numeric(cov_df %*% mod$coefficients)
+    
+    # classifying
+    g_est <- log(mean(y[y >= 20]))
+    pi_est <- mean(y >= 20)
+    
+    # simplified version of decision boundary
+    ## this is a moer accurate one
+    # assns[[i]] <- which(y > (g_est - log(pi_est)) / (log(1 + g_est / exp(offsets))))
+    ## this is even simpler
+    assns[[i]] <- which(y > (1 - log(pi_est) / g_est) * max(exp(offsets), g_est))
+    
+    extras$per_guide[[i]] <- list(
+      assignments = assns[[i]],
+      offset_model_summary = list(
+        coefficients = mod$coefficients
+      )
+    )
+  }
+  sim_results$all_assns[[run_name]] <- assns
+  sim_results$all_extras[[run_name]] <- extras
+  sim_results
+}
+
+
+sim_pois0nb_repeat_old <- thresh_est_func(sim_pois0nb_repeat_old, run_name = "test_thresh", 1000)
+
+
+```
+
+i suspect that the model that current sceptre does badly at isn't 
+```{r}
+
+```
+
+
+
+ok so i see why current sceptre has poor precision on the largest mean from old sims: we have tiny offsets, so we're in a regime where we call it pert if approx $y_i > 2 \mu_{0i}$. These $o_i$ are super negative, so we get way too small of a thresh.
+
+is this the same thing that probably happens on replogle? heavy tailed leads to tiny $o_i$, then we get too small of a threshold. 
+
+are we relying on the coincidence that $\log \gamma$ is around 5, the typical UMI threshold...?
+
+
+
+
+
+
+
+
+
+
+what about just adding a thing like "we will never call a cell with <= 5 UMI counts perturbed..." ... ??
+--> use pois-pois to approx gamma and pi, but add a guard like this? 
+
+oh well the problem also is that we don't want to use the actual multiplicative model... 
+
+IDEA: so let's try using a robustified offset model. that's a simple change. does that fix that poor precision model?
+
+if so, then the bugged model reduces to ?
+
+```{r}
+plot_y_vs_o_one_run(
+  extras = sim_pois0nb_repeat_old$all_extras$glmpois_poisbug,
+  grna_matrix = sim_pois0nb_repeat_old$grna_matrix,
+  true_perts           = sim_pois0nb_repeat_old$true_perts,
+  input_dir            = file.path(sim_pois0nb_repeat_old$input_data_path, "sceptre"),
+  # covariate_matrix     = NULL,
+  grna_ids             = rownames(sim_pois0nb_repeat_old$grna_matrix)[c(1:6)],
+  # n_guides             = 6L,
+  max_points_per_panel = 10000L,
+  name_                = NULL,
+  # log_y                = TRUE,
+  cap_y                = 1000,
+  facet_scales         = "free",
+  show_est="p",
+  color_is_pert = TRUE,
+  # exclude_0 = TRUE,
+  seed                 = 1L
+) 
+
+plot_y_vs_o_one_run(
+  extras = sim_pois0nb_repeat_old$all_extras$glmpois_poisbug,
+  grna_matrix = sim_pois0nb_repeat_old$grna_matrix,
+  true_perts           = sim_pois0nb_repeat_old$true_perts,
+  input_dir            = file.path(sim_pois0nb_repeat_old$input_data_path, "sceptre"),
+  # covariate_matrix     = NULL,
+  grna_ids             = rownames(sim_pois0nb_repeat_old$grna_matrix)[c(101:106)],
+  # n_guides             = 6L,
+  max_points_per_panel = 10000L,
+  name_                = NULL,
+  # log_y                = TRUE,
+  cap_y                = 1000,
+  facet_scales         = "free",
+  show_est="p",
+  color_is_pert = TRUE,
+  # exclude_0 = TRUE,
+  seed                 = 1L
+) 
+```
+
+
+ok so here's my current hail mary: we still fit the pois-pois, but use a different way to get the decisions out of it... like 
+$$
+\mathbf 1\{y_i \geq 2 \max\{\mu_i, \gamma\}\}
+$$
+or something...
+
+
+
+ok here it is:
+
+Suppose we model $Y_i \sim \text{Pois}(e^{o_i}) + Z_i \text{Pois}(\Delta)$ for $Z_i \stackrel{\text{iid}}\sim \text{Pois}(\pi)$ indicating a successful perturbation. We then have
+$$
+Y_i \sim \begin{cases}
+\text{Pois}(e^{o_i}) & Z_i = 0 \\ \text{Pois}(e^{o_i} + \Delta) & Z_i = 1
+\end{cases}
+$$
+I think I made a convincing argument on Monday for using the sum of multiple count models for these data. This is a very simplified version of Cellbender with $P(\text{endogeneous error}) = 0$, $\theta_{\text{pert}} = \infty$, and no library size scaling in the perturbed distribution. 
+
+I think that's pretty solid justification for having a model of this form.
+
+The other problem is that we want $\Delta$ to be on the log scale. If we directly fit this model, $\Delta$ will be like $e^\gamma$ in our current model, and we have most of the same problems that we get from the bug-fixed version. 
+
+Here is how we can justify the use of $\gamma \approx \log \Delta$: 
+
+we want to reduce the ability of poor offsets to mess with us. So consider the log likelihood ratio of the perturbed to non-perturbed that we get, for a test observation $y$:
+$$
+\ell_+ = \frac{\text{Pois}(y| e^o+\Delta)}{\text{Pois}(y|e^o)} = 
+$$
+
+
 
 
 some guides sceptre failed on:
@@ -668,5 +879,168 @@ The betas vary a lot, but that doesn't seem to be a huge performance effect. May
 
 
 
+### real data
 
+
+
+big question: how similar is my additive model to sceptre?
+
+- i want jaccard, prec, and recall, using sceptre as the ground truth
+
+```{r}
+
+# agreement on replogle
+
+methods_to_use <- c("script_glmpois_poisbug", "crispat", "script_glmpois_poissumlog", "script_threshglmpois1000_poissumlog", "script_threshglmpois1000_poisbug")
+stopifnot(all(methods_to_use %in% names(repl_results$all_assns)))
+
+guide_metric_tbl = make_guide_metric_tbl_vs_ref(
+  all_assns = repl_results$all_assns[methods_to_use],
+  grna_matrix = repl_results$grna_matrix,
+    ref_method = "script_glmpois_poisbug"
+)
+
+avg_metrics_tbl <- summarize_metric_tbl(
+  guide_metric_tbl,
+  group_vars = c("method_name", "tail_mean_group")
+)
+
+make_avg_metrics_plot_ref <- function(df, x_breaks=NULL) {
+  if(is.null(x_breaks)) x_breaks <- c(200,400,800,1600)
+  ggplot(
+    df,
+    aes(
+      x = tail_mean_group,
+      y = mean,
+      group = method_name,
+      color = method_name,
+      shape = method_name
+      # linetype = method_name
+    )
+  ) +
+    geom_line() +
+    geom_errorbar(
+      aes(ymin = ymin, ymax = ymax),
+      width = 0.04,
+      alpha = 0.7
+    ) +
+    geom_point(size = 2) +
+    facet_grid( ~ metric) +
+    # scale_x_continuous(
+    #   trans = "log2",
+    #   breaks = x_breaks
+    # ) +
+    scale_shape_manual(
+      values = c(16, 17, 15, 3, 7, 8, 4, 5, 6, 9,10,11)
+    ) +
+    labs(
+      x = expression(mu[pert]),
+      y = "Mean",
+      color = "Method",
+      shape = "Method"
+      # linetype = "Method"
+    ) +
+    theme_bw() +
+    theme(
+      legend.position = "bottom"
+    )
+}
+
+plot_df <- avg_metrics_tbl %>%
+  mutate(
+    ci = 2 * sd / sqrt(n_nonmissing),
+    ymin = pmax(0, mean - ci),
+    ymax = pmin(1, mean + ci)
+  )
+
+plot_df |>
+  make_avg_metrics_plot_ref()
+
+```
+
+```{r}
+plot_avg_n_assignments_by_group(
+  all_assns = repl_results$all_assns[methods_to_use],
+  grna_matrix = repl_results$grna_matrix
+)
+```
+
+
+```{r}
+
+# agreement on gasperini
+
+methods_to_use <- c("script_glmpois_poisbug", "crispat", "script_glmpois_poissumlog", "script_threshglmpois1000_poissumlog", "script_threshglmpois1000_poisbug")
+stopifnot(all(methods_to_use %in% names(gasp_results$all_assns)))
+
+guide_metric_tbl = make_guide_metric_tbl_vs_ref(
+  all_assns = gasp_results$all_assns[methods_to_use],
+  grna_matrix = gasp_results$grna_matrix,
+    ref_method = "script_glmpois_poisbug"
+)
+
+avg_metrics_tbl <- summarize_metric_tbl(
+  guide_metric_tbl,
+  group_vars = c("method_name", "tail_mean_group")
+)
+
+make_avg_metrics_plot_ref <- function(df, x_breaks=NULL) {
+  if(is.null(x_breaks)) x_breaks <- c(200,400,800,1600)
+  ggplot(
+    df,
+    aes(
+      x = tail_mean_group,
+      y = mean,
+      group = method_name,
+      color = method_name,
+      shape = method_name
+      # linetype = method_name
+    )
+  ) +
+    geom_line() +
+    geom_errorbar(
+      aes(ymin = ymin, ymax = ymax),
+      width = 0.04,
+      alpha = 0.7
+    ) +
+    geom_point(size = 2) +
+    facet_grid( ~ metric) +
+    # scale_x_continuous(
+    #   trans = "log2",
+    #   breaks = x_breaks
+    # ) +
+    scale_shape_manual(
+      values = c(16, 17, 15, 3, 7, 8, 4, 5, 6, 9,10,11)
+    ) +
+    labs(
+      x = expression(mu[pert]),
+      y = "Mean",
+      color = "Method",
+      shape = "Method"
+      # linetype = "Method"
+    ) +
+    theme_bw() +
+    theme(
+      legend.position = "bottom"
+    )
+}
+
+plot_df <- avg_metrics_tbl %>%
+  mutate(
+    ci = 2 * sd / sqrt(n_nonmissing),
+    ymin = pmax(0, mean - ci),
+    ymax = pmin(1, mean + ci)
+  )
+
+plot_df |>
+  make_avg_metrics_plot_ref()
+
+```
+
+```{r}
+plot_avg_n_assignments_by_group(
+  all_assns = gasp_results$all_assns[methods_to_use],
+  grna_matrix = gasp_results$grna_matrix
+)
+```
 
