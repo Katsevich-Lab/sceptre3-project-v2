@@ -248,3 +248,297 @@ fit_pois_additive_signal_em <- function(
     use_log_gamma = use_log_gamma
   )
 }
+
+
+# ---- Additive NB-signal Poisson mixture EM (single fit) ----------------------
+#
+# Like fit_pois_additive_signal_em, but the perturbed signal is NEGATIVE
+# BINOMIAL rather than Poisson. Each cell is
+#
+#   y_i ~ (1 - pi) Pois(mu0_i)  +  pi [ Pois(mu0_i) + NB(mu = exp(gamma), size = theta) ],
+#
+# i.e. a perturbed cell is the independent SUM of the baseline Poisson and an NB
+# signal with mean exp(gamma) and dispersion (size) theta. The perturbed density
+# is the Poisson-NB convolution P(Y = y) = sum_{s=0}^{y} NB(s) Pois(y - s),
+# evaluated exactly via log_pois_plus_nb (O(y_i) terms per cell). theta -> Inf
+# recovers the Poisson-signal model (poissum).
+#
+# EM: E-step posterior as usual; pi M-step = mean(w); (gamma, theta) M-step
+# maximizes the weighted convolution log-likelihood sum_i w_i log f1_i jointly
+# via L-BFGS-B on (log signal_mean, log theta). The baseline Pois(mu0_i) has no
+# free parameters (mu0 is fixed by the offset).
+#
+# use_log_gamma = TRUE: classify using gamma itself -- not exp(gamma) -- as the
+# NB signal mean, the same log-scale pathology mimic as
+# fit_pois_additive_signal_em.
+#
+# NOTE: the exact convolution inside a numerical (gamma, theta) optimization on
+# every EM iteration is considerably slower than poissum; expect it to be costly
+# for guides with large counts.
+fit_pois_additive_nb_signal_em <- function(
+  y,
+  offset,
+  pi_init = 0.001,
+  gamma_init = NULL,
+  theta_init = 1,
+  max_iter = 200,
+  tol = 1e-8,
+  min_pi = 1e-10,
+  min_signal_mean = 1e-10,
+  max_signal_mean = 1e8,
+  min_theta = 1e-4,
+  max_theta = 1e6,
+  use_log_gamma = FALSE,
+  classify_threshold = 0.5,
+  verbose = FALSE
+) {
+  stopifnot(length(y) == length(offset))
+  stopifnot(all(y >= 0, na.rm = TRUE))
+  stopifnot(all(is.finite(y)))
+  stopifnot(all(is.finite(offset)))
+  stopifnot(all(y == floor(y)))
+
+  y <- as.integer(y)
+  offset <- as.numeric(offset)
+
+  n <- length(y)
+  mu0 <- exp(offset)
+
+  logsumexp <- function(x) {
+    m <- max(x)
+    m + log(sum(exp(x - m)))
+  }
+
+  logsumexp2 <- function(a, b) {
+    m <- pmax(a, b)
+    m + log(exp(a - m) + exp(b - m))
+  }
+
+  log_pois_plus_nb_one <- function(y_i, mu0_i, signal_mean, theta) {
+    s <- 0:y_i
+
+    log_terms <- stats::dpois(
+      x = y_i - s,
+      lambda = mu0_i,
+      log = TRUE
+    ) +
+      stats::dnbinom(
+        x = s,
+        size = theta,
+        mu = signal_mean,
+        log = TRUE
+      )
+
+    logsumexp(log_terms)
+  }
+
+  log_pois_plus_nb <- function(signal_mean, theta) {
+    vapply(
+      seq_along(y),
+      function(i) {
+        log_pois_plus_nb_one(
+          y_i = y[i],
+          mu0_i = mu0[i],
+          signal_mean = signal_mean,
+          theta = theta
+        )
+      },
+      numeric(1)
+    )
+  }
+
+  if (is.null(gamma_init)) {
+    signal_mean_init <- mean(pmax(y - mu0, 0))
+    signal_mean_init <- max(signal_mean_init, min_signal_mean)
+    gamma <- log(signal_mean_init)
+  } else {
+    gamma <- gamma_init
+  }
+
+  signal_mean <- min(max(exp(gamma), min_signal_mean), max_signal_mean)
+  gamma <- log(signal_mean)
+
+  theta <- min(max(theta_init, min_theta), max_theta)
+  pi <- min(max(pi_init, min_pi), 1 - min_pi)
+
+  compute_posterior <- function(pi, signal_mean_for_pert, theta) {
+    log_f0 <- stats::dpois(
+      x = y,
+      lambda = mu0,
+      log = TRUE
+    )
+
+    log_f1 <- log_pois_plus_nb(
+      signal_mean = signal_mean_for_pert,
+      theta = theta
+    )
+
+    log_num0 <- log1p(-pi) + log_f0
+    log_num1 <- log(pi) + log_f1
+    log_den <- logsumexp2(log_num0, log_num1)
+
+    exp(log_num1 - log_den)
+  }
+
+  compute_loglik <- function(pi, signal_mean_for_pert, theta) {
+    log_f0 <- stats::dpois(
+      x = y,
+      lambda = mu0,
+      log = TRUE
+    )
+
+    log_f1 <- log_pois_plus_nb(
+      signal_mean = signal_mean_for_pert,
+      theta = theta
+    )
+
+    sum(logsumexp2(
+      log1p(-pi) + log_f0,
+      log(pi) + log_f1
+    ))
+  }
+
+  history <- data.frame(
+    iter = integer(),
+    loglik = numeric(),
+    pi = numeric(),
+    gamma = numeric(),
+    signal_mean = numeric(),
+    theta = numeric(),
+    n_eff = numeric()
+  )
+
+  old_loglik <- -Inf
+  converged <- FALSE
+
+  for (iter in seq_len(max_iter)) {
+    signal_mean <- exp(gamma)
+
+    # E-step
+    w <- compute_posterior(
+      pi = pi,
+      signal_mean_for_pert = signal_mean,
+      theta = theta
+    )
+
+    # M-step for pi
+    pi <- mean(w)
+    pi <- min(max(pi, min_pi), 1 - min_pi)
+
+    # M-step for gamma and theta.
+    # Maximize weighted log convolution likelihood:
+    # sum_i w_i log P(Pois(mu0_i) + NB(exp(gamma), theta) = y_i)
+    objective <- function(par) {
+      signal_mean_curr <- exp(par[1])
+      theta_curr <- exp(par[2])
+
+      log_f1 <- log_pois_plus_nb(
+        signal_mean = signal_mean_curr,
+        theta = theta_curr
+      )
+
+      -sum(w * log_f1)
+    }
+
+    opt <- optim(
+      par = c(log(signal_mean), log(theta)),
+      fn = objective,
+      method = "L-BFGS-B",
+      lower = c(log(min_signal_mean), log(min_theta)),
+      upper = c(log(max_signal_mean), log(max_theta)),
+      control = list(maxit = 100)
+    )
+
+    gamma <- opt$par[1]
+    signal_mean <- exp(gamma)
+    theta <- exp(opt$par[2])
+
+    loglik <- compute_loglik(
+      pi = pi,
+      signal_mean_for_pert = signal_mean,
+      theta = theta
+    )
+
+    history <- rbind(
+      history,
+      data.frame(
+        iter = iter,
+        loglik = loglik,
+        pi = pi,
+        gamma = gamma,
+        signal_mean = signal_mean,
+        theta = theta,
+        n_eff = sum(w)
+      )
+    )
+
+    if (verbose) {
+      message(sprintf(
+        paste0(
+          "iter %03d | loglik %.6f | pi %.4g | ",
+          "gamma %.4f | signal_mean %.4f | theta %.4f | n_eff %.2f"
+        ),
+        iter, loglik, pi, gamma, signal_mean, theta, sum(w)
+      ))
+    }
+
+    if (is.finite(old_loglik)) {
+      if (abs(loglik - old_loglik) < tol * (1 + abs(old_loglik))) {
+        converged <- TRUE
+        break
+      }
+    }
+
+    old_loglik <- loglik
+  }
+
+  # Standard fitted posterior: uses exp(gamma) as NB signal mean.
+  signal_mean_fit <- exp(gamma)
+
+  posterior_fit <- compute_posterior(
+    pi = pi,
+    signal_mean_for_pert = signal_mean_fit,
+    theta = theta
+  )
+
+  # Optional bug-style final classification:
+  # use gamma itself as the NB signal mean.
+  if (use_log_gamma) {
+    signal_mean_classification <- gamma
+
+    if (signal_mean_classification <= 0) {
+      warning(
+        "use_log_gamma = TRUE but fitted gamma <= 0; ",
+        "clipping classification signal mean to min_signal_mean."
+      )
+      signal_mean_classification <- min_signal_mean
+    }
+  } else {
+    signal_mean_classification <- signal_mean_fit
+  }
+
+  posterior_classification <- compute_posterior(
+    pi = pi,
+    signal_mean_for_pert = signal_mean_classification,
+    theta = theta
+  )
+
+  called <- posterior_classification > classify_threshold
+
+  list(
+    pi = pi,
+    gamma = gamma,
+    theta = theta,
+    signal_mean_fit = signal_mean_fit,
+    signal_mean_classification = signal_mean_classification,
+    mu0 = mu0,
+    posterior_fit = posterior_fit,
+    posterior_classification = posterior_classification,
+    called = called,
+    loglik = tail(history$loglik, 1),
+    history = history,
+    converged = converged,
+    n_iter = nrow(history),
+    use_log_gamma = use_log_gamma
+  )
+}

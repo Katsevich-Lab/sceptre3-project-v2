@@ -2285,7 +2285,7 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
                                    keep_fits              = FALSE,
                                    fix_curr_g_pert_bug    = FALSE,
                                    use_log_gamma          = FALSE,
-                                   family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate", "nb-fixed0", "pois-nb", "pois0-nb", "poissum"),
+                                   family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate", "nb-fixed0", "pois-nb", "pois0-nb", "poissum", "nbsum"),
                                    phi                    = NULL,
                                    estimate_phi_fn        = NULL,
                                    n_phi_updates          = 0L,
@@ -2302,7 +2302,7 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
   stopifnot(length(n_phi_updates) == 1L, is.finite(n_phi_updates),
             n_phi_updates >= 0L)
   n_phi_updates <- as.integer(n_phi_updates)
-  if (family %in% c("nb-separate", "nb-fixed0", "pois-nb", "pois0-nb") && n_phi_updates > 0L) {
+  if (family %in% c("nb-separate", "nb-fixed0", "pois-nb", "pois0-nb", "nbsum") && n_phi_updates > 0L) {
     stop("`n_phi_updates` must be 0 for `family = \"", family, "\"` ",
          "(theta1 is updated inside each Q-step; theta0 is fixed/estimated jointly).")
   }
@@ -2456,7 +2456,7 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
         g_pert_guesses  = g_pert_guesses,
         log_g_factorial = log_g_factorial
       )
-    } else {  # "poissum"
+    } else if (family == "poissum") {
       # Sum-of-Poissons additive-signal mixture (fit_pois_additive_signal_em in
       # em_variants.R). Single EM fit (no multi-start), offset = log(mu0).
       # use_log_gamma routes the log-scale classification. Adapt its richer
@@ -2474,6 +2474,27 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
         outer_log_lik   = fit$loglik,
         outer_pi        = fit$pi,
         outer_g_pert    = fit$gamma
+      )
+    } else {  # "nbsum"
+      # Additive NB-signal Poisson mixture (fit_pois_additive_nb_signal_em in
+      # em_variants.R): nonpert Pois(mu0), pert Pois(mu0) + NB(exp(gamma), theta).
+      # Single EM fit, offset = log(mu0); use_log_gamma routes the log-scale
+      # classification. theta is surfaced as the perturbed NB size (outer_phi1),
+      # with outer_phi0 = Inf for the Poisson baseline, mirroring pois-nb.
+      fit <- fit_pois_additive_nb_signal_em(
+        y             = g,
+        offset        = log(g_mus_pert0),
+        use_log_gamma = use_log_gamma
+      )
+      list(
+        outer_Ti1s      = fit$posterior_classification,
+        outer_i         = 1L,
+        outer_converged = fit$converged,
+        outer_log_lik   = fit$loglik,
+        outer_pi        = fit$pi,
+        outer_g_pert    = fit$gamma,
+        outer_phi1      = fit$theta,
+        outer_phi0      = Inf
       )
     }
 
@@ -2494,10 +2515,11 @@ assign_one_grna_pure_R <- function(g, covariate_matrix,
       em_phi_nonpert <- em_fit$phi_final
       em_trajectory  <- em_fit$trajectory
       # em_phi_source already set above when phi_used was determined
-    } else if (family %in% c("nb-separate", "nb-fixed0", "pois-nb", "pois0-nb")) {
+    } else if (family %in% c("nb-separate", "nb-fixed0", "pois-nb", "pois0-nb", "nbsum")) {
       # nb-separate:      phi0/phi1 both estimated inside each Q-step.
       # nb-fixed0:        phi0 (= phi_used) held fixed; only phi1 estimated.
       # pois-nb/pois0-nb: phi0 = Inf (Poisson non-pert); only phi1 estimated.
+      # nbsum:            phi0 = Inf (Poisson baseline); phi1 = theta (NB signal).
       em_phi_pert    <- em_fit$outer_phi1
       em_phi_nonpert <- em_fit$outer_phi0
       # Length-1 trajectory: one EM pass, no outer phi-update loop.
@@ -2560,7 +2582,7 @@ sceptre_assign_pure_R <- function(grna_matrix,
                                   keep_fits              = FALSE,
                                   fix_curr_g_pert_bug    = FALSE,
                                   use_log_gamma          = FALSE,
-                                  family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate", "nb-fixed0", "pois-nb", "pois0-nb", "poissum"),
+                                  family                 = c("pois", "pois-additive", "pois-additive-nonzero", "pois-wq", "nb-shared", "nb-separate", "nb-fixed0", "pois-nb", "pois0-nb", "poissum", "nbsum"),
                                   phi                    = NULL,
                                   estimate_phi_fn        = NULL,
                                   n_phi_updates          = 0L,
@@ -2577,7 +2599,7 @@ sceptre_assign_pure_R <- function(grna_matrix,
   stopifnot(length(n_phi_updates) == 1L, is.finite(n_phi_updates),
             n_phi_updates >= 0L)
   n_phi_updates <- as.integer(n_phi_updates)
-  if (family %in% c("nb-separate", "nb-fixed0", "pois-nb", "pois0-nb") && n_phi_updates > 0L) {
+  if (family %in% c("nb-separate", "nb-fixed0", "pois-nb", "pois0-nb", "nbsum") && n_phi_updates > 0L) {
     stop("`n_phi_updates` must be 0 for `family = \"", family, "\"` ",
          "(theta1 is updated inside each Q-step; theta0 is fixed/estimated jointly).")
   }
