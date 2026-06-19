@@ -52,6 +52,48 @@ fit_baseline_glm_pure_R <- function(g, covariate_matrix) {
 }
 
 
+# ---- log1p(log1p(grna_n_nonzero))-offset Poisson GLM baseline fit -----------
+# Intercept-only Poisson GLM, g ~ 1, with log1p(log1p(grna_n_nonzero)) entered
+# as a FIXED offset (coefficient pinned to 1, not estimated). So
+#   log(mu0_i) = beta0 + log1p(log1p(grna_n_nonzero_i))
+#   mu0_i      = exp(beta0) * (1 + log1p(grna_n_nonzero_i)).
+# A shape-constrained, robust alternative to the free univariate fit
+# exp(beta0) * (grna_n_nonzero + 1)^beta1. The outer log1p (vs plain log) keeps
+# the offset finite at grna_n_nonzero = 0.
+#
+# Hard-coded to this offset: pair it with formula `~ log1p(log1p(grna_n_nonzero))`
+# so `covariate_matrix` carries the offset column. Coefficients are returned
+# aligned to `covariate_matrix` (estimated intercept, 1 on the offset column) so
+# X %*% coef reconstructs log(mu0) exactly -- `reconstruct_offset_eta` stays correct.
+fit_baseline_glm_nnz_offset_pure_R <- function(g, covariate_matrix) {
+  offset_name <- "log1p(log1p(grna_n_nonzero))"
+  if (!("(Intercept)" %in% colnames(covariate_matrix)) ||
+      !(offset_name %in% colnames(covariate_matrix))) {
+    stop("`fit_baseline_glm_nnz_offset_pure_R` expects columns '(Intercept)' ",
+         "and '", offset_name, "'; pair it with formula ",
+         "`~ log1p(log1p(grna_n_nonzero))`.")
+  }
+  offset_vec <- covariate_matrix[, offset_name]
+  fit <- suppressWarnings(
+    stats::glm.fit(y = g, x = covariate_matrix[, "(Intercept)", drop = FALSE],
+                   offset = offset_vec, family = stats::poisson())
+  )
+  coef_full        <- numeric(ncol(covariate_matrix))
+  names(coef_full) <- colnames(covariate_matrix)
+  coef_full["(Intercept)"] <- fit$coefficients[1L]
+  coef_full[offset_name]   <- 1
+  fit$coefficients  <- coef_full
+  fit$fitted.values <- exp(as.numeric(covariate_matrix %*% coef_full))
+  fit$offset_model_summary <- list(
+    coefficients = coef_full,
+    deviance     = fit$deviance,
+    iter         = fit$iter,
+    converged    = fit$converged
+  )
+  fit
+}
+
+
 # ---- Robust Poisson GLM baseline fit ----------------------------------------
 # Drop-in replacement for fit_baseline_glm_pure_R that downweights cells with
 # large Pearson residuals (perturbed cells, for heavy-tailed guides). Uses the
