@@ -38,20 +38,17 @@ execute:
 
 ```
 R CMD build  — 0 ERRORS · 0 WARNINGS · 0 NOTES
-BiocCheck    — 1 ERROR  · 1 WARNING  · 7 NOTES
+BiocCheck    — 1 ERROR  · 1 WARNING  · 5 NOTES
 ```
 
-Three PRs are in flight; once merged they bring BiocCheck to **1 ERROR · 1 WARNING · 5 NOTES**.
+The three PRs cited in the previous draft have all **merged**: air-formatting to 4-space / 80-column style ([#213](https://github.com/Katsevich-Lab/sceptre/pull/213)) and removing the `\donttest{}` example while redirecting writes to `tempdir()` ([#214](https://github.com/Katsevich-Lab/sceptre/pull/214)) cleared two NOTEs (7 → 5), and the data-generation scripts were moved to `inst/scripts` and made reproducible ([#215](https://github.com/Katsevich-Lab/sceptre/pull/215)), satisfying that submission requirement.
 
-### We have addressed
+Two stacked PRs are now in flight, and together they close the remaining blockers:
 
-- **NOTE: Consider multiples of 4 spaces for line indents (was 2,271 lines / 37%).** Addressed by [PR #213](https://github.com/Katsevich-Lab/sceptre/pull/213).
-- **NOTE: Usage of dontrun / donttest tags found in man page examples.** Addressed by [PR #214](https://github.com/Katsevich-Lab/sceptre/pull/214). The single `\donttest{}` (the package-level SCEPTRE workflow example in `R/sceptre.R`) was removed and outputs were redirected from the home directory to `tempdir()`, as required by Bioc.
-- **Non-BiocCheck submission requirement: Providing code used to generate `inst/extdata`.** Addressed by [PR #215](https://github.com/Katsevich-Lab/sceptre/pull/215), including moving existing `data-raw` scripts to `inst/scripts`, updating the Parse example data to be reproducible, and updating construction of gene position data frames to download reference genomes directly rather than reading personal paths.
+- **[PR #216](https://github.com/Katsevich-Lab/sceptre/pull/216) — submission finalization.** Now that [`ondisc` is on CRAN](https://cran.r-project.org/package=ondisc), it drops the `Remotes: github::timothy-barry/ondisc` entry — **clearing the BiocCheck dependency ERROR** — bumps the version `0.10.3 → 0.99.0`, and finalizes `NEWS`, `README`, the package logo, and the vignette. With #216, `BiocCheck` reaches **0 ERRORS · 1 WARNING · 5 NOTES**; only the cover-letter exemptions below remain.
+- **[PR #217](https://github.com/Katsevich-Lab/sceptre/pull/217) — generated documentation.** Regenerates the `man/` pages (clearing stale merge-conflict markers in `import_data_from_parse.Rd`) and rebuilds the pkgdown site against the finalized 0.99.0 source. Documentation only — it is `.Rbuildignore`d and does not affect the built package.
 
-### We will address
-- **ERROR: Package dependencies must be on CRAN or Bioconductor.** Will be addressed when `ondisc` lands back on CRAN.
-- **Non-BiocCheck submission requirement: Bump version to 0.99.0.** We will do this when the time comes.
+Separately, the companion *Hands-On Single-Cell CRISPR Screen Analysis* book has been rebuilt against 0.99.0 ([sceptre-book #4](https://github.com/timothy-barry/sceptre-book/pull/4)): example data is now loaded explicitly from `sceptredata`, all analysis outputs were regenerated, and the prose was audited against the package for fidelity to the 0.99.0 API.
 
 ### We will not address
 
