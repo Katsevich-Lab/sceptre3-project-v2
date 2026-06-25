@@ -41,8 +41,6 @@ R CMD build  — 0 ERRORS · 0 WARNINGS · 0 NOTES
 BiocCheck    — 1 ERROR  · 1 WARNING  · 5 NOTES
 ```
 
-The three PRs cited in the previous draft have all **merged**: air-formatting to 4-space / 80-column style ([#213](https://github.com/Katsevich-Lab/sceptre/pull/213)) and removing the `\donttest{}` example while redirecting writes to `tempdir()` ([#214](https://github.com/Katsevich-Lab/sceptre/pull/214)) cleared two NOTEs (7 → 5), and the data-generation scripts were moved to `inst/scripts` and made reproducible ([#215](https://github.com/Katsevich-Lab/sceptre/pull/215)), satisfying that submission requirement.
-
 Two stacked PRs are now in flight, and together they close the remaining blockers:
 
 - **[PR #216](https://github.com/Katsevich-Lab/sceptre/pull/216) — submission finalization.** Now that [`ondisc` is on CRAN](https://cran.r-project.org/package=ondisc), it drops the `Remotes: github::timothy-barry/ondisc` entry — **clearing the BiocCheck dependency ERROR** — bumps the version `0.10.3 → 0.99.0`, and finalizes `NEWS`, `README`, the package logo, and the vignette. With #216, `BiocCheck` reaches **0 ERRORS · 1 WARNING · 5 NOTES**; only the cover-letter exemptions below remain.
@@ -56,7 +54,7 @@ Separately, the companion *Hands-On Single-Cell CRISPR Screen Analysis* book has
 - **NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.** This is a false positive; Tim is subscribed.
 - **NOTE: Update R version dependency from 4.1 to 4.6.0.** We want to avoid excluding users.
 - **NOTE: Avoid 'cat' and 'print' outside of 'show' methods.** This note is a "false positive."
-- **NOTE: Consider shorter lines (was 829 lines / 14%).**  [PR #213](https://github.com/Katsevich-Lab/sceptre/pull/213) brought it down to 143 lines (2%), but hard to bring it down to zero due to long documentation URLs, generated `R/RcppExports.R`, single-line knitr chunk headers, and a few irreducibly long identifier expressions.
+- **NOTE: Consider shorter lines (was 829 lines / 14%).** This is now down to 143 lines (2%), but hard to bring it down to zero due to long documentation URLs, generated `R/RcppExports.R`, single-line knitr chunk headers, and a few irreducibly long identifier expressions.
 - **NOTE: The recommended function length is 50 lines or less. There are 48 functions greater than 50 lines (was 27).** Deferred. Note that the increase from 27 is an expected side effect of wrapping long lines to 80 columns.
 
 ## Bioconductor cover letter

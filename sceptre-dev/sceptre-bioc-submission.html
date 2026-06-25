@@ -2343,7 +2343,6 @@ margin: 2em 0;
 <h2 data-number="1" class="anchored" data-anchor-id="current-state"><span class="header-section-number">1</span> Current state</h2>
 <pre><code>R CMD build  — 0 ERRORS · 0 WARNINGS · 0 NOTES
 BiocCheck    — 1 ERROR  · 1 WARNING  · 5 NOTES</code></pre>
-<p>The three PRs cited in the previous draft have all <strong>merged</strong>: air-formatting to 4-space / 80-column style (<a href="https://github.com/Katsevich-Lab/sceptre/pull/213">#213</a>) and removing the <code>\donttest{}</code> example while redirecting writes to <code>tempdir()</code> (<a href="https://github.com/Katsevich-Lab/sceptre/pull/214">#214</a>) cleared two NOTEs (7 → 5), and the data-generation scripts were moved to <code>inst/scripts</code> and made reproducible (<a href="https://github.com/Katsevich-Lab/sceptre/pull/215">#215</a>), satisfying that submission requirement.</p>
 <p>Two stacked PRs are now in flight, and together they close the remaining blockers:</p>
 <ul>
 <li><strong><a href="https://github.com/Katsevich-Lab/sceptre/pull/216">PR #216</a> — submission finalization.</strong> Now that <a href="https://cran.r-project.org/package=ondisc"><code>ondisc</code> is on CRAN</a>, it drops the <code>Remotes: github::timothy-barry/ondisc</code> entry — <strong>clearing the BiocCheck dependency ERROR</strong> — bumps the version <code>0.10.3 → 0.99.0</code>, and finalizes <code>NEWS</code>, <code>README</code>, the package logo, and the vignette. With #216, <code>BiocCheck</code> reaches <strong>0 ERRORS · 1 WARNING · 5 NOTES</strong>; only the cover-letter exemptions below remain.</li>
@@ -2357,7 +2356,7 @@ BiocCheck    — 1 ERROR  · 1 WARNING  · 5 NOTES</code></pre>
 <li><strong>NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.</strong> This is a false positive; Tim is subscribed.</li>
 <li><strong>NOTE: Update R version dependency from 4.1 to 4.6.0.</strong> We want to avoid excluding users.</li>
 <li><strong>NOTE: Avoid ‘cat’ and ‘print’ outside of ‘show’ methods.</strong> This note is a “false positive.”</li>
-<li><strong>NOTE: Consider shorter lines (was 829 lines / 14%).</strong> <a href="https://github.com/Katsevich-Lab/sceptre/pull/213">PR #213</a> brought it down to 143 lines (2%), but hard to bring it down to zero due to long documentation URLs, generated <code>R/RcppExports.R</code>, single-line knitr chunk headers, and a few irreducibly long identifier expressions.</li>
+<li><strong>NOTE: Consider shorter lines (was 829 lines / 14%).</strong> This is now down to 143 lines (2%), but hard to bring it down to zero due to long documentation URLs, generated <code>R/RcppExports.R</code>, single-line knitr chunk headers, and a few irreducibly long identifier expressions.</li>
 <li><strong>NOTE: The recommended function length is 50 lines or less. There are 48 functions greater than 50 lines (was 27).</strong> Deferred. Note that the increase from 27 is an expected side effect of wrapping long lines to 80 columns.</li>
 </ul>
 </section>
