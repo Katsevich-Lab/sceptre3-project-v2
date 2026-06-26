@@ -1,0 +1,14 @@
+"method","grp","mean_acc"
+"AMBIENT TEST (q=.01)","ambient",0.9553
+"fishash","published",0.9422
+"sceptre mixture","published",0.9331
+"demuxem","published",0.9278
+"crispat poisgauss","published",0.9268
+"smoothed valley","nonparam",0.9195
+"cleanser cs","published",0.9164
+"Otsu","nonparam",0.9079
+"crispat poisson","published",0.8994
+"crispat gauss","published",0.8964
+"cleanser dc","published",0.889
+"geomux","published",0.7964
+"crispat negbinom","published",0.6904

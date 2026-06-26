@@ -1,0 +1,663 @@
+---
+title: "additive-model"
+output:
+  pdf_document: default
+  html_document: default
+date: "2026-06-18"
+---
+
+
+KEY RESULTS
+
+I have found a model that feels more principled and basically agrees with SCEPTRE, except it also does better in the situations where SCEPTRE loses precision with heavy tailed guides.
+
+So at this point I do have a model that uniformly improves upon SCEPTRE in all my simulation settings, as well as real data!
+
+It still has a rather questionable decision in it, to do the $\gamma$ vs $e^{\gamma}$ difference, but I will give some mathematical justification. And it works...
+
+
+# 1. The problem
+
+SCEPTRE uses $e^{o_i} + \gamma$ as the perturbed mean, when it should be $e^{o_i+\gamma}$, and yet performance mysteriously is far better than if we actually did the correct model.
+
+## 1.2 Using a summed model to replicate SCEPTRE's likelihood ratio
+
+We can get this form for the mean via
+$$
+Y_i \sim \text{Pois}(e^{o_i}) + \text{Ber}(\pi) \text{Pois}(e^{o_i} + e^{\delta}).
+$$
+
+This is a special case of the Cellbender model that I discussed on Monday, with no endogenous noise in the NP distribution, and Poisson instead of NB for the perturbed component. So this is a very simple form of a reasonable model that appears elsewhere in the literature.
+
+We then get a likelihood ratio of
+$$
+\frac{\text{Pois}(y | e^{o} + e^\delta)}{\text{Pois}(y | e^o)}
+$$
+which is the same additive form that SCEPTRE accidentally uses.
+
+So that's all fine and good... except the MLE of $e^\delta$ will be very large, since it's on the response scale, not the data scale. In practice, this model has all the same problems as the bug-fixed offset model, where the estimate of the mean is so large that we assign far too many values to NP. 
+
+## 1.3 Statistics jail
+
+Now it's time to get unprincipled. In order to replicate SCEPTRE, we need to find a justification to do the following:
+$$
+\text{use} \quad \frac{\text{Pois}(y | e^{o} + \delta)}{\text{Pois}(y | e^o)} \quad\text{instead of} \quad \frac{\text{Pois}(y | e^{o} + e^\delta)}{\text{Pois}(y | e^o)}
+$$
+
+In words, we need a reason to use the log of the estimated mean in our decision boundary instead of just using the mean.
+
+
+I think there actually is a decent mathematical argument for using this. I'm still thinking through it, but basically it comes down to how $e^\delta$ is a very poor fit for a lot of our data points, and especially when things are heavy tailed. Since we just need a good decision boundary, using $\delta$ is actually pretty sane.
+
+
+For cells with a very low NP mean $e^{o_i}$, we are effectively comparing to the constant distribution $\text{Pois}(\delta)$. Comparing to $\text{Pois}(e^{\delta})$ performs very poorly, since our classification boundary is typically $\leq 20$, so these points are nowhere close to $e^\delta$.
+
+And for cells with a large $e^{o_i}$, it still performs fine. 
+
+I'm going to do more mathematical analysis once we discuss and confirm that this direction is useful. 
+
+
+# 2. Simulation results
+
+In this section, I compare 6 models: SCEPTRE, crispat, and 4 custom ones. For the custom ones, the name is of the form `<x>_<y>`, with `<x>` denoting the offset method, and `<y>` denoting the mixture method.
+
+`glmpois_poissumlog` is the additive model that uses $\delta$ instead of $e^{\delta}$, and is the proposed replacement. The offsets are exactly the same as with SCEPTRE. Only the mixture is different.
+
+The other 3 methods all use thresholding to fit the GLM only on the cells with $y_i \leq 1000$. They vary in their mixure:
+
+- `threshglmpois1000_poisbug` is these robustified offsets with the current bugged Pois-Pois mixture used by SCEPTRE
+
+- `threshglmpois1000_poissumlog` is the additive model using the log mean, except also with robustified offsets
+
+- `threshglmpois1000_pois0nb` is the robustified offsets with a Pois-NB mixture, and represents the best method I found that actually uses $exp(o_i + \gamma)$ as the perturbed mean.
+
+
+
+
+```{r, echo=FALSE, cache=TRUE}
+rm(list=ls())
+library(tidyverse)
+
+
+source("~/.Rprofile")
+source("~/katsevich-lab/code/sceptre3-project-v2/benchmarking/guide-assignment/assignment-analysis/script_runs_analysis_functions.R")
+source("~/katsevich-lab/code/sceptre3-project-v2/benchmarking/guide-assignment/sceptre-nb/nb-bench_v3-helpers.R")
+load_assns_crispat <- function(path_to_assns, all_guides, cell_name_to_idx) {
+  crisp_assign_raw <- read.csv(path_to_assns) |>
+     left_join(cell_name_to_idx, by=join_by(cell_id == cell_name)) |>
+     dplyr::select(-cell_id)
+      # mutate(cell_idx = gsub("cell_idx_", "", cell_id) |> as.integer())
+  unordered_cell_list <- split(crisp_assign_raw$cell_idx, crisp_assign_raw$grna_id)
+  
+  guide_to_assns = vector("list", length(all_guides)) |>
+    setNames(all_guides)
+  
+  guide_to_assns[names(unordered_cell_list)] <- unordered_cell_list
+  guide_to_assns
+}
+
+load_run <- function(run_name, dataset_name) {
+  base_path = file.path(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "guide_assignment/outputs"
+  )
+  input_data_path = file.path(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "guide_assignment/input_data",
+    dataset_name
+  )
+  if(file.exists(true_perts_fp <- file.path(input_data_path, "true_pert_matrix.rds"))) {
+    true_perts = read_rds(true_perts_fp)
+  }
+  grna_matrix = file.path(input_data_path, "sceptre/grna_matrix.rds") |>
+    read_rds()
+  
+  
+  data_path = file.path(base_path, run_name)
+  
+  cov_df <- read_csv(file.path(input_data_path, "sceptre/cell_covariates.csv"), show_col_types = FALSE) |>
+    mutate(
+      grna_n_nonzero_subset = Matrix::colSums(grna_matrix > 0),
+      grna_n_umis_subset = Matrix::colSums(grna_matrix)
+    )
+  
+  
+  
+  
+  fnames = dir(data_path)
+  
+  # 1. load assignment matrices
+  assn_mat_fnames = fnames[grepl("^assignment_matrix", fnames) & grepl(dataset_name, fnames, fixed = TRUE)]
+  all_assns = list()
+  guide_names = rownames(grna_matrix)
+  for(i in seq_along(assn_mat_fnames)) {
+    curr_fname = assn_mat_fnames[i]
+    script_name = gsub("^assignment_matrix_", "", curr_fname) |>
+      gsub(pattern = "^script_", replacement="", fixed=TRUE) |>
+      gsub(pattern =paste0("_", dataset_name, ".rds"), replacement="", fixed=TRUE)
+    
+    mat = read_rds(file.path(data_path, curr_fname))
+    
+    curr_assns = lapply(guide_names, function(guide) which(mat[guide,]) |> as.integer()) |>
+      setNames(guide_names) |>
+      list() |>
+      setNames(script_name)
+    
+    all_assns = c(all_assns, curr_assns)
+    
+  }
+  
+  # 2. load extras from script runs
+  extras_fnames = fnames[grepl("^assignment_extras", fnames) & grepl(dataset_name, fnames, fixed = TRUE)]
+  extras_all <- lapply(extras_fnames, function(fname) read_rds(file.path(data_path, fname)))
+  names(extras_all) <- gsub("assignment_extras_script_", "", extras_fnames) |>
+    gsub(pattern = paste0("_", dataset_name, ".rds"), replacement="", fixed=TRUE)
+  
+  
+  # 3. load other methods if there
+  
+  # i need this to change cell name assignments to cell index assignments
+  
+  cell_name_to_idx <- data.frame(
+    cell_name = colnames(grna_matrix),
+    cell_idx = 1:ncol(grna_matrix)
+  )
+  
+  if(length(fname_crispat <- fnames[grepl("crispat", fnames) & grepl(dataset_name, fnames)]) > 0) {
+    all_assns$crispat <- load_assns_crispat(file.path(data_path, fname_crispat), guide_names, cell_name_to_idx)
+  }
+  
+  out = list(
+    run_name = run_name, dataset_name = dataset_name,
+    input_data_path = input_data_path,
+    grna_matrix = grna_matrix,
+    cov_df = cov_df,
+    all_assns = all_assns,
+    all_extras = extras_all
+  )
+  if(exists("true_perts")) {
+    out$true_perts = true_perts
+    
+    out$true_assns = lapply(guide_names, function(guide) {
+      which(true_perts[guide,] == 1 & grna_matrix[guide,] > 0) |> as.integer()
+      # which(sim_results$true_perts[guide,] == 1 ) |> as.integer()
+    }) |>
+      setNames(guide_names)
+    
+    
+  }
+  out
+}
+
+
+sim_pois0nb_2np_3p <- load_run(
+  run_name =  "pois0nb_sims_sum_2np_3p",
+  dataset_name = "sims_sum_2np_3p"
+)
+
+
+sim_pois0nb_1np_3p_disp <-  load_run(
+  run_name =  "pois0nb_sims_sum_1np_3p_disp",
+  dataset_name = "sims_sum_1np_3p_disp"
+)
+
+
+
+sim_pois0nb_repeat_old <-  load_run(
+  run_name =  "pois0nb_sims_repeat_old",
+  dataset_name = "sims_sum_repeat_old"
+)
+
+methods_to_keep <- c(
+      "crispat", "sceptre", "script_threshglmpois1000_pois0nb", "script_threshglmpois1000_poissumlog",
+      "script_threshglmpois1000_poisbug", "script_glmpois_poissumlog"
+    )
+
+# guide_names = rownames(sim_results$grna_matrix)
+
+# sim_pois0nb_2np_3p$all_assns$thresh_10 <- lapply(rownames(sim_pois0nb_2np_3p$grna_matrix), function(guide) {
+#   which(sim_pois0nb_2np_3p$grna_matrix[guide,] > 10)
+# }) |>
+#   setNames(rownames(sim_pois0nb_2np_3p$grna_matrix))
+# sim_pois0nb_1np_3p_disp$all_assns$thresh_10 <- lapply(rownames(sim_pois0nb_1np_3p_disp$grna_matrix), function(guide) {
+#   which(sim_pois0nb_1np_3p_disp$grna_matrix[guide,] > 10)
+# }) |>
+#   setNames(rownames(sim_pois0nb_1np_3p_disp$grna_matrix))
+
+```
+
+
+
+Reminder of my current simulation settings, copied from my report on Monday: inspired by Cellbender model, I simulate guides via
+
+$$
+Y_i = \text{Pois}(L_i \mu_{\text{exo}}) + \text{Ber}(\pi_{\text{endo}}) \text{Pois}(L_i \mu_{\text{endo}}) + \text{Ber}(\pi_{\text{pert}}) \text{NB}(L_i \mu_{\text{pert}}, \theta_{\text{pert}}).
+$$
+
+
+The idea: 
+
+- the perturbed distribution is the same: NegBin with cell-specific library size rescaling factors 
+
+- but now the NP is a sum of two processes:
+  
+  - exogeneous noise, representing random stray bits getting in there. $\mu_{\text{exo}}$ is small
+  
+  - endogenous noise, from droplet contamination, chimeras, etc, giving rare but larger values. $\pi_{\text{endo}}$ is very small but $\mu_{\text{endo}}$ is larger.
+
+
+
+I am able to get satisfying looking distributions from this, and in particular I can now simulate distributions where precision is the hard part. Before, with such light tails, precision was often trivial because the NPs were so concentrated near zero.
+
+
+```{r, echo=FALSE, fig.cap="Example simulated guides from the three simulated datasets under consideration."}
+library(tidyverse)
+grna_odm_repl = ondisc::initialize_odm_from_backing_file(
+  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline/grna.odm"
+)
+
+repl_guide_stats = read_csv(
+  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline/grna_summary_stats.csv",
+  show_col_types = FALSE
+)
+
+grna_odm_gasp = ondisc::initialize_odm_from_backing_file(
+  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/gasperini/sceptre-pipeline/grna.odm"
+)
+
+gasp_guide_stats = read_csv(
+  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/gasperini/sceptre-pipeline/grna_summary_stats.csv",
+  show_col_types = FALSE
+)
+
+
+get_guides <- function(guide_stats, n, min_idx = 200) {
+   guide_stats |>
+  arrange(grna_total) |>
+  pull(grna) %>%
+  `[`(seq(min_idx, nrow(guide_stats) - 50, length = n) |> round())
+}
+
+# let's pick a sequence of guides in terms of expression
+repl_guides <- get_guides(repl_guide_stats, 4)
+
+gasp_guides <-  get_guides(gasp_guide_stats, 4) 
+
+
+
+plot_umi_histogram_real_vs_sim_list(
+  umis_real = grna_odm_repl[tail(repl_guides, 1),],
+  sim_list = list(
+    NP_lowvar_P_low = list(
+      umis_sim = sim_pois0nb_2np_3p$grna_matrix["sim_NPlowvar_P1_1",],
+  is_pert = sim_pois0nb_2np_3p$true_perts["sim_NPlowvar_P1_1",]
+    ),
+      NP_lowvar_P_high = list(
+      umis_sim = sim_pois0nb_2np_3p$grna_matrix["sim_NPlowvar_P3_2",],
+  is_pert = sim_pois0nb_2np_3p$true_perts["sim_NPlowvar_P3_2",]
+    ),
+    NP_highvar_P_low = list(
+      umis_sim = sim_pois0nb_2np_3p$grna_matrix["sim_NPhighvar_P1_1",],
+  is_pert = sim_pois0nb_2np_3p$true_perts["sim_NPhighvar_P1_1",]
+    ),
+      NP_highvar_P_high = list(
+      umis_sim = sim_pois0nb_2np_3p$grna_matrix["sim_NPhighvar_P3_1",],
+  is_pert = sim_pois0nb_2np_3p$true_perts["sim_NPhighvar_P3_1",]
+    )
+  ),
+   title = "Real vs simulated: sims_sum_2np_3p"
+)
+
+plot_umi_histogram_real_vs_sim_list(
+  umis_real = grna_odm_repl[tail(repl_guides, 1),],
+  sim_list = list(
+    NP_highvar_P_lowdisp = list(
+      umis_sim = sim_pois0nb_1np_3p_disp$grna_matrix["sim_NPhighvar_Plowdisp_1",],
+  is_pert = sim_pois0nb_1np_3p_disp$true_perts["sim_NPhighvar_Plowdisp_1",]
+    ),
+      NP_highvar_P_meddisp = list(
+      umis_sim = sim_pois0nb_1np_3p_disp$grna_matrix["sim_NPhighvar_Pmeddisp_1",],
+  is_pert = sim_pois0nb_1np_3p_disp$true_perts["sim_NPhighvar_Pmeddisp_1",]
+    ),
+    NP_highvar_P_highdisp = list(
+      umis_sim = sim_pois0nb_1np_3p_disp$grna_matrix["sim_NPhighvar_Phighdisp_1",],
+  is_pert = sim_pois0nb_1np_3p_disp$true_perts["sim_NPhighvar_Phighdisp_1",]
+    )
+  ),
+   title = "Real vs simulated: sims_sum_1np_3p_disp"
+)
+
+
+
+plot_umi_histogram_real_vs_sim_list(
+  umis_real = grna_odm_repl[tail(repl_guides, 1),],
+  sim_list = list(
+    NP_pois_P_small = list(
+      umis_sim = sim_pois0nb_repeat_old$grna_matrix["sim_NPpois_Psmall_1",],
+  is_pert = sim_pois0nb_repeat_old$true_perts["sim_NPpois_Psmall_1",]
+    ),
+      NP_pois_P_med = list(
+      umis_sim = sim_pois0nb_repeat_old$grna_matrix["sim_NPpois_Pmed_74",],
+  is_pert = sim_pois0nb_repeat_old$true_perts["sim_NPpois_Pmed_74",]
+    ),
+    NP_pois_P_large = list(
+      umis_sim = sim_pois0nb_repeat_old$grna_matrix["sim_NPpois_Plarge_26",],
+  is_pert = sim_pois0nb_repeat_old$true_perts["sim_NPpois_Plarge_26",]
+    )
+  ),
+   title = "Real vs simulated: sims_repeat_old"
+)
+```
+
+
+
+```{r, echo=FALSE, fig.cap="Comparing sceptre, crispat, and the new methods on data simulated with varying NP tails and perturbed means / overdispersions. SCEPTRE and `gmpois_poissumlog` perform very similarly."}
+# for "pois0nb_sims_sum_2np_3p" ~~~~~~~~~~~~~~~~~~~~~~
+
+P_to_mean <- tibble(
+  p = c("P1", "P2", "P3"),
+  mu_pert = c(500, 750, 1000)
+)
+
+guide_meta <- tibble(
+  grna_id = rownames(sim_pois0nb_2np_3p$grna_matrix),
+  np = extract_part(grna_id, 2),
+  p = extract_part(grna_id, 3)
+) %>%
+  left_join(P_to_mean, by = "p")
+
+
+## get metrics and avg ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+guide_metric_tbl <- make_guide_metric_tbl(sim_pois0nb_2np_3p) |>
+  left_join(guide_meta, by = "grna_id")
+
+
+avg_metrics_tbl <- summarize_metric_tbl(
+  guide_metric_tbl,
+  group_vars = c("method_name", "np", "p", "mu_pert")
+)
+
+
+plot_df <- avg_metrics_tbl %>%
+  mutate(
+    ci = 2 * sd / sqrt(n_nonmissing),
+    ymin = pmax(0, mean - ci),
+    ymax = pmin(1, mean + ci)
+  )
+
+stopifnot(methods_to_keep %in% plot_df$method_name)
+
+## 1. comparing the ones we're most interested in
+
+
+plot_df |>
+  filter(method_name %in% methods_to_keep) |>
+  mutate(
+    method_name = gsub("^script_", "", method_name)
+  ) |>
+make_avg_metrics_plot() +
+  ggtitle("Metrics for key methods on sims_sum_2np_3p")
+
+
+
+## 2. different thresholds
+
+# plot_df |>
+#   filter(
+#     grepl("threshglmpois", method_name),
+#     grepl("pois0nb", method_name)
+#   ) |>
+# make_avg_metrics_plot() +
+#   ggtitle("Metrics for key methods")
+
+
+
+```
+
+
+```{r, echo=FALSE, fig.cap = "Simulations with much bigger and more overdispersed values. We see very similar performance between SCEPTRE and `glmpois_poissumlog`."}
+# for "sims_sum_1np_3p_disp" ~~~~~~~~~~~~~~~~~~~~~~
+
+P_to_mean <- tibble(
+  p = c("Phighdisp", "Pmeddisp", "Plowdisp"),
+  mu_pert = c(10001000, 1001000, 101000)
+)
+
+guide_meta <- tibble(
+  grna_id = rownames(sim_pois0nb_1np_3p_disp$grna_matrix),
+  np = extract_part(grna_id, 2),
+  p = extract_part(grna_id, 3)
+) %>%
+  left_join(P_to_mean, by = "p")
+
+
+## get metrics and avg ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+guide_metric_tbl <- make_guide_metric_tbl(sim_pois0nb_1np_3p_disp) |>
+  left_join(guide_meta, by = "grna_id")
+
+
+avg_metrics_tbl <- summarize_metric_tbl(
+  guide_metric_tbl,
+  group_vars = c("method_name", "np", "p", "mu_pert")
+)
+
+plot_df <- avg_metrics_tbl %>%
+  mutate(
+    ci = 2 * sd / sqrt(n_nonmissing),
+    ymin = pmax(0, mean - ci),
+    ymax = pmin(1, mean + ci)
+  )
+stopifnot(c(setdiff(methods_to_keep, "sceptre"), "script_glmpois_poisbug")
+          %in% plot_df$method_name)
+
+plot_df |>
+  filter(method_name %in% c(methods_to_keep, "script_glmpois_poisbug")) |>
+  mutate(method_name = ifelse(method_name == "script_glmpois_poisbug", "sceptre", method_name)) |>
+    mutate(
+    method_name = gsub("^script_", "", method_name)
+  ) |>
+make_avg_metrics_plot(x_breaks = c(1e3,1e4,1e5,1e6,1e7)) +
+  ggtitle("Metrics for more overdispersed data")
+
+```
+
+
+
+```{r, echo=FALSE, fig.cap="Repeating old simulations. This is a HIGHLY overdispered pert and very low mean non-pert, so basically every non-pert is <= 3, while the perts are all over the place. SCEPTRE breaks down here but the more principled estimation in glm_poissumlog keeps things ok."}
+# for "sims_repeat_old" ~~~~~~~~~~~~~~~~~~~~~~
+
+P_to_mean <- tibble(
+  p = c("Plarge", "Pmed", "Psmall"),
+  mu_pert = c(970, 970/4, 970/8)
+)
+
+guide_meta <- tibble(
+  grna_id = rownames(sim_pois0nb_repeat_old$grna_matrix),
+  np = extract_part(grna_id, 2),
+  p = extract_part(grna_id, 3)
+) %>%
+  left_join(P_to_mean, by = "p")
+
+
+## get metrics and avg ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+guide_metric_tbl <- make_guide_metric_tbl(sim_pois0nb_repeat_old) |>
+  left_join(guide_meta, by = "grna_id")
+
+
+avg_metrics_tbl <- summarize_metric_tbl(
+  guide_metric_tbl,
+  group_vars = c("method_name", "np", "p", "mu_pert")
+)
+
+
+plot_df <- avg_metrics_tbl %>%
+  mutate(
+    ci = 2 * sd / sqrt(n_nonmissing),
+    ymin = pmax(0, mean - ci),
+    ymax = pmin(1, mean + ci)
+  )
+stopifnot(methods_to_keep %in% plot_df$method_name)
+
+
+## 1. comparing the ones we're most interested in
+
+
+plot_df |>
+  # filter(! method_name %in% c("script_trimglmpois_poisfix", "script_glmpois_poisbug")) |>
+  filter(
+    method_name %in% methods_to_keep
+  ) |>
+      mutate(
+    method_name = gsub("^script_", "", method_name)
+  ) |>
+make_avg_metrics_plot(x_breaks = c(1e3,1e4,1e5,1e6,1e7)) +
+  ggtitle("Metrics for old simulations")
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+# 3. Data results
+
+
+I want to see how much my new methods change vs SCEPTRE. This plot computes precision and recall against SCEPTRE on Replogle.
+
+```{r, echo=FALSE}
+repl_results <-  load_run(
+  run_name =  "script_real_data",
+  dataset_name = "replogle-rd7_assign_nguides=800_ncells=100k"
+)
+
+gasp_results <-  load_run(
+  run_name =  "script_real_data",
+  dataset_name = "gasperini_assign_nguides=800_ncells=100k"
+)
+```
+
+
+
+
+```{r, echo=FALSE, fig.cap="This plot bins Replogle guides based on `mean(guide[gudie >= 10])`, and computes the average metric in that group. SCEPTRE is the baseline. We see that our new `glm_poissumlog` is very close, until the heaviest tailed guides. The low recall of every method here vs SCEPTRE shows that SCEPTRE makes more positive predictions than they all do."}
+
+methods_to_use <- c("script_glmpois_poisbug", "crispat", "script_glmpois_poissumlog", "script_threshglmpois1000_poissumlog", "script_threshglmpois1000_poisbug")
+stopifnot(all(methods_to_use %in% names(repl_results$all_assns)))
+
+guide_metric_tbl = make_guide_metric_tbl_vs_ref(
+  all_assns = repl_results$all_assns[methods_to_use],
+  grna_matrix = repl_results$grna_matrix,
+    ref_method = "script_glmpois_poisbug"
+)
+
+avg_metrics_tbl <- summarize_metric_tbl(
+  guide_metric_tbl,
+  group_vars = c("method_name", "tail_mean_group")
+)
+
+make_avg_metrics_plot_ref <- function(df, x_breaks=NULL) {
+  if(is.null(x_breaks)) x_breaks <- c(200,400,800,1600)
+  ggplot(
+    df,
+    aes(
+      x = tail_mean_group,
+      y = mean,
+      group = method_name,
+      color = method_name,
+      shape = method_name
+      # linetype = method_name
+    )
+  ) +
+    geom_line() +
+    geom_errorbar(
+      aes(ymin = ymin, ymax = ymax),
+      width = 0.04,
+      alpha = 0.7
+    ) +
+    geom_point(size = 2) +
+    facet_grid( ~ metric) +
+    # scale_x_continuous(
+    #   trans = "log2",
+    #   breaks = x_breaks
+    # ) +
+    scale_shape_manual(
+      values = c(16, 17, 15, 3, 7, 8, 4, 5, 6, 9,10,11)
+    ) +
+    labs(
+      x = "Mean UMI count of UMIS >= 10",
+      y = "Metric mean",
+      color = "Method",
+      shape = "Method"
+      # linetype = "Method"
+    ) +
+    theme_bw() +
+    theme(
+      legend.position = "bottom",
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+    )
+}
+
+plot_df <- avg_metrics_tbl %>%
+  mutate(
+    ci = 2 * sd / sqrt(n_nonmissing),
+    ymin = pmax(0, mean - ci),
+    ymax = pmin(1, mean + ci)
+  ) |>
+  mutate(
+    method_name = gsub("^script_", "", method_name)
+  )
+
+plot_df |>
+  make_avg_metrics_plot_ref() +
+  ggtitle("Replogle: comparing methods to SCEPTRE") +
+    guides(
+    color = guide_legend(nrow = 2),
+    shape = guide_legend(nrow = 2)
+  )
+```
+
+
+```{r, echo=FALSE, fig.cap = "This plot shows that `glmpois_poissumlog` has some of the breakdown that SCEPTRE exhibits, in terms of making more assignments for heavier tailed guides, but nowhere nearly as bad."}
+ new_labs <- c(
+  crispat = "crispat",
+  script_glmpois_poisbug = "sceptre",
+  script_threshglmpois1000_poissumlog = "threshglmpois1000_poissumlog",
+  script_threshglmpois1000_poisbug = "threshglmpois1000_poisbug",
+  script_glmpois_poissumlog = "glmpois_poissumlog"
+)
+
+plot_avg_n_assignments_by_group(
+  all_assns = repl_results$all_assns[methods_to_use],
+  grna_matrix = repl_results$grna_matrix
+) +
+  scale_y_log10() +
+  ggtitle(
+    "Replogle: number of assignments per guide tail mean group"
+  ) +
+  scale_color_discrete(
+    name = "Method",
+    labels = new_labs
+  ) +
+  scale_shape_discrete(
+    name = "Method",
+    labels = new_labs
+  ) +
+  guides(
+    color = guide_legend(nrow = 2),
+    shape = guide_legend(nrow = 2)
+  )
+```
+
+
+
+All methods perform very similarly on Gasperini so those plots are not interesting. 

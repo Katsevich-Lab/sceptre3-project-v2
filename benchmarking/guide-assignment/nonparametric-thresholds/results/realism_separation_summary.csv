@@ -1,0 +1,15 @@
+"group","kind","n_guides","pct_bimodal","median_gap","median_depth","median_m2_count","median_overlap"
+"1np_3p_disp:Phighdisp","sim",100,96,1.95,0.39,6,0.15
+"Gasperini (real)","real",400,97.5,2.2,0.46,8,NA
+"gasp_calib (NEW):P2","sim",100,49,2.3,0.1,9,0.578
+"gasp_calib (NEW):P3","sim",100,100,2.6,0.27,12,0.189
+"gasp_calib (NEW):P1","sim",100,75,2.64,0.18,13,0.968
+"old_sims:Psmall","sim",100,98,2.92,1,18,0.319
+"old_sims:Pmed","sim",100,99,3.47,1,31,0.282
+"old_sims:Plarge","sim",100,100,5.38,1,217,0.283
+"2np_3p:P1","sim",200,100,5.84,0.9,342,0.029
+"1np_3p_disp:Pmeddisp","sim",100,100,6.37,0.91,584,0.027
+"2np_3p:P2","sim",200,100,6.4,0.98,600,0.006
+"2np_3p:P3","sim",200,100,6.77,1,867,0.002
+"Replogle (real)","real",400,99.8,6.78,1,880,NA
+"1np_3p_disp:Plowdisp","sim",100,100,6.84,0.99,937,0.004

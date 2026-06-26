@@ -1,0 +1,10 @@
+"dataset","method","precision","recall","jaccard"
+"Repl 0.5%pert","otsu",1,0.935,0.935
+"Repl 0.5%pert","valley",1,0.936,0.936
+"Repl 0.5%pert","ambient(q=0.05)",0.674,0.994,0.671
+"Repl 1.5%pert","otsu",1,0.936,0.936
+"Repl 1.5%pert","valley",1,0.936,0.936
+"Repl 1.5%pert","ambient(q=0.05)",0.88,0.994,0.876
+"Gasp-calib","otsu",0.718,0.951,0.68
+"Gasp-calib","valley",0.969,0.351,0.343
+"Gasp-calib","ambient(q=0.05)",0.895,0.819,0.754
