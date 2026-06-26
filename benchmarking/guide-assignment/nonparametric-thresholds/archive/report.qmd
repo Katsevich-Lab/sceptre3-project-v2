@@ -87,9 +87,11 @@ The ambient test *is* geomux's core: geomux's p-value
 $1-F_\text{hyper}(N_{g,c}-1;\,n_\text{umi}, N_{g,\cdot}, N_{\cdot,c})$ with BH-FDR is our test.
 geomux additionally applies a log-odds-ratio threshold (default 10) and a min-UMI cell filter.
 **fishash** adds (i) an iterative Simpson's-paradox correction (it re-estimates the *noise*
-counts and conditions the "other-cells" background on noise) and (ii) a block-dependent FDR
-correction. We could not reproduce fishash's correction from the paper alone, so we benchmark
-against the real packages.
+counts by rank-1 Poisson matrix completion and conditions the "other-cells" background on noise)
+and (ii) a block-dependent (Guo–Sarkar) FDR correction. We benchmark against the real `fishash`
+package throughout. We have reproduced the Simpson's-paradox *phenomenon* it corrects (see
+@sec-simpson): the plain Fisher test — our ambient core — inflates FDR exactly when the ambient
+noise composition is uncorrelated with the signal, and fishash's correction restores control.
 
 # Datasets
 
@@ -217,6 +219,38 @@ This corrects a naive reading of the fixed-FDR tables: ours does *not* dominate 
 occupy different parts of PR space — fishash for high precision on hard data, the plain test for
 high recall or on easy data.
 
+## Reproducing the Simpson's-paradox phenomenon {#sec-simpson}
+
+Why does the plain ambient/Fisher test lose precision on hard data? fishash attributes it to
+**Simpson's paradox**. Treating each UMI as *signal* (truly from cell $c$) or *noise* (ambient),
+the one-sided Fisher test on the full signal+noise margins can call $(g,c)$ significant even when
+$g$ is truly absent from $c$ and $g,c$ are independent within the noise: collapsing over the
+signal/noise stratum flips the $2\times2$ odds ratio above 1. fishash corrects this by testing
+$g$ against its **noise-only** background in $c$ (an adjusted odds ratio), estimating the latent
+noise counts by rank-1 Poisson matrix completion of the assigned-masked matrix and iterating.
+Proposition 1 of their paper predicts the paradox is strongest when the ambient noise guide
+composition is *uncorrelated* with the signal composition, and vanishes when they coincide.
+
+We reproduce this directly using the authors' own simulator (`simulate_guidebender2`) and the
+real package, with the uncorrected test = `fishash(refit=0)` (the plain Fisher test, i.e. our
+ambient core) and the corrected test = `fishash(refit=10)`. Sweeping the signal--noise
+composition correlation (the `endo_shape_flat` knob; 20 guides, 4000 cells, SNR 4, MOI 0.3,
+10 replicates per regime) recovers the reported behavior:
+
+| signal--noise correlation | uncorrected FDR | reps > 5% | corrected FDR | reps > 5% |
+|---|---|---|---|---|
+| **low** (noise $\perp$ signal) | **0.197** | **10/10** | 0.003 | 0/10 |
+| medium | 0.090 | 9/10 | 0.003 | 0/10 |
+| high (noise $\propto$ signal) | 0.059 | 5/10 | 0.003 | 0/10 |
+
+![Reproducing fishash's Simpson's-paradox phenomenon (cf. their Fig. 7). Uncorrected = plain Fisher (= our ambient core); corrected = fishash's noise correction. Dashed line = nominal 5% FDR. Recall is essentially unchanged, so the correction removes false positives without costing power.](results/simpson_paradox_repro.png){width=95%}
+
+The plain test (our ambient core) inflates FDR exactly in the low-correlation regime and the
+correction restores control with no loss of recall — the same mechanism that lifts fishash's
+precision ceiling on the hard sims of @sec-pr. This is now an understood and reproduced
+phenomenon, not a black box; the remaining flagship task is to give our ambient test a
+*transparent* analogue of the noise correction.
+
 # Discussion
 
 **What is simple and good enough.** A clean BH-hypergeometric ambient test — one interpretable
@@ -227,15 +261,19 @@ robust default.
 
 **Where sophistication pays.** When the perturbed signal genuinely overlaps ambient (low
 $\mu_\text{pert}$ or high overdispersion — real regimes for genome-scale and primary-cell
-screens), fishash's Simpson's-paradox correction is a real, non-reproducible-by-hand advantage:
-it is the only method that attains high precision there. If precision on hard data matters, use
-fishash.
+screens), fishash's Simpson's-paradox correction is a real advantage: it is the only method that
+attains high precision there. We have reproduced the underlying phenomenon (@sec-simpson) and
+understand the correction (noise-conditioned odds ratio via rank-1 Poisson completion + a
+block-dependent FDR correction), but have not yet folded a transparent analogue into our own
+test. If precision on hard data matters today, use fishash.
 
 **Caveats.** (i) The barnyard comparison now uses the authors' *exact* cohort and metric (we
 reproduced their Table 2 to four decimals), so it is no longer cohort-confounded; the residual
 limitation is that the barnyard is high-signal cell-line data and does not probe the hard
-regimes. (ii) We did not reproduce fishash's Simpson's-paradox correction; its precision
-advantage in hard regimes (\autoref{sec-pr}) is real and we do not capture it. (iii) The
+regimes. (ii) We reproduced fishash's Simpson's-paradox *phenomenon* (@sec-simpson) and
+understand its correction, but our own ambient test does not yet implement a transparent
+analogue, so fishash's precision advantage in hard regimes (\autoref{sec-pr}) is real and ours
+does not capture it. (iii) The
 comprehensive-sim PR analysis uses a 12k-cell, 1200-guide benchmark subset for tractability of
 the external tools. (iv) geomux results are version-sensitive (adaptive vs fixed log-odds
 threshold); we report the authors' version.

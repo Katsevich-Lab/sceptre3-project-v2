@@ -2,8 +2,12 @@
 
 This folder investigates **simple, principled methods for gRNA guide assignment** in
 single-cell CRISPR screens, benchmarked against the published state of the art. Read this
-first; the full writeup is **`report.qmd` → `report.pdf`**. Persistent notes are in project
-memory (`grna-assignment-investigation`, `grna-assignment-data-locations`).
+first; the canonical writeup is **`sceptre3_assignment_report.qmd` → `.html`** (supersedes the
+older `report.qmd`/`report.pdf` and `methods_review.qmd`/`methods_review.html`, both now
+provenance-only). **Bottom line: adopt fishash's contingency core + decontaminate the cell margin
+(ambient depth, not library size) — `scripts/contingency_method.R`; reproduces fishash with
+`cell_margin="observed"`.** See memory `grna-assignment-recommendation`. Persistent notes:
+`grna-assignment-investigation`, `grna-assignment-data-locations`, `cleanser-scoring-artifact`.
 
 **Project context:** this is a continuation of the **sceptre3 project's ongoing gRNA-assignment
 benchmarking** (led by Louis Deutsch; team incl. Tim Barry, Eugene Katsevich). See
@@ -101,7 +105,10 @@ All scripts below live in `scripts/`. Run from this folder root, e.g. `Rscript s
    geomux via `.venv_geomux_v5`, `score_table2.R` (theirs) + `score_ours_table2.R` (adds ours).
    Combined table written by an inline step → `results/barnyard_exact_corrected.csv`.
 8. **Diagnostics**: `explore_grnas.R` (per-guide log-log histograms with thresholds).
-9. **Report**: `report.qmd`.
+9. **Simpson's-paradox reproduction** (paper Fig 7, self-contained): `simpson_paradox_repro.R`
+   (authors' simulator + real `fishash` refit=0 vs refit=10) → `simpson_paradox_plot.R`
+   (→ `results/simpson_paradox_repro.{csv,png}`).
+10. **Report**: `report.qmd`.
 
 ## Data locations
 - Benchmark inputs/outputs: `~/data/projects/sceptre3/benchmarking/guide_assignment/{input_data,outputs}/`
@@ -111,24 +118,39 @@ All scripts below live in `scripts/`. Run from this folder root, e.g. `Rscript s
 
 ## Open threads
 
-### ⚑ KNOWN GAP / CRITICAL-PATH PROBLEM: reproduce fishash's Simpson's-paradox correction
-We were **unable to reproduce fishash's Simpson's-paradox correction** from the paper text alone.
-This matters because that correction is *exactly* what lets fishash reach high precision in the
-hard, low-signal regime (PR curves, `results/PR_curves.png`) — the regime our plain ambient test
-(= geomux core) cannot crack. **For a flagship method we must close this gap**: a method that only
-matches geomux's core but not fishash's correction is not state-of-the-art where it counts.
+### ✅ RESOLVED: fishash's Simpson's-paradox correction — understood AND reproduced
+**Mechanism (now fully understood; paper §2.2 + Appendix B + the R source in `external/fishash/`).**
+The latent confounder is signal-vs-noise per UMI. The plain one-sided Fisher test on full
+(signal+noise) margins can call a false positive even when guide g is truly absent from cell c and
+g,c are noise-independent: pooling over the signal/noise stratum flips the 2×2 odds ratio > 1
+(Simpson's paradox; Prop 1, Fig 2). fishash's fix: replace the "other cells" counts with **noise-only**
+counts → adjusted odds ratio R\* (Eq 7), so the test asks "is g above its NOISE background in c"
+rather than "above the pooled background". The noise counts are latent, estimated by **rank-1 Poisson
+matrix completion** of the assigned-masked matrix (`impute_masked_counts.R`, Eq 9), iterated with a
+mask schedule (Alg 1: recompute mask fresh for i≤3, monotone-AND for i>3). Multiple testing is the
+**Guo–Sarkar 2020 block correction** (`padj_method="GS"`), treating each cell as a block.
 
-What we tried and why it failed: our hand version (`archive/fishash_faithful.R`) implemented the
-iterative noise re-estimation (Algorithm 1) with a *marginal* noise profile + plain BH. It behaved
-like generic iteration — helped one artificial-hard sim (`repeat_old`) but *hurt* CROP-seq and
-Gasperini (the opposite of real fishash). The piece we did not capture is the **block-dependent
-multiple-testing correction** (their "GS" method, Appendix B) and the exact noise-conditioned 2×2
-odds-ratio.
+**Why the old hand version failed** (`archive/fishash_faithful.R`, kept for provenance only): it used a
+*marginal* noise profile (zeroed the assigned entries instead of imputing γ_g·κ_c) + plain BH. Zeroing
+under-estimates the noise row-sum of popular guides → makes them look MORE significant → MORE false
+positives on exactly CROP-seq/Gasperini. The two missing pieces were the **rank-1 Poisson completion**
+and the **GS block correction**.
 
-To address (next session): read **fishash Appendix B** (`literature/fishash.pdf`) AND the actual
-**fishash R source** (`external/fishash/`, the `padj_method="GS"` path + the `refit` noise loop),
-implement it faithfully, and test whether a simple/transparent version recovers the precision
-ceiling on the comprehensive sim's hard groups. This is the key to a legitimate flagship method.
+**Phenomenon reproduced (paper Fig 7).** `scripts/simpson_paradox_repro.R` + `simpson_paradox_plot.R`
+(→ `results/simpson_paradox_repro.{csv,png}`) use the authors' OWN simulator (`simulate_guidebender2`)
+and the REAL package: uncorrected = `fishash(refit=0)` (= plain Fisher = our ambient/geomux core in
+spirit), corrected = `fishash(refit=10)`. The `endo_shape_flat` knob sweeps the signal↔noise
+composition correlation (1=low → paradox strongest; 0=high → absent). Result matches the paper:
+low-corr regime → uncorrected FDR ≈0.20, fails nominal 5% in **10/10** reps; corrected → FDR ≈0.003,
+**0/10**. Gradient as Prop 1 predicts; recall essentially unchanged (~0.89→0.90) → the correction
+removes FPs without costing power.
+
+**Reimplementing fishash is NOT necessary.** The real package is installed (v0.99.0) and already feeds
+every reported number (barnyard via `external/repro_work/run_fishash_local.R`; PR/panel via
+`library(fishash)` in `scripts/pr_curves.R` + `score_comprehensive_panel.R`). No reported result depends
+on the old hand version. The remaining flagship question is whether OUR ambient test can adopt a
+**transparent analogue** of the noise correction — the Fig-7 phenomenon above is the susceptibility it
+must address (our plain ambient test = the uncorrected curve).
 
 ### Other
 - **Read the `literature/` PDFs** (cleanser, crispat(+supp), fishash, geomux, sceptre) and
