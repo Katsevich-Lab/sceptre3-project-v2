@@ -27,8 +27,9 @@ dataset. NOT fishash's package → contingency-family wins are not home-field.
    `real_perguide.rds`): for every real dataset, fit each guide's bimodal UMI
    structure (smoothed-valley). Per guide save: **mu** (mean of above-valley
    "signal" cells), **theta** (NB dispersion, method-of-moments), **signal_frac**
-   (fraction above valley), right_mode, separation. Dataset-level: MOI (ambient
-   test), ambient "ambiguous middle" (% of below-valley counts ≥3), etc.
+   (fraction above valley), right_mode. Dataset-level: MOI (ambient test),
+   ambient "ambiguous middle" (mean nonzero, % of below-valley counts ≥3, p99,
+   max).
 2. **Build regimes** (`sim_regimes.R` → `regimes.csv`, `manifest_modelB.csv`,
    datasets `B__regime__<name>`): for each dataset, sample G=150 real guides and
    **simulate each sim guide from a real guide's fit** — its (mu, theta,
@@ -41,13 +42,14 @@ dataset. NOT fishash's package → contingency-family wins are not home-field.
 **Why per-guide fit:** earlier versions used a dataset-level *median* (then a
 dataset *pool* draw), so no sim guide matched any real guide and histograms were
 off (esp. wide-signal datasets). Fitting (mu, theta, frac) per guide reproduces
-the real per-guide histograms — proven in `results/sim_framework/poc_perguide_fit.png`
-(dctap mu=365/size=0.9 and replogle mu=1266/size=1.9 both reproduce the wide
-signal mode). `build_modelB()` accepts per-guide vectors for `mu_pert`,
-`theta_sig`, and `pert_rate` (Bernoulli per-guide perturbation at the real
-signal_frac — fixes the many-guide over-density: signal_frac = MOI/n_guides, and
-with 150 guides vs real thousands you can match per-cell MOI OR per-guide density,
-not both; we match density, MOI/masking lives in Model A).
+the real per-guide histograms (validated regime-wide in
+`results/sim_framework/regime_histograms_all.png`; a single-guide proof-of-concept
+is `scripts/sim_poc_paired.R` → `paired_histograms.png`).  `build_modelB()`
+accepts per-guide vectors for `mu_pert`, `theta_sig`, and `pert_rate` (Bernoulli
+per-guide perturbation at the real signal_frac — fixes the many-guide
+over-density: signal_frac = MOI/n_guides, and with 150 guides vs real thousands
+you can match per-cell MOI OR per-guide density, not both; we match density,
+MOI/masking lives in Model A).
 
 ## Method panel (11 methods)
 
@@ -62,23 +64,34 @@ Scoring (`sim_lib.R`): per-guide precision/recall/Jaccard + pooled FDR vs
 
 ## Pipeline (run order, from folder root)
 
-```
+```bash
 Rscript scripts/sim_modelA.R           # Model A (72 datasets)
 Rscript scripts/sim_characterize.R     # characterize 17 real -> real_perguide.rds
-Rscript scripts/sim_regimes.R          # Model B = 13 data-derived regimes (barnyard dropped)
+Rscript scripts/sim_regimes.R          # Model B regimes (one per non-barnyard dataset)
 Rscript scripts/sim_realism_gate.R     # realism gate vs real + lab sum-process sim
 Rscript scripts/sim_run_methods.R      # R panel on all datasets -> scores_R.csv + ext_counts.mtx
 .venv_geomux_v5/bin/python scripts/run_geomux_sims.py
-for s in 0..5: .venv_crispat/bin/python scripts/run_crispat_sims.py $s 6   # parallel shards
+for s in {0..5}; do                    # 6 parallel crispat shards (idempotent; safe to rerun)
+  .venv_crispat/bin/python scripts/run_crispat_sims.py $s 6 &
+done; wait
 Rscript scripts/sim_score_external.R   # + geomux/crispat -> scores_all.csv
 Rscript scripts/sim_analysis.R         # figures + tables
-Rscript scripts/sim_validate_hist.R ; scripts/sim_plot_real_distributions.R ; sim_plot_within_regime.R
+Rscript scripts/sim_validate_hist.R                # regime_histograms_all.png
+Rscript scripts/sim_plot_real_distributions.R      # real_distributions.png
+Rscript scripts/sim_plot_within_regime.R           # within_regime_variation.png
 quarto render simulation_framework_report.qmd --to html
 ```
 
-Outputs in `results/sim_framework/` (datasets/ gitignored, large). Key figures:
+The d_sigma / w_sigma BUILD_ARGS in `sim_regimes.R` default to 0.05 (per-cell
+signal-capture and per-guide capture spread, tight so signal ~ NB(mu, theta) from
+the per-guide fit directly).  This is a known fairness CAVEAT vs fishash (see the
+header comment in sim_regimes.R) -- to run a sensitivity sweep, set
+`SIM_D_SIGMA=0.3` (and optionally `SIM_W_SIGMA=0.3`) before `sim_regimes.R`.
+
+Outputs in `results/sim_framework/` (`datasets/` gitignored, large). Key figures:
 `fig_regime_sweep.png`, `fig_regime_heatmap.png`, `regime_histograms_all.png`,
-`real_distributions.png`, `real_characterization.png`, `fig_fdr.png`, `fig_purity.png`.
+`real_distributions.png`, `real_characterization.png`, `within_regime_variation.png`,
+`fig_fdr.png`, `fig_purity.png`.
 
 ## Key findings (stable across iterations)
 
@@ -95,25 +108,30 @@ Outputs in `results/sim_framework/` (datasets/ gitignored, large). Key figures:
   structural + coverage. Real ambient differs by chemistry; barnyard direct-
   capture's heavy tail is doublets surviving GEX-purity QC (collapses at 0.99).
 
-## CURRENT STATE (2026-06-26) — IMPORTANT for continuation
+## CURRENT STATE — IMPORTANT for continuation
 
 - **Last fully-run result** (scores_all.csv, report HTML): the *within-dataset-
   variety* version — Model A (72) + 17 dataset-pool-draw Model B regimes (89
   datasets), depth_fix #1 at 0.849. THIS is what the committed scores/report show.
 - **In progress, NOT yet run**: the **per-guide-fit** refinement (this doc's
   design). Scripts `sim_modelB.R`, `sim_characterize.R`, `sim_regimes.R`,
-  `sim_validate_hist.R` are EDITED for per-guide fit + barnyard-dropped (13
-  regimes), but **the rebuild + re-run + re-render has NOT happened yet** (user
-  paused to commit). `real_perguide.rds` on disk is still the OLD (right_mode,
-  signal_frac) format until `sim_characterize.R` is re-run.
+  `sim_validate_hist.R`, `sim_plot_within_regime.R`, `sim_score_external.R`,
+  `sim_analysis.R`, `run_crispat_sims.py`, `sim_modelA.R` are EDITED (per-guide
+  fit, barnyard dropped from Model B, fixes from the adversarial review), but
+  **the rebuild + re-run + re-render has NOT happened yet** (user paused after
+  the review to commit clean code). `real_perguide.rds` on disk is still the
+  pre-refinement format until `sim_characterize.R` is re-run.
 
 ### PENDING next steps (resume here)
-1. `Rscript scripts/sim_characterize.R` (saves new per-guide mu/theta/frac).
-2. `rm -rf results/sim_framework/datasets/B__regime__*` then `Rscript scripts/sim_regimes.R` (13 regimes).
-3. `Rscript scripts/sim_validate_hist.R` → review `regime_histograms_all.png` (should now match per-guide).
-4. Re-run panel: delete stale `B__regime__*/{geomux,crispat}_calls.csv`; `sim_run_methods.R`; geomux; crispat shards; `sim_score_external.R`; `sim_analysis.R`.
-5. Update the report's regime count (17→13; barnyard now Model-A-only) and re-render.
-6. Deferred (by user): downstream SCEPTRE DE test (calibration/power) — the decisive metric.
+1. `Rscript scripts/sim_characterize.R` — saves new per-guide mu/theta/signal_frac/right_mode (+ ambient p99 in the dataset row).
+2. `rm -rf results/sim_framework/datasets/B__regime__*` then `Rscript scripts/sim_regimes.R` — builds the (non-barnyard) regimes with shared BUILD_ARGS and multi-seed ambient calibration.
+3. `Rscript scripts/sim_realism_gate.R` — refreshes realism_gate.csv (the prior file references the old manifests).
+4. `Rscript scripts/sim_validate_hist.R` — review `regime_histograms_all.png` (per-guide-fit pairing).
+5. Re-run panel: delete stale `B__regime__*/{geomux,crispat}_calls.csv`; then `sim_run_methods.R`, geomux, crispat shards, `sim_score_external.R`, `sim_analysis.R`.
+6. Refresh the supporting plots: `sim_plot_real_distributions.R`, `sim_plot_within_regime.R`.
+7. Update the report (regime count is now dynamic; barnyard is Model A only) and re-render.
+8. (Optional) d_sigma fairness sweep: `SIM_D_SIGMA=0.3 Rscript scripts/sim_regimes.R` and re-run the pipeline; compare depth_fix vs fishash deltas.
+9. Deferred (by user): downstream SCEPTRE DE test (calibration/power) — the decisive metric.
 
 ## Data / envs
 - Barnyard repro inputs: `external/repro_work/*_grna_counts.mtx` (+ `_meta.csv`, `_guides.csv`).

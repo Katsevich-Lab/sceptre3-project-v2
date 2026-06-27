@@ -1,8 +1,9 @@
 #!/usr/bin/env Rscript
 # Validate the data-derived regimes by reproducing real-vs-sim per-guide UMI
-# histograms for ALL 17 datasets.  For each we pick a representative bimodal real
-# guide and the sim guide whose signal mode is closest to it (fair comparison).
-# Output: results/sim_framework/regime_histograms.png
+# histograms for every regime (one panel per dataset).  For each, pick a
+# representative bimodal real guide and the sim guide whose above-valley mean is
+# closest to it (fair comparison).
+# Output: results/sim_framework/regime_histograms_all.png
 suppressPackageStartupMessages({library(Matrix); library(ggplot2); library(patchwork)})
 source(file.path(getwd(), "scripts", "sim_lib.R"))
 source(file.path(getwd(), "scripts", "barnyard_io.R"))
@@ -25,8 +26,9 @@ for (s in BARN_SAMPLES) { mtx <- file.path(REPRO, paste0(s, "_grna_counts.mtx"))
   if (file.exists(mtx)) loaders[[paste0("barnyard_", sub("mix","",s))]] <- local({ mm <- mtx
     function() as(readMM(mm), "CsparseMatrix") }) }
 
-pick_guide <- function(gm, max_cells = 30000) {
-  gm <- as(gm, "CsparseMatrix"); if (ncol(gm) > max_cells) { set.seed(1); gm <- gm[, sort(sample(ncol(gm), max_cells))] }
+pick_guide <- function(gm, max_cells = 30000, seed = 1) {
+  set.seed(seed)                                       # seed BOTH samples (cells + guides) -- reproducible
+  gm <- as(gm, "CsparseMatrix"); if (ncol(gm) > max_cells) gm <- gm[, sort(sample(ncol(gm), max_cells))]
   gmr <- as(gm, "RsparseMatrix"); best <- NULL; bn <- -1
   gi <- if (nrow(gmr) > 400) sort(sample(nrow(gmr), 400)) else seq_len(nrow(gmr))
   for (g in gi) { cv <- as.numeric(gmr[g, ]); if (sum(cv > 0) < 50) next

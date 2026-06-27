@@ -7,7 +7,7 @@ Shardable for parallelism:  run_crispat_sims.py <shard_idx> <n_shards>
 Run with .venv_crispat/bin/python from the folder root."""
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt; plt.savefig = lambda *a, **k: None
-import os, glob, sys, shutil, tempfile, numpy as np, scipy.io, anndata as ad, pandas as pd
+import os, glob, sys, shutil, numpy as np, scipy.io, anndata as ad, pandas as pd
 import crispat
 
 DS = "results/sim_framework/datasets"
@@ -18,18 +18,26 @@ def run_one(d):
     cells  = [l.strip() for l in open(os.path.join(d, "ext_cells.txt"))]
     A = ad.AnnData(X=m.T.tocsr().astype("float32"))                    # cells x guides
     A.var_names = guides; A.obs_names = cells
-    tmp_h5 = os.path.join(d, "_crispat_in.h5ad"); A.write(tmp_h5)
+    tmp_h5 = os.path.join(d, "_crispat_in.h5ad")
     outdir = os.path.join(d, "_crispat_out")
-    shutil.rmtree(outdir, ignore_errors=True)                          # must not pre-exist (crispat makes plot subdirs)
-    crispat.ga_poisson_gauss(tmp_h5 + "", outdir + "/")
-    asg = pd.read_csv(os.path.join(outdir, "assignments.csv"))
-    if len(asg):
-        asg[["gRNA", "cell"]].rename(columns={"gRNA": "guide"}).to_csv(
-            os.path.join(d, "crispat_calls.csv"), index=False)
-    else:
-        pd.DataFrame(columns=["guide", "cell"]).to_csv(os.path.join(d, "crispat_calls.csv"), index=False)
-    os.remove(tmp_h5); shutil.rmtree(outdir, ignore_errors=True)
-    return len(asg)
+    try:
+        A.write(tmp_h5)
+        shutil.rmtree(outdir, ignore_errors=True)                      # crispat creates plot subdirs; start clean
+        crispat.ga_poisson_gauss(tmp_h5, outdir + "/")
+        asg_path = os.path.join(outdir, "assignments.csv")
+        try:
+            asg = pd.read_csv(asg_path)
+        except (pd.errors.EmptyDataError, FileNotFoundError):
+            asg = pd.DataFrame(columns=["cell", "gRNA", "UMI_counts"]) # legitimate empty (weak-signal regimes)
+        out_calls = os.path.join(d, "crispat_calls.csv")
+        if len(asg):
+            asg[["gRNA", "cell"]].rename(columns={"gRNA": "guide"}).to_csv(out_calls, index=False)
+        else:
+            pd.DataFrame(columns=["guide", "cell"]).to_csv(out_calls, index=False)
+        return len(asg)
+    finally:
+        if os.path.exists(tmp_h5): os.remove(tmp_h5)
+        shutil.rmtree(outdir, ignore_errors=True)
 
 if __name__ == "__main__":
     shard = int(sys.argv[1]) if len(sys.argv) > 1 else 0

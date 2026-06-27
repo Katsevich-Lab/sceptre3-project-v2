@@ -74,7 +74,7 @@ ambient test and Otsu *over-call* (FDR well above nominal), and geomux *collapse
 real-ambient direct-capture*. A fixed UMI cutoff is a strong baseline on *easy*
 (low-ambient) data — but as ambient expression rises toward the level real primary
 cells show, its realized FDR runs to ~0.5 while the calibrated methods hold near
-nominal; that "cutoff trap" (§8) is the decisive separation. Method *rankings* are
+nominal; that "cutoff trap" (the regime-sweep figure below) is the decisive separation. Method *rankings* are
 stable across purity; *absolute* direct-capture precision is purity-sensitive,
 because real doublets create a false-positive floor at 0.90 that vanishes at 0.99.
 
@@ -163,7 +163,7 @@ The most faithful object we can build. For a barnyard sample at a chosen purity:
    observed") is exact.
 
 Built across both chemistries, both timepoints, both purities, three signal
-levels (chemistry-calibrated), and low/high MOI. Because the ambient is real,
+levels (chemistry-calibrated), and three MOI levels (low=1, high=5, vhigh=15). Because the ambient is real,
 Model A inherits the barnyard's depth ratios, Gini, mode separation, and the
 purity-dependent doublet tail automatically.
 
@@ -236,7 +236,7 @@ if (!is.null(rg)) {
 We validate the calibration the way the eye does — by reproducing the real
 per-guide UMI histograms (real, left; simulated, right):
 
-![Real vs simulated per-guide UMI histograms for four regimes spanning the space. The ambient spike, the ambiguous middle, the signal-mode position, and the separation all reproduce.](results/sim_framework/regime_histograms.png)
+![Real vs simulated per-guide UMI histograms — one panel per regime; sim guide matched to real by above-valley mean. The ambient spike, the ambiguous middle, the signal-mode position, and the separation all reproduce.](results/sim_framework/regime_histograms_all.png)
 
 And the **within-regime guide variety** is captured: for every dataset, the
 simulated per-guide signal-mode distribution (green) overlaps the real one
@@ -370,8 +370,11 @@ control and the purity/doublet effect:
   runtime (per-guide model fitting), not accuracy.
 
 ```{r provenance}
-cat("Code: scripts/sim_lib.R (registry, scoring, realism gate), barnyard_io.R (authors' QC),",
-    "sim_modelA.R, sim_modelB.R, sim_realism_gate.R, sim_run_methods.R,",
+cat("Code (in pipeline order, all under scripts/):",
+    "sim_lib.R (registry, scoring, realism gate), barnyard_io.R (authors' QC),",
+    "contingency_method.R (depth_fix), sim_modelA.R, sim_characterize.R,",
+    "sim_modelB.R, sim_regimes.R, sim_realism_gate.R, sim_run_methods.R,",
     "run_geomux_sims.py (.venv_geomux_v5), run_crispat_sims.py (.venv_crispat),",
-    "sim_score_external.R, sim_analysis.R.\n")
+    "sim_score_external.R, sim_analysis.R, sim_validate_hist.R,",
+    "sim_plot_real_distributions.R, sim_plot_within_regime.R.\n")
 ```

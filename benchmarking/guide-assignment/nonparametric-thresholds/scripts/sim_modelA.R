@@ -34,8 +34,11 @@ build_modelA <- function(sample, purity, mu_pert, moi, theta_sig = 1,
   # (so the real doublet tail at low purity is preserved, not averaged away),
   # unless that group is too small, in which case use the larger group.
   hum_c <- which(b$cell_homo); mus_c <- which(!b$cell_homo)
-  max_h <- if (length(mus_c)) max(b$counts[which(!b$guide_homo), hum_c, drop = FALSE]) else 0  # human cells, mouse-guide ambient
-  max_m <- if (length(hum_c)) max(b$counts[which(b$guide_homo),  mus_c, drop = FALSE]) else 0  # mouse cells, human-guide ambient
+  # ambient = wrong-species guide counts in pure-species cells.  Each `max_*`
+  # measures the heaviest tail of ITS OWN cell group's wrong-species ambient,
+  # so its guard MUST be that cell group's length (not the other group's).
+  max_h <- if (length(hum_c)) max(b$counts[which(!b$guide_homo), hum_c, drop = FALSE]) else 0  # human cells, mouse-guide ambient
+  max_m <- if (length(mus_c)) max(b$counts[which(b$guide_homo),  mus_c, drop = FALSE]) else 0  # mouse cells, human-guide ambient
   focal_human <- if (min(length(hum_c), length(mus_c)) < 1000) length(hum_c) >= length(mus_c) else max_h >= max_m
   cell_sel   <- if (focal_human) hum_c else mus_c
   amb_guides <- if (focal_human) which(!b$guide_homo) else which(b$guide_homo)  # wrong-species => ambient

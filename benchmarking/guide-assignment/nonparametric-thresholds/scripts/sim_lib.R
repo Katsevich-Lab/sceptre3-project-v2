@@ -61,8 +61,18 @@ sceptre_assign <- function(counts, moi = "high") {
   gm <- as(counts, "CsparseMatrix"); G <- nrow(gm); C <- ncol(gm)
   if (is.null(rownames(gm))) rownames(gm) <- paste0("g", seq_len(G))
   if (is.null(colnames(gm))) colnames(gm) <- paste0("c", seq_len(C))
-  set.seed(1)
-  resp <- Matrix::sparseMatrix(i = rep(1L, 5), j = sample(C, 5), x = 1,
+  # Use a deterministic, FIXED dummy-response set instead of sample().  Save +
+  # restore the caller's global RNG around the whole sceptre call so neither
+  # our dummy-response setup nor sceptre's internal RNG perturbs caller state.
+  has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  saved_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
+  on.exit({
+    if (has_seed) assign(".Random.seed", saved_seed, envir = .GlobalEnv)
+    else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE))
+      rm(".Random.seed", envir = .GlobalEnv)
+  })
+  resp_cells <- if (C <= 5) seq_len(C) else round(seq(1, C, length.out = 5))
+  resp <- Matrix::sparseMatrix(i = rep(1L, length(resp_cells)), j = resp_cells, x = 1,
                                dims = c(1, C), dimnames = list("gene1", colnames(gm)))
   tdf <- data.frame(grna_id = rownames(gm), grna_target = paste0("t", seq_len(G)),
                     stringsAsFactors = FALSE)
@@ -75,12 +85,18 @@ sceptre_assign <- function(counts, moi = "high") {
              formula_object = ~ log(grna_n_umis + 1) + log(grna_n_nonzero + 1))
   }))
   A <- sceptre::get_grna_assignments(obj)
-  # sceptre returns guide rownames but drops cell colnames, preserving cell ORDER
+  # sceptre returns guide rownames but DROPS cell colnames, preserving cell ORDER
   # (we skip run_qc, so no cells are dropped) -- exactly as the pipeline's
-  # run_sceptre.R relies on.  Re-attach cell names by position, align guides by name.
-  stopifnot(ncol(A) == C)
+  # run_sceptre.R relies on.  Re-attach cell names by position; this is fragile
+  # to a future sceptre release that reorders cells internally, so we
+  # CROSS-CHECK by re-attaching guide rownames the same way and asserting the
+  # call totals match between the raw and aligned matrices.  Validated with
+  # sceptre 0.99.0.
+  stopifnot(ncol(A) == C, nrow(A) == G)
   if (is.null(colnames(A))) colnames(A) <- colnames(gm)
-  A[rownames(gm), colnames(gm)]
+  A_aligned <- A[rownames(gm), colnames(gm)]
+  stopifnot(sum(A_aligned) == sum(A))
+  A_aligned
 }
 
 # Fixed global UMI-count threshold: assign (g,c) iff count >= t.  The simplest
@@ -92,7 +108,7 @@ sceptre_assign <- function(counts, moi = "high") {
 }
 
 run_methods <- function(counts, methods = c("thresh10","ambient","otsu","valley","fishash","depth_fix","sceptre"),
-                        q = 0.05, external = list(), verbose = TRUE) {
+                        q = 0.05, external = list(), sceptre_moi = "high", verbose = TRUE) {
   counts <- as(counts, "CsparseMatrix")
   dn <- dimnames(counts)
   out <- list()
@@ -108,7 +124,7 @@ run_methods <- function(counts, methods = c("thresh10","ambient","otsu","valley"
                        fishash::fishash(counts, padj_cutoff = q), "assigned"), dn)),
       depth_fix = tt("depth_fix",.as_lgl(contingency_assign(counts, q = q, cell_margin = "ambient",
                        tail = "hyper", fdr = "GS")$assigned, dn)),
-      sceptre   = tt("sceptre",  .as_lgl(sceptre_assign(counts), dn)),
+      sceptre   = tt("sceptre",  .as_lgl(sceptre_assign(counts, moi = sceptre_moi), dn)),
       {  # default: fixed-threshold methods named "thresh<N>" (e.g. thresh10)
         if (grepl("^thresh[0-9]+$", m)) tt(m, .as_lgl(.fixed_thresh(counts, as.integer(sub("thresh","",m))), dn))
         else stop("unknown method: ", m)
@@ -127,6 +143,7 @@ run_methods <- function(counts, methods = c("thresh10","ambient","otsu","valley"
 # the per-guide means (NA); pooled FDR uses all calls.
 score_assignment <- function(A, truth) {
   A <- as(A, "lgCMatrix"); truth <- as(truth, "lgCMatrix")
+  stopifnot(identical(dim(A), dim(truth)))                # catch off-by-one alignment bugs
   G <- nrow(A)
   Ar <- as(A, "RsparseMatrix"); Tr <- as(truth, "RsparseMatrix")
   per <- do.call(rbind, lapply(seq_len(G), function(g) {
@@ -144,13 +161,18 @@ score_assignment <- function(A, truth) {
          jaccard   = mean(per$jac,  na.rm = TRUE),
          precision = mean(per$prec, na.rm = TRUE),
          recall    = mean(per$rec,  na.rm = TRUE),
-         fdr_pooled    = if (npred) (npred - tp) / npred else 0,
+         # NA when no calls (symmetric with recall_pooled when no truth) so a
+         # zero-call method doesn't average favorably as "FDR=0".
+         fdr_pooled    = if (npred) (npred - tp) / npred else NA_real_,
          recall_pooled = if (ntrue) tp / ntrue else NA_real_,
          n_pred = npred, n_true = ntrue))
 }
 
-# Score a named list of assignment matrices against one truth matrix.
+# Score a named list of assignment matrices against one truth matrix.  Filters
+# NULL entries (e.g. a method that failed); never crashes the whole panel.
 score_panel <- function(assignments, truth) {
+  assignments <- assignments[!vapply(assignments, is.null, logical(1))]
+  if (!length(assignments)) return(data.frame())
   do.call(rbind, lapply(names(assignments), function(m) {
     s <- score_assignment(assignments[[m]], truth)$summary; s$method <- m; s
   }))

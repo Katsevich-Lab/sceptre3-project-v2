@@ -32,14 +32,20 @@ for (k in seq_len(nrow(man))) {
   if (is.null(colnames(counts))) colnames(counts) <- paste0("c", seq_len(ncol(counts)))
   tr <- truth_observed(d$Z, counts); dimnames(tr) <- dimnames(counts)
   cat(sprintf("[%2d/%2d] %s  (G=%d C=%d)\n", k, nrow(man), id, nrow(counts), ncol(counts)))
-  A <- run_methods(counts, methods = R_METHODS, verbose = FALSE)
+  # sceptre's "low"/"high" MOI knob: lab convention is moi==1 -> low, else high.
+  sc_moi <- if (is.finite(man$moi[k]) && man$moi[k] >= 5) "high" else "low"
+  A <- run_methods(counts, methods = R_METHODS, sceptre_moi = sc_moi, verbose = FALSE)
   sc <- score_panel(A, tr)
   sc <- cbind(man[k, ], sc[, c("method","jaccard","precision","recall","fdr_pooled","recall_pooled","n_pred","n_true")])
   rows[[id]] <- sc
-  # dump inputs for out-of-process methods
-  writeMM(counts, file.path(d$dir, "ext_counts.mtx"))
-  writeLines(rownames(counts), file.path(d$dir, "ext_guides.txt"))
-  writeLines(colnames(counts), file.path(d$dir, "ext_cells.txt"))
+  # dump inputs for out-of-process methods; skip if fresh wrt counts.rds
+  ext_mtx <- file.path(d$dir, "ext_counts.mtx")
+  if (!file.exists(ext_mtx) ||
+      file.mtime(ext_mtx) < file.mtime(file.path(d$dir, "counts.rds"))) {
+    writeMM(counts, ext_mtx)
+    writeLines(rownames(counts), file.path(d$dir, "ext_guides.txt"))
+    writeLines(colnames(counts), file.path(d$dir, "ext_cells.txt"))
+  }
 }
 scores <- do.call(rbind, rows); rownames(scores) <- NULL
 write.csv(scores, file.path(OUT, "scores_R.csv"), row.names = FALSE)

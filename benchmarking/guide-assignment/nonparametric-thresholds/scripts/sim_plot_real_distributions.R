@@ -27,8 +27,9 @@ for (s in BARN_SAMPLES) { mtx <- file.path(REPRO, paste0(s, "_grna_counts.mtx"))
     function() as(readMM(mm), "CsparseMatrix") }) }
 
 # representative guide = bimodal guide whose separation is closest to the dataset median
-pick_repr <- function(gm, max_cells = 30000) {
-  gm <- as(gm, "CsparseMatrix"); if (ncol(gm) > max_cells) { set.seed(1); gm <- gm[, sort(sample(ncol(gm), max_cells))] }
+pick_repr <- function(gm, max_cells = 30000, seed = 1) {
+  set.seed(seed)                                      # seed BOTH samples (cells + guides)
+  gm <- as(gm, "CsparseMatrix"); if (ncol(gm) > max_cells) gm <- gm[, sort(sample(ncol(gm), max_cells))]
   gmr <- as(gm, "RsparseMatrix"); gi <- if (nrow(gmr) > 400) sort(sample(nrow(gmr), 400)) else seq_len(nrow(gmr))
   cand <- list(); seps <- c()
   for (g in gi) { cv <- as.numeric(gmr[g, ]); if (sum(cv > 0) < 50) next
@@ -42,7 +43,6 @@ df <- list()
 for (nm in names(loaders)) {
   r <- tryCatch(pick_repr(loaders[[nm]]()), error = function(e) NULL); if (is.null(r)) next
   sep <- ch$separation[ch$dataset == nm]; sep <- if (length(sep)) sep[1] else NA
-  cv <- r$cv[r$cv > 0 | runif(0) > 1]                       # keep zeros too
   df[[nm]] <- data.frame(dataset = nm, sep = sep, count = r$cv,
                          mode = ifelse(r$cv >= r$t, "signal", "ambient"))
 }
