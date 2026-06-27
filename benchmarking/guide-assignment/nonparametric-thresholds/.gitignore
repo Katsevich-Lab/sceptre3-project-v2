@@ -1,7 +1,10 @@
 # Python envs (regenerable; .venv_geomux_v5 = correct geomux 0.5.5)
 .venv_geomux*/
+.venv_crispat/
 __pycache__/
 *.pyc
+# simulation-framework datasets (large, regenerable from scripts)
+results/sim_framework/datasets/
 # cloned upstream repos (reproduction harness)
 external/fishash/
 external/fishash_analysis/

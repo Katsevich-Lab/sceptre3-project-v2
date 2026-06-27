@@ -1,0 +1,56 @@
+"model","chemistry","method","jaccard","FDR","recall"
+"A","CROP-seq","thresh3",0.821,0.003,0.824
+"A","CROP-seq","thresh10",0.534,0,0.534
+"A","CROP-seq","thresh20",0.359,0,0.359
+"A","CROP-seq","otsu",0.698,0.233,0.846
+"A","CROP-seq","valley",0.702,0.004,0.704
+"A","CROP-seq","ambient",0.738,0.118,0.857
+"A","CROP-seq","geomux",0.665,0.007,0.67
+"A","CROP-seq","fishash",0.759,0.003,0.762
+"A","CROP-seq","depth_fix",0.832,0.006,0.839
+"A","CROP-seq","sceptre",0.756,0.007,0.761
+"A","CROP-seq","crispat",0.824,0.007,0.828
+"A","direct-capture","thresh3",0.837,0.051,0.888
+"A","direct-capture","thresh10",0.717,0.035,0.742
+"A","direct-capture","thresh20",0.643,0.025,0.657
+"A","direct-capture","otsu",0.641,0.047,0.665
+"A","direct-capture","valley",0.7,0.042,0.733
+"A","direct-capture","ambient",0.781,0.147,0.927
+"A","direct-capture","geomux",0.083,0.001,0.083
+"A","direct-capture","fishash",0.861,0.04,0.904
+"A","direct-capture","depth_fix",0.866,0.049,0.919
+"A","direct-capture","sceptre",0.753,0.069,0.803
+"A","direct-capture","crispat",0.819,0.049,0.865
+"B","CROP-seq","thresh3",0.771,0.001,0.772
+"B","CROP-seq","thresh10",0.419,0,0.419
+"B","CROP-seq","thresh20",0.24,0,0.24
+"B","CROP-seq","otsu",0.665,0.32,0.898
+"B","CROP-seq","valley",0.66,0.003,0.661
+"B","CROP-seq","ambient",0.723,0.107,0.827
+"B","CROP-seq","geomux",0.71,0.01,0.718
+"B","CROP-seq","fishash",0.7,0.001,0.701
+"B","CROP-seq","depth_fix",0.789,0.003,0.792
+"B","CROP-seq","sceptre",0.707,0.001,0.708
+"B","CROP-seq","crispat",0.776,0.003,0.777
+"B","direct-capture","thresh3",0.948,0.012,0.963
+"B","direct-capture","thresh10",0.852,0,0.852
+"B","direct-capture","thresh20",0.74,0,0.74
+"B","direct-capture","otsu",0.862,0.249,0.926
+"B","direct-capture","valley",0.918,0,0.919
+"B","direct-capture","ambient",0.808,0.121,0.93
+"B","direct-capture","geomux",0.668,0.001,0.671
+"B","direct-capture","fishash",0.909,0.001,0.911
+"B","direct-capture","depth_fix",0.962,0.003,0.969
+"B","direct-capture","sceptre",0.872,0.008,0.881
+"B","direct-capture","crispat",0.948,0.001,0.949
+"B","high-ambient (primary-like)","thresh3",0.72,0.31,0.889
+"B","high-ambient (primary-like)","thresh10",0.636,0.005,0.638
+"B","high-ambient (primary-like)","thresh20",0.458,0,0.458
+"B","high-ambient (primary-like)","otsu",0.555,0.687,0.925
+"B","high-ambient (primary-like)","valley",0.735,0.007,0.74
+"B","high-ambient (primary-like)","ambient",0.713,0.154,0.844
+"B","high-ambient (primary-like)","geomux",0.686,0.171,0.796
+"B","high-ambient (primary-like)","fishash",0.782,0.012,0.796
+"B","high-ambient (primary-like)","depth_fix",0.829,0.027,0.864
+"B","high-ambient (primary-like)","sceptre",0.759,0.027,0.786
+"B","high-ambient (primary-like)","crispat",0.798,0.116,0.824

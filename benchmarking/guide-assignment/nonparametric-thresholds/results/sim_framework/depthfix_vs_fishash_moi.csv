@@ -1,0 +1,7 @@
+"moi_level","method","jaccard","recall"
+"low","fishash",0.813,0.849
+"low","depth_fix",0.834,0.881
+"high","fishash",0.806,0.817
+"high","depth_fix",0.864,0.877
+"vhigh","fishash",0.756,0.759
+"vhigh","depth_fix",0.849,0.853
