@@ -68,15 +68,18 @@ decoupled depth, no shared ambient pool, no co-occurrence, no doublets) and one 
 **coverage** (it cannot represent the heavy direct-capture tail at all). The gate
 is doing its job: disciplining our own narrative against the data.
 
-**What the benchmark shows.** The **contingency family (depth-fix, fishash) and the
-mixture family (crispat, SCEPTRE) control FDR and lead on accuracy**, while the bare
-ambient test and Otsu *over-call* (FDR well above nominal), and geomux *collapses on
-real-ambient direct-capture*. A fixed UMI cutoff is a strong baseline on *easy*
-(low-ambient) data — but as ambient expression rises toward the level real primary
-cells show, its realized FDR runs to ~0.5 while the calibrated methods hold near
-nominal; that "cutoff trap" (the regime-sweep figure below) is the decisive separation. Method *rankings* are
-stable across purity; *absolute* direct-capture precision is purity-sensitive,
-because real doublets create a false-positive floor at 0.90 that vanishes at 0.99.
+**What the benchmark shows.** The **contingency family (depth_fix, fishash) and the
+mixture family (crispat, SCEPTRE) control FDR and lead on accuracy** (depth_fix
+0.854 / FDR 0.041 overall, fishash 0.806 / 0.027); the bare ambient test and Otsu
+*over-call* (FDR 0.14–0.17); geomux *collapses on real-ambient direct-capture*.
+**depth_fix's edge over fishash is specifically a high-MOI phenomenon** — Jaccard
+gain +0.02 → +0.09 across MOI 1 → 15 on Model A, while on Model B's per-guide-fit
+regimes (whose emergent MOI is mostly 1–3) the two are **essentially tied** at any
+`d_sigma` (a `SIM_D_SIGMA=0.3` fairness sweep confirms this is not a model-structure
+artifact). A fixed UMI cutoff is a strong baseline on easy data but its realized FDR
+runs to ~0.5 on the hardest regimes — the "cutoff trap". Method rankings are stable
+across purity; absolute direct-capture precision is purity-sensitive (real doublets
+create a false-positive floor at 0.90 that vanishes at 0.99).
 
 ---
 
@@ -284,17 +287,42 @@ regime sweep shows it is competitive only where *any* method is, and that the
 principled methods give an FDR *dial* rather than a guessed integer (thresh10/20
 score far worse, so "pick 3" is hindsight).
 
-**High MOI.** depth_fix's advantage over fishash grows monotonically with MOI —
-the masking effect, where co-occurring real guides inflate fishash's library
-margin and the ambient-depth margin recovers it:
+**High MOI is where depth_fix beats fishash, specifically.** On Model A (real
+barnyard ambient) at controlled MOI, depth_fix's Jaccard advantage over fishash
+grows monotonically with MOI — co-occurring real guides inflate fishash's
+library margin, and the ambient-depth margin recovers the recall:
 
 ```{r moicmp}
 mc <- rd("depthfix_vs_fishash_moi.csv")
 if (!is.null(mc)) {
   w <- mc %>% pivot_wider(names_from = method, values_from = c(jaccard, recall))
-  kbl(w, caption = "depth_fix vs fishash by MOI (Model A: low=1, high=5, vhigh=15). The gain grows with MOI as fishash's recall collapses under co-occurrence.")
+  kbl(w, caption = "depth_fix vs fishash by MOI (Model A: low=1, high=5, vhigh=15). The Jaccard gain grows from +0.02 to +0.09 as fishash's recall drops from 0.85 to 0.76 under co-occurrence.")
 }
 ```
+
+**On Model B's per-guide-fit regimes, depth_fix and fishash are essentially
+tied** (overall Jaccard ~0.88 each; fishash actually has marginally tighter FDR).
+That is consistent with the masking story: most real datasets have low emergent
+MOI (1–3 guides/cell after deflating signal_frac for ambient leakage), so the
+co-occurrence regime where depth_fix wins doesn't arise.  A `SIM_D_SIGMA=0.3`
+fairness sweep (vs 0.05 default) confirms this is not a structural artifact:
+the depth_fix–fishash gap on Model B is ≈ 0 at both `d_sigma` settings, with
+per-regime shifts < 0.02 across all 13 regimes.
+
+```{r dsigma}
+ds <- rd("dsigma_sweep.csv")
+if (!is.null(ds)) {
+  kbl(ds %>% select(regime, d_sigma, gap_jac) %>%
+        pivot_wider(names_from = d_sigma, values_from = gap_jac, names_prefix = "d_sigma_") %>%
+        mutate(shift = round(d_sigma_0.3 - d_sigma_0.05, 3),
+               d_sigma_0.05 = round(d_sigma_0.05, 3),
+               d_sigma_0.3 = round(d_sigma_0.3, 3)) %>%
+        arrange(d_sigma_0.05),
+      caption = "Per-regime depth_fix minus fishash Jaccard on Model B at d_sigma = 0.05 (primary) vs 0.30 (fairness sweep). Tiny shifts confirm the absence of a depth_fix advantage on these regimes is not a model-fairness artifact.")
+}
+```
+
+![Per-regime depth_fix – fishash Jaccard gap at d_sigma = 0.05 vs 0.3 on the 13 Model B regimes (fairness sweep). Bars are essentially equal; the gap (or lack thereof) is robust to the d_sigma assumption.](results/sim_framework/fig_dsigma_sweep.png)
 
 ## Model A: FDR control and the doublet/purity effect
 
@@ -308,9 +336,10 @@ control and the purity/doublet effect:
 **Reading the panel.**
 
 - **Contingency family (depth-fix, fishash).** Lead on Jaccard while controlling
-  FDR; depth-fix's advantage shows most at high MOI on the real-ambient model,
-  where co-occurring real guides inflate the library margin and the
-  ambient-depth margin recovers recall.
+  FDR.  On the per-guide-fit Model B regimes the two are essentially tied;
+  depth-fix's edge is specifically a **high-MOI Model A** phenomenon (Jaccard gain
+  +0.02 → +0.09 as MOI goes 1 → 15), where co-occurring real guides inflate
+  fishash's library margin and the ambient-depth margin recovers recall.
 - **Mixture family (crispat, SCEPTRE).** crispat's Poisson-Gaussian is the
   precision leader (FDR ~0); SCEPTRE's mixture is competitive. Both are robust
   but slower.
@@ -320,7 +349,7 @@ control and the purity/doublet effect:
 - **geomux.** Faithfully reproduces its known **collapse on direct-capture**: its
   adaptive log-odds threshold is blown up by the heavy real-ambient/doublet tail,
   so it assigns almost nothing (high precision, near-zero recall) on Model A
-  direct-capture; it behaves on Model B, whose ambient is clean.
+  direct-capture and on the heaviest-ambient Model B regimes.
 - **Fixed thresholds.** Exactly the "$y\approx 10$ is the only hard regime"
   picture: a low cut (thresh3) maximizes Jaccard near the ambient floor; higher
   cuts (10, 20) buy near-perfect precision at the cost of recall.
@@ -357,6 +386,14 @@ control and the purity/doublet effect:
    statement, and localizes exactly where doublets move the numbers (absolute
    direct-capture precision) and where they do not (method ranking).
 
+5. **The depth_fix advantage is scoped to high MOI, not Model B regimes.** On Model
+   A at MOI 1, depth_fix and fishash are within 0.02 Jaccard; the gap grows to
+   +0.09 at MOI 15 (the masking effect).  On the per-guide-fit Model B regimes
+   (real signal_frac, mostly emergent MOI 1–3), the two are essentially tied — and
+   a `SIM_D_SIGMA=0.3` fairness sweep confirms this is not a structural artifact.
+   The honest framing: depth_fix is the **safer default at high MOI**; fishash
+   slightly edges it on FDR control at low MOI.
+
 ## Honest caveats {-}
 
 - **All metrics here are upstream** (assignment vs ground truth). The decisive
@@ -376,5 +413,6 @@ cat("Code (in pipeline order, all under scripts/):",
     "sim_modelB.R, sim_regimes.R, sim_realism_gate.R, sim_run_methods.R,",
     "run_geomux_sims.py (.venv_geomux_v5), run_crispat_sims.py (.venv_crispat),",
     "sim_score_external.R, sim_analysis.R, sim_validate_hist.R,",
-    "sim_plot_real_distributions.R, sim_plot_within_regime.R.\n")
+    "sim_plot_real_distributions.R, sim_plot_within_regime.R, sim_poc_paired.R,",
+    "sim_dsigma_sweep.R + sim_dsigma_compare.R (the SIM_D_SIGMA=0.3 fairness sweep).\n")
 ```
