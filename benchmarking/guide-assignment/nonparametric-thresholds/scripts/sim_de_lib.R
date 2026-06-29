@@ -59,26 +59,33 @@ if (file.exists(file.path(.lab_prep, "utils_data_prep.R"))) {
   source(file.path(.lab_prep, "neg_control_functions.R"))
 }
 
-# Dataset registry: the lab's full ondisc-backed sceptre objects + metadata.
-# Each entry has the canonical paths + the MOI label + the association formula
-# (matches benchmarking/association/{pos,neg}-control-pipeline/bin/run_sceptre.R).
+# Dataset registry.  Two storage modes:
+#  - "ondisc": lab's pre-built sceptre_object_initial.rds + response.odm +
+#    grna.odm (the lab's reference datasets Gasperini and Replogle).
+#  - "survey": in-memory triple in <dir>/sceptre/ -- response_matrix.rds +
+#    grna_matrix_aligned.rds, produced by sim_de_extract_survey.R from the raw
+#    perturbseq-survey/ files (smaller in-memory-friendly datasets).
+# See DATASETS_STATUS.md for the per-dataset audit.
+SURV_BASE <- path.expand("~/data/external/perturbseq-survey")
 REAL_DATASETS <- list(
-  gasperini = list(
-    moi = "high",
-    dir = file.path(LAB_DATA, "gasperini", "sceptre-pipeline"),
-    fmla = ~ log(response_n_nonzero + 1) + log(response_n_umis + 1) +
-            log(grna_n_umis + 1) + log(grna_n_nonzero + 1) + prep_batch,
-    extra_covs = c("response_n_nonzero", "response_n_umis",
-                   "grna_n_nonzero", "grna_n_umis", "prep_batch")
-  ),
-  replogle = list(
-    moi = "low",
-    dir = file.path(LAB_DATA, "replogle-rd7", "sceptre-pipeline"),
-    fmla = ~ log(response_n_nonzero + 1) + log(response_n_umis + 1) +
-            log(grna_n_umis + 1) + log(grna_n_nonzero + 1),
-    extra_covs = c("response_n_nonzero", "response_n_umis",
-                   "grna_n_nonzero", "grna_n_umis")
-  )
+  gasperini = list(mode = "ondisc", moi = "high",
+    dir = file.path(LAB_DATA, "gasperini", "sceptre-pipeline")),
+  replogle = list(mode = "ondisc", moi = "low",
+    dir = file.path(LAB_DATA, "replogle-rd7", "sceptre-pipeline")),
+  a549                = list(mode = "survey", moi = "low",
+    dir = file.path(SURV_BASE, "a549_crispri_perturbseq_GSE236304", "sceptre")),
+  cd8_tcell           = list(mode = "survey", moi = "low",
+    dir = file.path(SURV_BASE, "cd8_tcell_perturbcite_GSE279498", "sceptre")),
+  dctap_highmoi       = list(mode = "survey", moi = "high",
+    dir = file.path(SURV_BASE, "dctap_k562_highmoi_GSE303901", "sceptre")),
+  dctap_lowmoi        = list(mode = "survey", moi = "low",
+    dir = file.path(SURV_BASE, "dctap_k562_lowmoi_GSE303901", "sceptre")),
+  endoc               = list(mode = "survey", moi = "low",
+    dir = file.path(SURV_BASE, "endoc_t2d_perturbseq_GSE273677", "sceptre")),
+  multiome_erythroid  = list(mode = "survey", moi = "low",
+    dir = file.path(SURV_BASE, "perturb_multiome_erythroid_GSE274113", "sceptre")),
+  tcell_cd4           = list(mode = "survey", moi = "low",
+    dir = file.path(SURV_BASE, "tcell_cd4_perturbseq_GSE314342", "sceptre"))
 )
 
 # ---- (1) load a real dataset --------------------------------------------------
@@ -95,6 +102,9 @@ REAL_DATASETS <- list(
 load_real_dataset <- function(name, guides_idx = NULL, cells_idx = NULL,
                               max_cells = NULL, max_guides = NULL, seed = 1) {
   spec <- REAL_DATASETS[[name]]; if (is.null(spec)) stop("unknown dataset: ", name)
+  mode <- spec$mode %||% "ondisc"
+  if (mode == "survey") return(.load_survey(name, spec, guides_idx, cells_idx, max_cells, max_guides, seed))
+  # ondisc path (lab's Gasperini / Replogle)
   obj  <- sceptre::read_ondisc_backed_sceptre_object(
             sceptre_object_fp     = file.path(spec$dir, "sceptre_object_initial.rds"),
             response_odm_file_fp  = file.path(spec$dir, "response.odm"),
@@ -110,27 +120,53 @@ load_real_dataset <- function(name, guides_idx = NULL, cells_idx = NULL,
     set.seed(seed); cells_idx <- sort(sample(cells_idx, max_cells))
   }
   G <- length(guides_idx); C <- length(cells_idx)
-  est_mb <- (as.numeric(G) * as.numeric(C)) * 8 / 1e6
-  cat(sprintf("[%s] loading gRNA submatrix: %d guides x %d cells (%.1f MB dense estimate)\n",
-              name, G, C, est_mb))
-  # ondisc's `odm` only supports `[feature_id, ]` -> full numeric vector across
-  # all cells.  Iterate guides; restrict to cells_idx and build sparse directly.
+  cat(sprintf("[%s] loading gRNA submatrix: %d guides x %d cells\n", name, G, C))
   rn <- rownames(grna_odm); cn <- colnames(grna_odm)
   guide_names <- if (!is.null(rn)) rn[guides_idx] else as.character(guides_idx)
   ilist <- jlist <- xlist <- vector("list", G)
   for (k in seq_len(G)) {
     v_full <- as.numeric(grna_odm[guide_names[k], ])
-    v <- v_full[cells_idx]
-    nz <- which(v > 0)
+    v <- v_full[cells_idx]; nz <- which(v > 0)
     if (length(nz)) { ilist[[k]] <- rep.int(k, length(nz)); jlist[[k]] <- nz; xlist[[k]] <- v[nz] }
   }
-  grna_mat <- Matrix::sparseMatrix(
-    i = unlist(ilist), j = unlist(jlist), x = unlist(xlist),
+  grna_mat <- Matrix::sparseMatrix(i = unlist(ilist), j = unlist(jlist), x = unlist(xlist),
     dims = c(G, C),
     dimnames = list(guide_names, if (!is.null(cn)) cn[cells_idx] else as.character(cells_idx)))
   list(obj = obj, grna_mat = grna_mat, cells_idx = cells_idx, guides_idx = guides_idx,
-       meta = spec, name = name)
+       mode = "ondisc", meta = spec, name = name)
 }
+
+# Survey-mode loader: in-memory response + aligned guide matrix already on disk.
+# Returns a structure compatible with the ondisc one: a placeholder sceptre_object
+# (built by import_data on the in-memory matrices) + the guide matrix + subset indices.
+.load_survey <- function(name, spec, guides_idx, cells_idx, max_cells, max_guides, seed) {
+  resp <- readRDS(file.path(spec$dir, "response_matrix.rds"))
+  grna <- readRDS(file.path(spec$dir, "grna_matrix_aligned.rds"))
+  stopifnot(ncol(resp) == ncol(grna))   # aligned by construction
+  G_full <- nrow(grna); C_full <- ncol(grna)
+  if (is.null(guides_idx)) guides_idx <- seq_len(G_full)
+  if (is.null(cells_idx))  cells_idx  <- seq_len(C_full)
+  if (!is.null(max_guides) && length(guides_idx) > max_guides) {
+    set.seed(seed); guides_idx <- sort(sample(guides_idx, max_guides))
+  }
+  if (!is.null(max_cells) && length(cells_idx) > max_cells) {
+    set.seed(seed); cells_idx <- sort(sample(cells_idx, max_cells))
+  }
+  grna_mat <- grna[guides_idx, cells_idx, drop = FALSE]
+  resp_sub <- resp[, cells_idx, drop = FALSE]
+  cat(sprintf("[%s/survey] %d genes x %d cells, %d guides\n",
+              name, nrow(resp_sub), ncol(resp_sub), nrow(grna_mat)))
+  # Stash response in a virtual obj struct so build_pos/neg_control_input has a
+  # uniform interface.  We do NOT build a full sceptre_object here -- the
+  # downstream builders read $resp_mem directly when mode=="survey".
+  list(grna_mat = grna_mat, cells_idx = cells_idx, guides_idx = guides_idx,
+       mode = "survey", resp_mem = resp_sub, meta = spec, name = name,
+       # placeholders so other code that reads $obj@... doesn't break (it should
+       # use mode to branch).
+       obj = NULL)
+}
+
+`%||%` <- function(a, b) if (is.null(a)) b else a
 
 # ---- (2) run our methods on the real grna_mat -------------------------------
 # Reuses sim_lib.R::run_methods.  The dataset's grna_target_df + the ondisc
@@ -184,13 +220,36 @@ save_assignments <- function(name, assignments) {
 build_pos_control_input <- function(real, assignment, out_dir,
                                     n_targets = 50, max_cells = 20000,
                                     min_cells_per_target = 30, nt_name = "non-targeting",
-                                    seed = 1) {
+                                    grna_target_df = NULL, seed = 1) {
   set.seed(seed)
-  scep_obj  <- real$obj
-  grna_tdf  <- scep_obj@grna_target_data_frame
-  resp_odm  <- scep_obj@response_matrix[[1]]
-  cov_df    <- scep_obj@covariate_data_frame
-  cells_idx <- real$cells_idx
+  # branch by storage mode -- ondisc has the rich sceptre_object; survey has
+  # in-memory response + a user-supplied or default target df.
+  if (real$mode == "ondisc") {
+    scep_obj <- real$obj
+    grna_tdf <- scep_obj@grna_target_data_frame
+    resp_odm <- scep_obj@response_matrix[[1]]
+    cov_df   <- scep_obj@covariate_data_frame
+    cells_idx <- real$cells_idx
+    pull_resp <- function(gene_ids, cells) .pull_response(resp_odm, gene_ids, cells_idx[cells])
+    have_cov <- TRUE
+  } else {
+    # survey mode: caller must pass a grna_target_df (we don't have one canonical).
+    if (is.null(grna_target_df))
+      stop("build_pos_control_input(): survey-mode dataset requires `grna_target_df = ...`; ",
+           "construct guide->gene-target mapping from the dataset's guide_features.csv.")
+    grna_tdf <- grna_target_df
+    resp_mat <- real$resp_mem
+    pull_resp <- function(gene_ids, cells) resp_mat[gene_ids, cells, drop = FALSE]
+    # compute basic covariates from the in-memory matrices
+    cov_df <- data.frame(
+      response_n_umis    = Matrix::colSums(real$resp_mem),
+      response_n_nonzero = Matrix::colSums(real$resp_mem > 0),
+      grna_n_umis        = Matrix::colSums(real$grna_mat),
+      grna_n_nonzero     = Matrix::colSums(real$grna_mat > 0)
+    )
+    cells_idx <- seq_len(ncol(real$resp_mem))
+    have_cov <- TRUE
+  }
   # 1. Restrict targets to those whose guides are in our assignment AND that the
   #    method has called in enough cells; sample n_targets of them.
   guide_names_in_A <- rownames(assignment)
@@ -211,7 +270,7 @@ build_pos_control_input <- function(real, assignment, out_dir,
   if (length(cand_cells) > max_cells) cand_cells <- sort(sample(cand_cells, max_cells))
   cat(sprintf("  pos: %d guides x %d cells\n", length(use_guides), length(cand_cells)))
   # 4. Pull the gene matrix for the selected targets (genes), all chosen cells.
-  resp <- .pull_response(resp_odm, targets, cells_idx[cand_cells])
+  resp <- pull_resp(targets, cand_cells)
   nz_cells <- which(Matrix::colSums(resp) > 0)
   if (length(nz_cells) < length(cand_cells)) {
     cat(sprintf("  pos: dropping %d cells with all-zero gene expression\n", length(cand_cells) - length(nz_cells)))
@@ -220,6 +279,8 @@ build_pos_control_input <- function(real, assignment, out_dir,
   # 5. Final pieces.
   grna_bin <- as(A_sub[, cand_cells, drop = FALSE], "lgCMatrix")
   storage.mode(grna_bin@x) <- "logical"
+  # cov_df rows correspond to full-dataset cells in ondisc; to in-memory cells
+  # in survey -- normalize via cells_idx.
   cov_sub  <- .rename_full(cov_df[cells_idx[cand_cells], , drop = FALSE])
   tdf_out  <- grna_tdf[match(use_guides, grna_tdf$grna_id), ]
   dir.create(file.path(out_dir, "sceptre"), recursive = TRUE, showWarnings = FALSE)
@@ -246,17 +307,35 @@ build_pos_control_input <- function(real, assignment, out_dir,
 #   - All (NT_guide, random_gene) pairs are the discovery_pairs.rds; under the
 #     null (no real perturbation) the p-values should be ~Uniform[0,1].
 build_neg_control_input <- function(real, assignment, out_dir, n_genes = 100, max_cells = 30000,
-                                    nt_name = "non-targeting", seed = 2) {
+                                    nt_name = "non-targeting", grna_target_df = NULL, seed = 2) {
   set.seed(seed)
-  scep_obj  <- real$obj
-  grna_tdf  <- scep_obj@grna_target_data_frame
-  resp_odm  <- scep_obj@response_matrix[[1]]
-  cov_df    <- scep_obj@covariate_data_frame
-  cells_idx <- real$cells_idx
+  if (real$mode == "ondisc") {
+    scep_obj <- real$obj
+    grna_tdf <- scep_obj@grna_target_data_frame
+    resp_odm <- scep_obj@response_matrix[[1]]
+    cov_df   <- scep_obj@covariate_data_frame
+    cells_idx <- real$cells_idx
+    pull_resp <- function(gene_ids, cells) .pull_response(resp_odm, gene_ids, cells_idx[cells])
+    all_genes <- rownames(resp_odm)
+  } else {
+    if (is.null(grna_target_df))
+      stop("build_neg_control_input(): survey-mode requires `grna_target_df = ...`")
+    grna_tdf <- grna_target_df
+    resp_mat <- real$resp_mem
+    pull_resp <- function(gene_ids, cells) resp_mat[gene_ids, cells, drop = FALSE]
+    cov_df <- data.frame(
+      response_n_umis    = Matrix::colSums(real$resp_mem),
+      response_n_nonzero = Matrix::colSums(real$resp_mem > 0),
+      grna_n_umis        = Matrix::colSums(real$grna_mat),
+      grna_n_nonzero     = Matrix::colSums(real$grna_mat > 0)
+    )
+    cells_idx <- seq_len(ncol(real$resp_mem))
+    all_genes <- rownames(real$resp_mem)
+  }
   nt_guides <- intersect(grna_tdf$grna_id[grna_tdf$grna_target == nt_name], rownames(assignment))
   if (length(nt_guides) < 2) stop("need >= 2 NT guides for negative control")
-  # Untargeted genes: those NOT named as any grna_target
-  all_genes <- rownames(resp_odm)
+  # Untargeted genes: those NOT named as any grna_target.  `all_genes` was set
+  # to the relevant gene-id source per mode above.
   targeted  <- unique(grna_tdf$grna_target); targeted <- targeted[targeted != nt_name]
   untar     <- setdiff(all_genes, targeted)
   pick_genes <- sample(untar, min(n_genes, length(untar)))
@@ -266,7 +345,7 @@ build_neg_control_input <- function(real, assignment, out_dir, n_genes = 100, ma
   if (length(cand_cells) > max_cells) cand_cells <- sort(sample(cand_cells, max_cells))
   cat(sprintf("  neg: %d NT guides, %d untargeted genes, %d cells\n",
               length(nt_guides), length(pick_genes), length(cand_cells)))
-  resp <- .pull_response(resp_odm, pick_genes, cells_idx[cand_cells])
+  resp <- pull_resp(pick_genes, cand_cells)
   nz_cells <- which(Matrix::colSums(resp) > 0)
   cand_cells <- cand_cells[nz_cells]; resp <- resp[, nz_cells, drop = FALSE]
   grna_bin <- as(A_nt[, cand_cells, drop = FALSE], "lgCMatrix")
