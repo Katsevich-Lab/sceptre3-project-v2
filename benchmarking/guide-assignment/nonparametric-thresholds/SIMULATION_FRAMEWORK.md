@@ -122,6 +122,67 @@ Outputs in `results/sim_framework/` (`datasets/` gitignored, large). Key figures
   the review to commit clean code). `real_perguide.rds` on disk is still the
   pre-refinement format until `sim_characterize.R` is re-run.
 
+## Downstream DE pushthrough (the decisive test) — FOUNDATION BUILT
+
+`scripts/sim_de_lib.R` provides the foundation; `scripts/sim_de_smoke.R` runs
+the end-to-end smoke; results in `results/sim_framework/de/`.
+
+**Design (matches lab's `benchmarking/association/` infrastructure):**
+1. `load_real_dataset(name)` — load the lab's ondisc-backed sceptre object
+   for `gasperini` or `replogle` (response.odm + grna.odm + sceptre_object_initial.rds).
+   Supports row/col subsetting at load time (smoke runs); full size on cluster.
+2. `run_methods_on_real(real, methods)` — run our 11-method panel on the real
+   gRNA count matrix → list of binary assignment matrices (guides × cells).
+3. `build_pos_control_input(real, A, dir)` — sample on-target guides + their
+   target genes, pull the GEX submatrix from the ondisc response, write the
+   5 files the lab's runner expects (`response_matrix.rds`, `grna_matrix.rds`,
+   `grna_target_data_frame.csv`, `cell_covariates.csv`).
+4. `build_neg_control_input(real, A, dir)` — NT guides + random untargeted
+   genes; relabel each NT as its own pseudo-target (sceptre forbids "non-targeting"
+   in `discovery_pairs`); write the same 5 files + `discovery_pairs.rds` +
+   `formula_object.rds`.
+5. `run_de_sceptre(dir, kind, dataset_id)` — invoke the lab's runner
+   `benchmarking/association/{pos,neg}-control-pipeline/bin/run_sceptre.R`.
+   Pos uses `run_power_check`; neg uses `run_discovery_analysis`. The lab's
+   runner does `assign_grnas(method="thresholding", threshold=1)` on the binary
+   `grna_matrix.rds` we wrote → uses OUR method's assignments directly.
+6. `score_de(csv, kind)` — pos: power at FDR=q; neg: realized type-I error +
+   KS distance from Uniform on the null p-values.
+
+**Smoke test (300 guides × 30k cells of Gasperini, 8 in-process methods):**
+all methods run cleanly in <2 min total; depth_fix gives the strongest pos
+signal (median p 1e-8) and tightest neg calibration (KS 0.065), ambient
+over-calls + loses precision (median p 1e-6), thresh3 is conservative. Tiny
+slice (17 on-target pairs, 120 NT pairs) so individual numbers are noisy but
+the pipeline + the cross-method ranking are real.
+
+**Cluster scaling path** (next step):
+- **Gasperini full (207k cells × 13k genes, MOI ~30)**: pos sweep with
+  ~1500 on-targets and ~100k cells per the lab's `make_pos_control_replogle`
+  conventions; neg sweep with all 101 NT guides × 1000+ random genes.
+  Each method's pos run: a few hours serial, ~30 min with 8 cores.
+  Each method's neg run: substantial — the lab parallelizes via NCPUS env.
+  Total wall time, all 11 methods: ~1 day on a 32-core node.
+- **Replogle full (616k cells × 16k genes, MOI ~1)**: 3× more cells; ondisc
+  helps memory but compute scales. Full sweep: ~2 days on a 32-core node.
+- **Per-cluster transfer**: each method needs the (full) input data + the
+  built pos/neg directories.  Practical recipe: generate the pos/neg input
+  directories locally (cheap, <1 hour each), tar them, transfer to cluster,
+  then run the lab's existing Nextflow pipelines unchanged — they accept
+  per-dataset input directories and already support per-method runs.
+
+### Open caveats for DE
+- Our smoke uses random row/col subsets of Gasperini; full pos-control sampling
+  per the lab's `make_pos_control_replogle` (~1500 on-targets × ~100k cells with
+  single-guide-per-cell enforcement) needs a slightly richer build wrapper.  Foundation
+  enough for cluster scaling; the wrapper is a half-day.
+- The lab's runner is dataset-specific (`dataset_id` matches `gasperini` or
+  `replogle`); for new datasets, either reuse the canonical names or extend
+  the runner's lookup tables (a few lines).
+- Replogle is low-MOI: their pos/neg dataset construction enforces single-guide
+  per cell.  Our `build_*_input` handles this naturally because the binary
+  assignment from our methods is already cell-by-guide (no aggregation).
+
 ### PENDING next steps (resume here)
 1. `Rscript scripts/sim_characterize.R` — saves new per-guide mu/theta/signal_frac/right_mode (+ ambient p99 in the dataset row).
 2. `rm -rf results/sim_framework/datasets/B__regime__*` then `Rscript scripts/sim_regimes.R` — builds the (non-barnyard) regimes with shared BUILD_ARGS and multi-seed ambient calibration.

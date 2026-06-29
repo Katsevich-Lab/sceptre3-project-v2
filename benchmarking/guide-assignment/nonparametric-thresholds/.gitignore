@@ -26,3 +26,5 @@ results/barnyard_cohort_export/
 # external reference papers (copyrighted; available online; not project artifacts)
 literature/*.pdf
 literature/*.html
+# downstream DE pushthrough intermediate outputs (large; regenerable)
+results/sim_framework/de/
