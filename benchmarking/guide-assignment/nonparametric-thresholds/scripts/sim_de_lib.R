@@ -231,6 +231,7 @@ build_pos_control_input <- function(real, assignment, out_dir,
     cov_df   <- scep_obj@covariate_data_frame
     cells_idx <- real$cells_idx
     pull_resp <- function(gene_ids, cells) .pull_response(resp_odm, gene_ids, cells_idx[cells])
+    all_resp_rownames <- rownames(resp_odm)
     have_cov <- TRUE
   } else {
     # survey mode: caller must pass a grna_target_df (we don't have one canonical).
@@ -240,6 +241,7 @@ build_pos_control_input <- function(real, assignment, out_dir,
     grna_tdf <- grna_target_df
     resp_mat <- real$resp_mem
     pull_resp <- function(gene_ids, cells) resp_mat[gene_ids, cells, drop = FALSE]
+    all_resp_rownames <- rownames(resp_mat)
     # compute basic covariates from the in-memory matrices
     cov_df <- data.frame(
       response_n_umis    = Matrix::colSums(real$resp_mem),
@@ -254,16 +256,24 @@ build_pos_control_input <- function(real, assignment, out_dir,
   #    method has called in enough cells; sample n_targets of them.
   guide_names_in_A <- rownames(assignment)
   tdf_sub <- grna_tdf[grna_tdf$grna_id %in% guide_names_in_A & grna_tdf$grna_target != nt_name, ]
-  on_targets_pool <- intersect(unique(tdf_sub$grna_target), rownames(resp_odm))
+  on_targets_pool <- intersect(unique(tdf_sub$grna_target), all_resp_rownames)
   guide_cells <- Matrix::rowSums(assignment)                   # cells per guide
   per_target <- tapply(guide_cells[tdf_sub$grna_id], tdf_sub$grna_target, sum)
   ok <- intersect(names(per_target)[per_target >= min_cells_per_target], on_targets_pool)
   if (length(ok) < 1) stop("no on-targets with >= min_cells_per_target cells in this assignment")
   targets <- sample(ok, min(n_targets, length(ok)))
   cat(sprintf("  pos: %d targets selected (from %d eligible)\n", length(targets), length(ok)))
-  # 2. Guides for those targets + all NTs.
-  use_guides <- grna_tdf$grna_id[grna_tdf$grna_target %in% c(targets, nt_name)]
-  use_guides <- intersect(use_guides, rownames(assignment))
+  # 2. Guides for those targets + NTs WITH >=min_cells_per_target cells
+  # assigned (very-rare NTs trip sceptre's NT-cell update step in run_qc).
+  use_targets <- c(targets, nt_name)
+  cand_grna <- grna_tdf$grna_id[grna_tdf$grna_target %in% use_targets]
+  cand_grna <- intersect(cand_grna, rownames(assignment))
+  # filter NTs to those with enough cells assigned
+  nt_in <- cand_grna[grna_tdf$grna_target[match(cand_grna, grna_tdf$grna_id)] == nt_name]
+  nt_keep <- nt_in[Matrix::rowSums(assignment[nt_in, , drop = FALSE]) >= min_cells_per_target]
+  use_guides <- c(setdiff(cand_grna, nt_in), nt_keep)
+  cat(sprintf("  pos: keeping %d NTs with >= %d cells (of %d total NTs in panel)\n",
+              length(nt_keep), min_cells_per_target, length(nt_in)))
   # 3. Cells assigned to ANY of those guides (max_cells).
   A_sub <- assignment[use_guides, , drop = FALSE]
   cand_cells <- which(Matrix::colSums(A_sub) > 0)
@@ -346,8 +356,12 @@ build_neg_control_input <- function(real, assignment, out_dir, n_genes = 100, ma
   cat(sprintf("  neg: %d NT guides, %d untargeted genes, %d cells\n",
               length(nt_guides), length(pick_genes), length(cand_cells)))
   resp <- pull_resp(pick_genes, cand_cells)
-  nz_cells <- which(Matrix::colSums(resp) > 0)
-  cand_cells <- cand_cells[nz_cells]; resp <- resp[, nz_cells, drop = FALSE]
+  # DO NOT filter cells based on the picked-gene subset library size -- the
+  # picked genes are a random sample of untargeted genes, so a cell can have
+  # 0 UMIs across this subset while being a perfectly good cell overall.
+  # (pos filters globally on its target-gene subset because all-zero target
+  # expression is a real signal floor; here we're testing whether p-values
+  # are calibrated, which doesn't require any minimum gene expression.)
   grna_bin <- as(A_nt[, cand_cells, drop = FALSE], "lgCMatrix")
   cov_sub  <- .rename_full(cov_df[cells_idx[cand_cells], , drop = FALSE])  # avoid sceptre's reserved names
   # Relabel each NT guide as its own pseudo-target so sceptre's run_discovery_analysis
@@ -375,17 +389,30 @@ build_neg_control_input <- function(real, assignment, out_dir, n_genes = 100, ma
 # discovery analysis (neg control); pos is fast enough serial.
 run_de_sceptre <- function(input_dir, kind = c("pos", "neg"), dataset_id) {
   kind <- match.arg(kind)
-  bin <- if (kind == "pos")
-           file.path(GA, "..", "association", "pos-control-pipeline", "bin", "run_sceptre.R")
-         else
-           file.path(GA, "..", "association", "neg-control-pipeline", "bin", "run_sceptre.R")
+  # Two runners: the lab's dataset_id-aware one (Gasperini/Replogle) and our
+  # generic survey runner.  Pick by whether dataset_id is one of the canonical
+  # lab names.
+  is_lab <- dataset_id %in% c("gasperini", "replogle")
+  bin <- if (is_lab) {
+    if (kind == "pos") file.path(GA, "..", "association", "pos-control-pipeline", "bin", "run_sceptre.R")
+    else               file.path(GA, "..", "association", "neg-control-pipeline", "bin", "run_sceptre.R")
+  } else {
+    file.path(HERE, "scripts", "run_sceptre_survey.R")
+  }
   stopifnot(file.exists(bin))
+  # Write meta.json with kind + moi so the survey runner has them.
+  meta <- list(kind = kind, dataset_id = dataset_id,
+               moi = if (!is.null(REAL_DATASETS[[dataset_id]])) REAL_DATASETS[[dataset_id]]$moi else "low")
+  writeLines(sprintf('{"kind":"%s","moi":"%s","dataset_id":"%s"}',
+                     meta$kind, meta$moi, meta$dataset_id),
+             file.path(input_dir, "sceptre", "meta.json"))
   out_csv <- if (kind == "pos") "association_on_target_sceptre.csv"
              else                "association_neg_control_sceptre.csv"
   wd0 <- getwd(); on.exit(setwd(wd0), add = TRUE)
   setwd(input_dir)
-  ec <- system2("Rscript", c("--vanilla", bin, file.path(input_dir, "sceptre"), dataset_id),
-                stdout = "_run.log", stderr = "_run.err")
+  cmd_args <- if (is_lab) c("--vanilla", bin, file.path(input_dir, "sceptre"), dataset_id)
+              else        c("--vanilla", bin, file.path(input_dir, "sceptre"), kind)
+  ec <- system2("Rscript", cmd_args, stdout = "_run.log", stderr = "_run.err")
   if (ec != 0) stop("run_sceptre.R (", kind, ") failed; see ", file.path(input_dir, "_run.err"))
   file.path(input_dir, out_csv)
 }

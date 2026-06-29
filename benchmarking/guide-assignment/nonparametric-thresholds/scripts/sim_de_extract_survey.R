@@ -74,6 +74,11 @@ read_10x_mtx <- function(mtx_dir) {
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   saveRDS(gex,  file.path(out_dir, "response_matrix.rds"))
   saveRDS(grna, file.path(out_dir, "grna_matrix_aligned.rds"))
+  # also save the (id, name) mapping for ALL features so target dfs can resolve
+  # SYMBOL -> ENSG without rooting through the original raw files.
+  features_df <- data.frame(id = raw$feat_id, name = raw$feat_name, type = raw$feat_type,
+                            stringsAsFactors = FALSE)
+  write.csv(features_df, file.path(out_dir, "features_all.csv"), row.names = FALSE)
   cat(sprintf("  GEX:  %d genes  x %d cells  nnz=%d\n",  nrow(gex),  ncol(gex),  length(gex@x)))
   cat(sprintf("  gRNA: %d guides x %d cells  nnz=%d\n",  nrow(grna), ncol(grna), length(grna@x)))
   cat(sprintf("  match vs prior grna_matrix.rds: %d guides shared / %d in prior\n",

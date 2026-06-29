@@ -50,3 +50,35 @@ diverse survey datasets.
   Seurat object. The gRNA was already extracted this way.
 - **ipsc**: download GEX from ENA project PRJEB75103 (the HipSci scRNA-seq).
   Pricey (~30 GB raw + ~10 GB processed). Likely defer.
+
+## grna_target_data_frame.csv status (per dataset, after sim_de_build_targets.R)
+
+| dataset | guides | NT | targeting | ENSG resolved | notes |
+|---|---|---|---|---|---|
+| gasperini | 13,077 | 101 | 12,976 | n/a | from lab's pre-built sceptre_object |
+| replogle-rd7 | 2,666 | 113 | 2,385 | n/a | from lab's pre-built sceptre_object |
+| a549 | 253 | 5 | 248 | 53 | h5 `target_gene_name` → ENSG |
+| cd8_tcell | 44 | 2 | 42 | 21 | regex `^g(.+)_\d+$`; NTs are `gScramble*` (lab csv listed `NEG_CTRL` which isn't in matrix) |
+| dctap_highmoi | 110 | 98 | 12 | 3 (MYC/GATA1/HDAC6) | prefix mapping; targeted GEX panel limits scope |
+| dctap_lowmoi | 110 | 98 | 12 | 3 (MYC/GATA1/HDAC6) | as above |
+| endoc | 225 | 21 | 204 | 61 | regex `^([^-]+)-\d+$`; NTs `Non-Targeting-*` |
+| **tcell_cd4** | 27,272 | **0** | 23,757 | 11,890 (3,515 unresolved gene aliases) | **no NTs** (genome-wide screen) → calibration would need trans-pair design |
+| multiome_erythroid | — | — | — | — | guide names are 20-mer sequences; **needs paper supp table** |
+
+## Pipeline status (end-to-end smoke on a549, thresh3 assignment, 8k-cell subset)
+- pos-control: 20 pairs ran; power small (8k-cell subset too tight to detect cis effects)
+- neg-control: 250 NT-pseudo × gene pairs ran; realized t1e elevated (only 5 NTs in panel)
+- Both produce result CSVs and score correctly end-to-end. Real runs need bigger
+  subsets (~100k cells, hundreds of targets, 50+ NTs) to give meaningful power /
+  calibration — that's the cluster path described in SIMULATION_FRAMEWORK.md.
+
+## What's NEW in this session
+- `scripts/sim_de_build_targets.R` builds `grna_target_data_frame.csv` per dataset
+  (h5 `target_gene_name` for a549; regex for cd8/endoc/invivo/tcell_cd4; prefix
+  mapping for dctap; SYMBOL→ENSG resolution via `features_all.csv` saved alongside
+  the GEX matrix).
+- `scripts/run_sceptre_survey.R` generic survey-dataset DE runner (the lab's
+  pos/neg runners are dataset_id-aware and only know gasperini/replogle).
+- `scripts/sim_de_lib.R` now branches `run_de_sceptre` between lab and survey
+  runners based on `dataset_id`, writes `meta.json` with MOI for the survey
+  runner, and accepts `grna_target_df` for survey-mode pos/neg builders.
