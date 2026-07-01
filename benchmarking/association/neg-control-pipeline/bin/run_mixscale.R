@@ -10,7 +10,8 @@
 # Inputs (from dataset_dir):
 # - response_matrix.rds: Gene expression sparse matrix (genes x cells)
 # - assignments.rds: Named vector mapping cell IDs to original pseudo-target names
-# - mixscale_nt_targets.rds: Vector of ALL pseudo-target names (each tested vs all others)
+#   (the pseudo-targets to loop over are just unique(assignments) -- we test the
+#    full cartesian product, so no separate target list file is needed)
 #
 # Outputs:
 # - association_neg_control_mixscale.csv: All perturbation-gene test results
@@ -53,7 +54,9 @@ if(n_processors > 1) {
 cat("Loading data...\n")
 response_mat <- readRDS(file.path(dataset_dir, "response_matrix.rds"))
 assign_vec_original <- readRDS(file.path(dataset_dir, "assignments.rds"))
-all_targets <- readRDS(file.path(dataset_dir, "mixscale_nt_targets.rds"))
+# We always test every pseudo-target (full cartesian product), so the loop set
+# is exactly the distinct targets present in the assignments.
+all_targets <- sort(unique(assign_vec_original))
 
 cat("  Response matrix:", nrow(response_mat), "genes x", ncol(response_mat), "cells\n")
 cat("  Original assignments:", length(assign_vec_original), "cells\n")
