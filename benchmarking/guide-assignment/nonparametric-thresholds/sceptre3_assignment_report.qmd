@@ -67,8 +67,11 @@ where fishash is over-conservative while **tying fishash on real data**.
 4. **CLEANSER did not actually underperform on our sims** — that was a one-line scoring bug in the
    benchmark (an un-thresholded posterior); corrected, CLEANSER is competitive.
 5. **The depth fix's one apparent weakness was a simulation artifact.** It looked bad at strong signal on
-   our comprehensive sim — but only because that sim's *ambient model is unrealistically lumpy*. Real
-   ambient (barnyard, direct-capture) is Poisson (var/mean ≈ 1), and on real data the depth fix is fine.
+   our comprehensive sim — but only because that sim's *ambient model is unrealistically lumpy*. Real,
+   de-doubleted barnyard ambient is Poisson (bootstrap-GOF-indistinguishable from Poisson) in both
+   chemistries — CROP-seq directly, and
+   direct-capture once a gRNA-channel purity cut removes doublets (its raw per-guide overdispersion is
+   doublet-driven; §caveat + `doublet_overdispersion.html`) — and on real data the depth fix is fine.
 
 Two from-scratch alternatives were built and **rejected**: a marginal NB test (dominated by the
 conditional test) and an explicit overdispersion tail (its dispersion parameter is not robustly
@@ -284,16 +287,22 @@ them (structural). fishash avoids them only because its inflated library margin 
 predicts the burst size.
 
 **But that burstiness is not real.** Using the barnyard's *provably-ambient* wrong-species entries as
-ground truth:
+ground truth (full reproduction with code in `doublet_overdispersion.html`):
 
 | chemistry | var/mean (index of dispersion) | max ambient count |
 |---|---|---|
-| **direct-capture** | **≈ 1.0** (Poisson) | 5 |
-| CROP-seq (after removing doublets) | 54 → 4.3 as purity tightens | 484 → 58 |
+| **direct-capture** (before removing doublets) | 54 → ≈ 1.0 as purity tightens | 484 → ~3 |
+| CROP-seq | **≈ 1.0** (Poisson) | 5 |
 
-Real direct-capture ambient is **Poisson** (var/mean ≈ 1.0, max 5); CROP-seq's apparent overdispersion is
-dominated by residual **doublets** (a "human" cell with 484 mouse-guide UMIs is a doublet, not ambient),
-and collapses toward Poisson as purity tightens. The comprehensive sim's ambient — the lab's sum-process
+Real CROP-seq ambient is **Poisson** (var/mean ≈ 1.0, max 5). Direct-capture ambient is **conditionally
+Poisson** — a bootstrap-calibrated goodness-of-fit finds the de-doubleted ambient indistinguishable from
+$\mathrm{Poisson}(a_gd_c)$ (Pearson $\phi\approx0.99$, null band $[0.96,1.02]$; it rules out NB
+$\alpha\gtrsim1$, is consistent with $\alpha\approx0$, cannot exclude mild $\alpha\lesssim0.25$) — but its
+*raw* per-guide dispersion is **doublet-driven** (the
+top 1% of cells by wrong-species load produce ~98.5% of the excess variance — a "human" cell with 484
+mouse-guide UMIs is a doublet, not ambient) and only **collapses to Poisson** (var/mean → ~1.0, max 484 →
+~3) once a gRNA-channel purity cut removes those doublets. So the trustworthy statement is that real,
+de-doubleted ambient is ~Poisson in **both** chemistries. The comprehensive sim's ambient — the lab's sum-process
 model, parameterized here as per-guide gated NB events (`prob_endo=0.02`, `mu_endo=3`) — is **far lumpier
 than reality**, which penalizes any sensitive test and rewards conservatism. Consistent with this, the
 depth fix **did not** show the strong-signal pathology on the real barnyard.

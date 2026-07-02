@@ -102,6 +102,44 @@ $a_g d_c$ despite $X$ and (ii) test $N_{g,c}$ against it; they divide by **how t
 
 ---
 
+## A generative model for the counts {#sec-genmodel}
+
+The pieces assemble into one clean generative model. Under "ambient molecules + native molecules, both
+captured" — and because the sum of independent Poissons is Poisson — the observed count is
+$$
+N_{g,c}\mid X_{g,c}\ \sim\ \mathrm{Poisson}\!\Big(\underbrace{a_g d_c}_{\text{ambient}}+X_{g,c}\underbrace{\mu_g s_c}_{\text{signal}}\Big),\qquad X_{g,c}\sim\mathrm{Bernoulli}(\pi_g),
+$$
+i.e. $N_{g,c}=Z_{g,c}+X_{g,c}W_{g,c}$ with $Z_{g,c}\sim\mathrm{Poisson}(a_gd_c)$ (ambient) and
+$W_{g,c}\sim\mathrm{Poisson}(\mu_gs_c)$ (native), independent. New symbols: $\mu_g$ = guide $g$'s native
+expression/capture strength, $s_c$ = cell $c$'s **native-capture depth**, $\pi_g$ = prevalence of $g$
+($\propto$ MOI × representation).
+
+Four commitments, each now verified rather than assumed:
+
+1. **Additive ambient + signal** — the count is soup molecules *plus* the cell's own transcripts, a sum
+   $Z+XW$, not ambient-times-a-boost.
+2. **Ambient is Poisson conditional on $d_c$** — no Gamma on the ambient; the shared soup has no per-cell
+   rate heterogeneity beyond the exposure. *Empirically confirmed:* on the de-doubleted barnyard ambient a
+   bootstrap-calibrated GOF is indistinguishable from $\mathrm{Poisson}(a_gd_c)$ ($\phi\approx0.99$;
+   `doublet_overdispersion.html`).
+3. **Two distinct per-cell depths, $d_c\neq s_c$** — the load-bearing piece. A cell's counts are mostly
+   its own true guide, so $N_{:,c}\approx\mu_{g^\*}s_c\gg d_c$: **library size $\approx s_c$, not $d_c$**.
+   The "library size ≠ ambient depth (~50×)" finding is a *theorem* of this model, not a surprise.
+4. **Overdispersion, if any, lives in the signal** — native counts vary cell-to-cell (copy number,
+   expression), so $W$ may be NB; the ambient stays Poisson. This is exactly CLEANSER's Poisson-ambient /
+   NB-native split, derived rather than assumed. (Doublets are a *separate* contaminant — a co-encapsulated
+   cell's $s_{c'}$-scaled foreign signal — removed by QC.)
+
+Everything downstream is inference on this model. The null $H_0^{(g,c)}:X_{g,c}=0$ is
+$N_{g,c}\sim\mathrm{Poisson}(a_gd_c)$; assignment tests the latent $X_{g,c}$; and the correct per-cell
+exposure is $\hat d_c$ (ambient), **not** $N_{:,c}\approx s_c$ — which is *why* using library size
+self-masks. In the signal-dominant limit $\mu_gs_c\gg a_gd_c$ the additive mean approximates the
+multiplicative $\log\mathbb E[N]=\log a_g+\log d_c+\gamma X$ with $\gamma\approx\log(\mu_gs_c/a_gd_c)$ — the
+odds ratio $e^\gamma$ that Fisher's exact test targets — so the contingency machinery below is a
+large-separation approximation to this generative model.
+
+---
+
 ## Two strategies for the confounder {#sec-strategies}
 
 ### Strategy 1 — model $X$ (mixtures, and thresholds) {#sec-model}
@@ -306,6 +344,18 @@ So the mixture and the contingency test are the **latent-variable fit** (integra
 **conditional test** (condition out the nuisance baseline) of the *same* interaction $\gamma$. SCEPTRE
 writes the model verbatim: $\log\mu_j=\gamma X_j+o_j$ with offset $o_j=\log a_g+\log d_c$.
 
+::: {.callout-note appearance="simple"}
+**Attribution.** Propositions 1–2 and the hard-EM unification below (margins = rank-1 Poisson MLE; Fisher
+exact = conditional test of the interaction; completion = M-step; test = conditional inference — hence
+"one model") are **this review's synthesis** via standard categorical-data-analysis theory (Agresti); the
+fishash paper does *not* state these connections. fishash grounds its contingency test in a **Multinomial**
+model (its §2.1, $N\sim\mathrm{Multinomial}(n_{\text{umi}},\pi)$) and invokes **Poisson explicitly only**
+for (i) the rank-1 noise-count completion (its Appendix B.2) and (ii) its CellBender-style simulator (its
+§2.4). The propositions themselves are correct and standard — the multinomial and the log-linear/Poisson
+formulations coincide under conditioning, which is exactly the equivalence used here to unify fishash's
+pieces.
+:::
+
 ### fishash's Algorithm 1 is hard-EM {#sec-hardem}
 
 The bridge is exact. The **complete-data log-likelihood** (Poisson ambient, $U\equiv1$; native density
@@ -362,7 +412,15 @@ conditional tail — the construction we built and rejected as not robustly esti
 why CLEANSER (a mixture) uses an NB ambient for direct-capture while fishash and depth_fix (conditional
 tests) stay Poisson** — the dispersion knob is tied to the inference style, not a free choice. The
 empirical fact that real cell-line barnyard ambient is ~Poisson (§Empirical fingerprints) is what makes
-the conditional route's forced $U\equiv1$ acceptable rather than a liability.
+the conditional route's forced $U\equiv1$ acceptable rather than a liability. The qualification is that
+direct-capture's *marginal* per-guide dispersion is not Poisson (var/mean ~10); but this is
+**doublet-driven** — the top 1% of cells by wrong-species load produce ~98.5% of the excess variance, and
+a gRNA-channel purity cut collapses it, and a bootstrap-calibrated goodness-of-fit then finds the
+de-doubleted ambient indistinguishable from $\mathrm{Poisson}(a_gd_c)$ (Pearson $\phi\approx0.99$, null
+band $[0.96,1.02]$; the raw ambient trips the same test at $\phi=2.8$, CROP-seq passes). So CLEANSER's
+direct-capture NB is largely absorbing **residual doublets**, not genuine soup overdispersion, and once
+the ambient is de-doubleted the conditional-Poisson (hypergeometric) null is correct
+(code-backed reproduction: `doublet_overdispersion.html`).
 
 ### Three consequences {#sec-consequences}
 
@@ -488,6 +546,13 @@ The framing predicts specific signatures for the *Strategy-2* failure modes; the
   hits $\sim0.31$ on high-ambient data where depth_fix holds $\sim0.027$.
 - **CLEANSER**, once a scoring artifact is fixed, is competitive (Jaccard 0.893) — consistent with it
   being the mixture that also decontaminates the cell exposure.
+- **Ambient shape is ~Poisson once de-doubleted**, licensing the conditional route's $U\equiv1$. CROP-seq
+  ambient is Poisson directly (var/mean ≈ 1.0, max 5). Direct-capture ambient is **conditionally Poisson**
+  (a bootstrap-calibrated GOF is indistinguishable from Poisson, $\phi\approx0.99$ in $[0.96,1.02]$) but
+  **marginally overdispersed due to doublets** (raw var/mean ~10; the top 1%
+  of cells by wrong-species load carry ~98.5% of the excess), collapsing to Poisson under a gRNA-channel
+  purity cut. So CLEANSER's direct-capture NB is largely absorbing residual doublets, not genuine soup
+  overdispersion (code-backed reproduction: `doublet_overdispersion.html`).
 
 ## What is actually ours {#sec-ours}
 
@@ -516,10 +581,14 @@ The framing predicts specific signatures for the *Strategy-2* failure modes; the
   ambient load.
 - **Overdispersion (the $U$ knob).** Setting $U\sim\mathrm{Gamma}$ in a *conditional* test means an
   NB/beta-binomial conditional tail; it rescues sim FDR under overdispersion but collapses on real
-  barnyard (dispersion not robust across chemistries). Since real cell-line ambient is ~Poisson we keep
-  $U\equiv1$ (plain hypergeometric); the open question is whether a primary-cell or genuinely
-  overdispersed screen forces the mixture (soft-EM, explicit-NB) route — where the $U$ knob is cheap —
-  over the conditional one. Revisit if DE calibration demands it.
+  barnyard (dispersion not robust across chemistries). Real *de-doubleted* cell-line ambient is ~Poisson —
+  CROP-seq directly, and direct-capture once a gRNA-channel purity cut removes doublets (its raw per-guide
+  var/mean ~10 is doublet-driven, ~98.5% of the excess from the top 1% of cells; a bootstrap GOF finds the
+  de-doubleted ambient indistinguishable from Poisson, $\phi\approx0.99$; `doublet_overdispersion.html`) —
+  so we keep $U\equiv1$ (plain hypergeometric). The open
+  question is whether a primary-cell or genuinely overdispersed screen forces the mixture (soft-EM,
+  explicit-NB) route — where the $U$ knob is cheap — over the conditional one. Revisit if DE calibration
+  demands it.
 
 ## Sources {#sec-refs}
 
