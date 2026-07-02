@@ -136,7 +136,9 @@ exposure is $\hat d_c$ (ambient), **not** $N_{:,c}\approx s_c$ — which is *why
 self-masks. In the signal-dominant limit $\mu_gs_c\gg a_gd_c$ the additive mean approximates the
 multiplicative $\log\mathbb E[N]=\log a_g+\log d_c+\gamma X$ with $\gamma\approx\log(\mu_gs_c/a_gd_c)$ — the
 odds ratio $e^\gamma$ that Fisher's exact test targets — so the contingency machinery below is a
-large-separation approximation to this generative model.
+large-separation approximation to this generative model. **The full parametric model — Poisson ambient
+(always on) + a gated NB signal, its convolution likelihood, and the EM that fits it — is written out in
+[`canonical_model.html`](canonical_model.html).**
 
 ---
 
