@@ -83,6 +83,33 @@ bootstrap-calibrated goodness-of-fit ($\hat\phi=0.99$ inside the Poisson null ba
 [`doublet_overdispersion.html`](doublet_overdispersion.html) §Part 4), and it is the same assumption as
 CellBender's $N^{\text{endo}}\sim\mathrm{Poisson}$ layer.
 
+### The ambient profile tracks native abundance (empirical) {#sec-ambient-tracks}
+
+We keep $a_g$ a **free parameter**, MLE'd from the noise stratum ($X{=}0$ entries) by M-step 1 — we do
+**not** couple it to the signal parameters $(\mu_g,\pi_g)$ or impose any prior on it, so the method stays
+frequentist. Nonetheless there is a clean empirical regularity worth recording: **the ambient soup
+profile tracks the native abundance,** $a_g\approx\kappa\,\pi_g\mu_g$ for a shared constant $\kappa$.
+Measured cross-species on the de-doubleted barnyard (a guide's ambient share in wrong-species cells vs its
+native share in own-species cells), the relationship is tight — slope $\approx 1$, correlation
+$r\approx 0.95$ on direct-capture. The residual ~2× per-guide scatter is mostly sampling noise: split-half
+reproducibility is ICC $\approx 0.35$ (so ~60–65% of it is per-cell Poisson sampling, confirmed against
+the Poisson floor), and the reproducible ~35% does **not** persist across runs (0 hr vs 72 hr residual
+correlation $\approx 0$) — i.e. it is a per-run finite-soup-draw realization (~1.25× fold), not a stable
+guide-intrinsic effect. So $a_g\propto\pi_g\mu_g$ holds **in expectation**; the deviations are sampling at
+two levels (per-cell capture + per-run soup formation).
+
+This is a validated empirical fact, not a modeling assumption, and it earns its keep in three
+non-Bayesian ways ($a_g$ stays a free MLE throughout):
+
+1. **EM initialization.** Warm-start $a_g^{(0)}=\pi_g\mu_g$ from a rough threshold assignment; the ambient
+   layer then converges faster and more stably than from a blind start.
+2. **Diagnostic / goodness-of-fit.** The fitted $\hat a_g$ should track $\pi_g\mu_g$ to within ~1.25×; a
+   gross departure flags a problem (residual doublets, a mis-specified guide, a QC issue).
+3. **Mechanistic origin of the guide-margin (Simpson) contamination.** Because the ambient composition
+   equals the native composition, the raw guide margin $N_{g,:}$ is signal-contaminated **by
+   construction** — which is exactly why $a_g$ must be estimated from the noise stratum ($X{=}0$ entries),
+   not the raw margin. This is the generative reason fishash's Simpson correction exists.
+
 ---
 
 ## Likelihood {#sec-likelihood}
@@ -154,8 +181,7 @@ $$
    method-of-moments on the signal-stratum Pearson residuals
    $(N_{g,c}-\hat\mu_g\hat s_c)^2/\hat\mu_g\hat s_c$ weighted by $r_{g,c}$. May be shared or per-guide
    ($\theta_g$).
-4. **Prevalence** $\hat\pi_g=\frac1C\sum_c r_{g,c}$ (optionally shrunk toward a shared $\pi$ via a Beta
-   prior).
+4. **Prevalence** $\hat\pi_g=\frac1C\sum_c r_{g,c}$.
 
 Iterate E/M to convergence.
 
@@ -171,15 +197,14 @@ separation); keep the exact convolution for tight CROP-seq / weak-signal regimes
 
 ## Assignment and error control {#sec-assign}
 
-The posterior $r_{g,c}$ **is** the assignment score. Two equivalent operating points:
-
-- **Local-FDR:** the local false-discovery rate of calling $(g,c)$ is $\ell_{g,c}=1-r_{g,c}$; reject the
-  largest set with $\overline{\ell}\le q$ (Bayesian FDR at level $q$). Calibrated by construction.
-- **Frequentist idiom:** a one-sided Poisson-null $p$-value $p_{g,c}=\Pr\{\mathrm{Pois}(\hat a_g\hat d_c)\ge N_{g,c}\}$
-  with a Guo–Sarkar / BH correction — this is fishash's decision rule, recovered when the signal layer is
-  left non-parametric.
-
-One knob either way ($q$).
+Error control is frequentist: the one-sided **Poisson-null $p$-value** the whole family shares,
+$$
+p_{g,c}=\Pr\{\mathrm{Pois}(\hat a_g\hat d_c)\ge N_{g,c}\},
+$$
+corrected by **Guo–Sarkar** (tests within a cell as a dependent block) or BH — it needs only the fitted
+null, and is fishash's decision rule. When the signal layer is fit, the responsibility $r_{g,c}$ is
+available as a plug-in **score** (assign where $r_{g,c}\ge 1-q$, i.e. threshold the plug-in
+$1-r_{g,c}$), but the reported guarantee is the $p$-value / GS rule, not a posterior. One knob ($q$).
 
 ---
 
@@ -205,8 +230,31 @@ hardened:
 So the parametric signal layer is what fishash gives up (for omnibus robustness) and CLEANSER has (but
 per-guide). Adding it, **shared**, buys: strength-borrowing on $(\mu_g,s_c)$ so weak $(g,c)$ get a
 calibrated signal expectation (power in the overlap regime), an NB $\theta$ that absorbs signal
-overdispersion, and genuine posterior probabilities. The costs are the NB/rank-1 signal assumptions, EM
-initialization, and the convolution bookkeeping.
+overdispersion, and a genuine soft score. The costs are the NB/rank-1 signal assumptions and EM
+initialization — but **not** the convolution, which no reduction ever evaluates (next).
+
+### Neither reduction evaluates the convolution {#sec-noconv}
+
+The Poisson$\circledast$NB convolution lives only in the alternative $f_1$, and $f_1$ is needed only for
+the responsibility $r_{g,c}$ and for fitting the signal parameters. Both practical methods sidestep it:
+
+- **fishash / depth_fix — never form $f_1$.** A one-sided test of $H_0:X_{g,c}{=}0$ ("is $N_{g,c}$ large
+  under $\mathrm{Pois}(\hat a_g\hat d_c)$?") uses only the **null** $f_0$; the alternative — and thus the
+  convolution — is never constructed. It loses little because ambient $\ll$ signal in signal cells, so the
+  alternative *is* essentially "$N$ above the Poisson tail," which is exactly what the test detects.
+- **The NB-mixture variant — approximate $f_1$ by dropping the offset.** Since $a_gd_c\ll\mu_gs_c$ in a
+  cell that carries $g$,
+$$
+f_1(n)=\mathrm{Pois}(a_gd_c)\circledast\mathrm{NB}(\mu_gs_c,\theta)\ \approx\ \mathrm{NB}(\mu_gs_c,\theta),\qquad\text{error }O\!\big(a_gd_c/\mu_gs_c\big),
+$$
+  a sub-percent shift on direct-capture (a few percent on CROP-seq). The two components are then a plain
+  $\{\mathrm{Poisson}(a_gd_c),\ \mathrm{NB}(\mu_gs_c)\}$ mixture — CLEANSER's form, here with the shared,
+  denoised ambient — and the EM runs with no convolution.
+
+So the convolution is the mechanistically-honest object but a computational non-issue: it is only
+non-negligible in the vanishing-separation limit ($\mu_gs_c\sim a_gd_c$), exactly where the guide is
+barely detectable and the correction is second-order. **The generative model contains a convolution; no
+useful method has to evaluate one.**
 
 ---
 
@@ -217,7 +265,7 @@ initialization, and the convolution bookkeeping.
    $X{=}1$ cells; set $\pi_g$ from the initial $X$.
 2. **Iterate** E/M (§§E-step, M-step) ~5–10 times; use the high-separation simplification unless signal is
    weak.
-3. **Assign** by local-FDR $\le q$.
+3. **Assign** by the Poisson-null $p$-value + Guo–Sarkar/BH at level $q$ (the $r_{g,c}\ge 1-q$ plug-in is an optional score).
 4. **Reductions to sanity-check the code:** $\theta\to\infty$ + hard E-step should reproduce depth_fix;
    raw margins + no E-step iteration should reproduce geomux/the bare ambient test.
 
