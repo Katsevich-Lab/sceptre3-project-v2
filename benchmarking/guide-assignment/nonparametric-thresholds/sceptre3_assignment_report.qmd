@@ -147,9 +147,12 @@ depth except on very deep direct-capture.](results/ambient_intuition/survey.png)
 
 # The two failure modes
 
-Both are the same thing — signal leaking into the 2×2 table's *background* cells when the ambient null
-is estimated — landing in different cells and pushing the test opposite ways (the full "three background
-cells" account is in `literature_review`).
+These are the failure modes of the **contingency strategy** our method belongs to — the one that pools
+signal+noise into the margins and tests on a 2×2. (The mixture methods take the other strategy — they
+model the latent signal/noise variable directly and so avoid both; full account, and why the 2×2 is the
+contingency family's *native* object rather than a universal frame, in `literature_review`.) Both modes
+are the same thing — signal leaking into the 2×2's *background* cells when the ambient null is estimated
+from the pooled margins — landing in different cells and pushing the test opposite ways.
 
 ## Simpson's paradox — contaminated background → false positives (*precision*)
 

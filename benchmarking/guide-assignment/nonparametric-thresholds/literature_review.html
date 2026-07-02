@@ -9,7 +9,7 @@
 <meta name="author" content="SCEPTRE3 guide-assignment investigation">
 <meta name="dcterms.date" content="2026-07-02">
 
-<title>Guide assignment as a contamination-robust test</title>
+<title>Guide assignment as inference under a latent signal/noise confounder</title>
 <style>
 
 code{white-space: pre-wrap;}
@@ -2350,20 +2350,24 @@ window.Quarto = {
   <ul>
   <li><a href="#the-one-paragraph-version" id="toc-the-one-paragraph-version" class="nav-link active" data-scroll-target="#the-one-paragraph-version">The one-paragraph version</a></li>
   <li><a href="#sec-estimand" id="toc-sec-estimand" class="nav-link" data-scroll-target="#sec-estimand"><span class="header-section-number">1</span> The estimand: one test, repeated</a></li>
-  <li><a href="#sec-rank1" id="toc-sec-rank1" class="nav-link" data-scroll-target="#sec-rank1"><span class="header-section-number">2</span> The noise model is rank-1</a></li>
-  <li><a href="#sec-problem" id="toc-sec-problem" class="nav-link" data-scroll-target="#sec-problem"><span class="header-section-number">3</span> The one hard problem: a test statistic contaminated by its own alternative</a></li>
-  <li><a href="#sec-failuremodes" id="toc-sec-failuremodes" class="nav-link" data-scroll-target="#sec-failuremodes"><span class="header-section-number">4</span> Two failure modes</a>
+  <li><a href="#sec-confounder" id="toc-sec-confounder" class="nav-link" data-scroll-target="#sec-confounder"><span class="header-section-number">2</span> The latent confounder and the rank-1 noise rate</a></li>
+  <li><a href="#sec-strategies" id="toc-sec-strategies" class="nav-link" data-scroll-target="#sec-strategies"><span class="header-section-number">3</span> Two strategies for the confounder</a>
   <ul class="collapse">
-  <li><a href="#sec-simpson" id="toc-sec-simpson" class="nav-link" data-scroll-target="#sec-simpson"><span class="header-section-number">4.1</span> Failure mode A — Simpson’s paradox → false positives (calibration)</a></li>
-  <li><a href="#sec-depth" id="toc-sec-depth" class="nav-link" data-scroll-target="#sec-depth"><span class="header-section-number">4.2</span> Failure mode B — self-masking → power loss (high MOI)</a></li>
+  <li><a href="#sec-model" id="toc-sec-model" class="nav-link" data-scroll-target="#sec-model"><span class="header-section-number">3.1</span> Strategy 1 — model <span class="math inline">\(S_u\)</span> (mixtures, and thresholds)</a></li>
+  <li><a href="#sec-pool" id="toc-sec-pool" class="nav-link" data-scroll-target="#sec-pool"><span class="header-section-number">3.2</span> Strategy 2 — pool, then correct (contingency tests)</a></li>
   </ul></li>
-  <li><a href="#sec-tool" id="toc-sec-tool" class="nav-link" data-scroll-target="#sec-tool"><span class="header-section-number">5</span> The cleaning tool, and who uses it</a></li>
-  <li><a href="#sec-others" id="toc-sec-others" class="nav-link" data-scroll-target="#sec-others"><span class="header-section-number">6</span> Where the non-contingency methods sit</a></li>
-  <li><a href="#sec-map" id="toc-sec-map" class="nav-link" data-scroll-target="#sec-map"><span class="header-section-number">7</span> The map</a></li>
-  <li><a href="#sec-empirical" id="toc-sec-empirical" class="nav-link" data-scroll-target="#sec-empirical"><span class="header-section-number">8</span> Empirical fingerprints of the two failure modes</a></li>
-  <li><a href="#sec-ours" id="toc-sec-ours" class="nav-link" data-scroll-target="#sec-ours"><span class="header-section-number">9</span> What is actually ours</a></li>
-  <li><a href="#sec-open" id="toc-sec-open" class="nav-link" data-scroll-target="#sec-open"><span class="header-section-number">10</span> Open questions</a></li>
-  <li><a href="#sec-refs" id="toc-sec-refs" class="nav-link" data-scroll-target="#sec-refs"><span class="header-section-number">11</span> Sources</a></li>
+  <li><a href="#sec-2x2" id="toc-sec-2x2" class="nav-link" data-scroll-target="#sec-2x2"><span class="header-section-number">4</span> Inside Strategy 2: the <span class="math inline">\(2\times2\)</span>, and its two failure modes</a>
+  <ul class="collapse">
+  <li><a href="#sec-simpson" id="toc-sec-simpson" class="nav-link" data-scroll-target="#sec-simpson"><span class="header-section-number">4.1</span> Failure mode A — Simpson’s paradox → false positives (<em>precision</em>)</a></li>
+  <li><a href="#sec-self" id="toc-sec-self" class="nav-link" data-scroll-target="#sec-self"><span class="header-section-number">4.2</span> Failure mode B — self-masking → power loss (<em>high MOI</em>)</a></li>
+  <li><a href="#sec-tool" id="toc-sec-tool" class="nav-link" data-scroll-target="#sec-tool"><span class="header-section-number">4.3</span> The tool, and who applies it where</a></li>
+  </ul></li>
+  <li><a href="#sec-convergence" id="toc-sec-convergence" class="nav-link" data-scroll-target="#sec-convergence"><span class="header-section-number">5</span> The convergence</a></li>
+  <li><a href="#sec-map" id="toc-sec-map" class="nav-link" data-scroll-target="#sec-map"><span class="header-section-number">6</span> The map</a></li>
+  <li><a href="#sec-empirical" id="toc-sec-empirical" class="nav-link" data-scroll-target="#sec-empirical"><span class="header-section-number">7</span> Empirical fingerprints</a></li>
+  <li><a href="#sec-ours" id="toc-sec-ours" class="nav-link" data-scroll-target="#sec-ours"><span class="header-section-number">8</span> What is actually ours</a></li>
+  <li><a href="#sec-open" id="toc-sec-open" class="nav-link" data-scroll-target="#sec-open"><span class="header-section-number">9</span> Open questions</a></li>
+  <li><a href="#sec-refs" id="toc-sec-refs" class="nav-link" data-scroll-target="#sec-refs"><span class="header-section-number">10</span> Sources</a></li>
   </ul>
 </nav>
 </div>
@@ -2371,8 +2375,8 @@ window.Quarto = {
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">Guide assignment as a contamination-robust test</h1>
-<p class="subtitle lead">A unified statistical account of the methods, and where ours fits</p>
+<h1 class="title">Guide assignment as inference under a latent signal/noise confounder</h1>
+<p class="subtitle lead">One estimand, two strategies, and where our method fits</p>
 </div>
 
 
@@ -2403,35 +2407,62 @@ window.Quarto = {
 
 <section id="the-one-paragraph-version" class="level2 unnumbered">
 <h2 class="unnumbered anchored" data-anchor-id="the-one-paragraph-version">The one-paragraph version</h2>
-<p>Every guide-assignment method answers the same question for each (guide <span class="math inline">\(g\)</span>, cell <span class="math inline">\(c\)</span>): <strong>is the observed count <span class="math inline">\(N_{g,c}\)</span> larger than ambient contamination alone would produce?</strong> Answering it requires an estimate of the ambient-noise level, and that estimate must be built from the count matrix itself — which contains the very signal we are trying to detect. <strong>Signal leaks into the estimate of its own null.</strong> Laid out on a <span class="math inline">\(2\times2\)</span> contingency table, the leak lands in exactly three cells, and each published method is characterized by <em>which of those cells it cleans</em>. Cleaning the two “other-cell” cells removes a Simpson’s-paradox <strong>false-positive</strong> inflation (fishash); cleaning the third, the focal cell’s own-signal cell, removes a <strong>power loss</strong> that masks co-occurring guides at high MOI (CLEANSER, in effect). No prior method cleans all three; ours does, using an estimate fishash already computes and discards.</p>
+<p>Every guide-assignment method answers the same question for each (guide <span class="math inline">\(g\)</span>, cell <span class="math inline">\(c\)</span>): <strong>is the observed count <span class="math inline">\(N_{g,c}\)</span> larger than ambient contamination alone would produce?</strong> Contamination has a <strong>rank-1</strong> rate <span class="math inline">\(a_g d_c\)</span> (guide ambient abundance × cell ambient exposure), and the obstacle is a <strong>latent confounder</strong>: each UMI is secretly <em>signal</em> or <em>noise</em>, and that indicator must be untangled from a matrix that pools the two. There are exactly <strong>two strategies</strong> for the confounder, and they sort the methods cleanly. <strong>Model it</strong> — the mixture models (CLEANSER, SCEPTRE, crispat) posit a latent signal/noise component per guide and integrate it out; this conditions on the confounder and so sidesteps Simpson’s paradox, at the price of per-guide fitting. <strong>Pool then correct it</strong> — the contingency tests (geomux, fishash, ours) condition on the observed margins and test on a <span class="math inline">\(2\times2\)</span> table; pooling reintroduces the confounder, which surfaces as two failure modes that must be patched. The <span class="math inline">\(2\times2\)</span> picture is the native object for the <em>second</em> strategy only. Read that way, fishash’s noise correction is the contingency family <strong>reaching back toward</strong> the signal/noise conditioning that mixtures have for free — and our method (depth_fix) completes that reach on the one axis fishash leaves open, the axis CLEANSER already handles on the mixture side.</p>
 <hr>
 </section>
 <section id="sec-estimand" class="level2" data-number="1">
 <h2 data-number="1" class="anchored" data-anchor-id="sec-estimand"><span class="header-section-number">1</span> The estimand: one test, repeated</h2>
-<p>Write the observed guide-count matrix as a sum of two latent parts, <span class="math display">\[
+<p>Write each observed count as signal plus noise, <span class="math display">\[
 N_{g,c} \;=\; S_{g,c} \;+\; Z_{g,c},
-\]</span> where <span class="math inline">\(S_{g,c}\)</span> counts UMIs from guide molecules <strong>truly integrated</strong> in cell <span class="math inline">\(c\)</span> (<em>signal</em>) and <span class="math inline">\(Z_{g,c}\)</span> counts UMIs from <strong>ambient contamination</strong> — soup, chimeras, index hopping (<em>noise</em>). Assignment is the family of hypotheses <span class="math display">\[
-H_0^{(g,c)}: S_{g,c} = 0 \quad\text{(guide $g$ was never in cell $c$)}
+\]</span> where <span class="math inline">\(S_{g,c}\)</span> counts UMIs from a <strong>true integration</strong> of guide <span class="math inline">\(g\)</span> in cell <span class="math inline">\(c\)</span> and <span class="math inline">\(Z_{g,c}\)</span> counts <strong>ambient contamination</strong> (soup, chimeras, index hopping). Assignment is the family of tests <span class="math display">\[
+H_0^{(g,c)}: S_{g,c}=0
 \qquad\text{vs}\qquad
-H_1^{(g,c)}: S_{g,c} &gt; 0 .
-\]</span> Under <span class="math inline">\(H_0\)</span>, <span class="math inline">\(N_{g,c}=Z_{g,c}\)</span> is <em>pure noise</em>, so a test reduces to: <strong>is <span class="math inline">\(N_{g,c}\)</span> surprisingly large for noise?</strong> Everything below is a way of pinning down “for noise.”</p>
+H_1^{(g,c)}: S_{g,c}&gt;0 .
+\]</span> Under <span class="math inline">\(H_0\)</span>, <span class="math inline">\(N_{g,c}=Z_{g,c}\)</span> is pure noise, so the test reduces to: <strong>is <span class="math inline">\(N_{g,c}\)</span> surprisingly large for noise?</strong> Everything below is a way to pin down “for noise.”</p>
 </section>
-<section id="sec-rank1" class="level2" data-number="2">
-<h2 data-number="2" class="anchored" data-anchor-id="sec-rank1"><span class="header-section-number">2</span> The noise model is rank-1</h2>
-<p>Ambient contamination has a natural low-rank form. A contaminating UMI lands in cell <span class="math inline">\(c\)</span> in proportion to how much soup <span class="math inline">\(c\)</span> absorbed and how deep it was sequenced — a <strong>cell exposure</strong> <span class="math inline">\(d_c\)</span> — and it reads as guide <span class="math inline">\(g\)</span> in proportion to <span class="math inline">\(g\)</span>’s share of the ambient pool — a <strong>guide abundance</strong> <span class="math inline">\(a_g\)</span>. If those are independent in the noise (fishash’s Prop-1 assumption), then <span class="math display">\[
-\mathbb{E}[Z_{g,c}] \;=\; a_g\, d_c ,
-\]</span> a rank-1 outer product. This is not a modeling flourish; it is the same object three different ways:</p>
+<section id="sec-confounder" class="level2" data-number="2">
+<h2 data-number="2" class="anchored" data-anchor-id="sec-confounder"><span class="header-section-number">2</span> The latent confounder and the rank-1 noise rate</h2>
+<p>The reason “for noise” is hard is a hidden variable. Following fishash’s formulation, tag every UMI with a latent indicator <span class="math inline">\(S_u\in\{\text{signal},\text{noise}\}\)</span> — a UMI carrying barcodes <span class="math inline">\((g,c)\)</span> is <em>signal</em> if it came from a real integration, <em>noise</em> otherwise. The barcode distribution differs by stratum, and the observed distribution pools them: <span class="math display">\[
+\pi_{g,c} \;=\; p_{\text{sig}}\,\pi^{\text{signal}}_{g,c} \;+\; p_{\text{noise}}\,\pi^{\text{noise}}_{g,c}.
+\]</span> The two strata have <strong>opposite structure</strong>:</p>
 <ul>
-<li>It is the <strong>independence / two-way log-linear model</strong> <span class="math inline">\(\log \mathbb{E}[Z_{g,c}] = \alpha_g +
-\beta_c\)</span>, whose Poisson MLE fitted values are exactly the contingency-table expected counts <span class="math inline">\(N_{g,:}N_{:,c}/N_{:,:}\)</span>.</li>
-<li>It is therefore the null of <strong>Fisher’s exact / hypergeometric test</strong> on the <span class="math inline">\(2\times2\)</span> table — conditioning on the margins tests departure <em>above the rank-1 fit</em>.</li>
-<li>It is, verbatim, what <strong>fishash estimates</strong> when it fits <span class="math inline">\(\hat Z_{g,c} = \gamma_g\kappa_c\)</span> by rank-1 Poisson completion (its Eq 8–9).</li>
+<li>In the <strong>noise</strong> stratum the guide and cell barcodes are (to good approximation) independent — a floating contaminant’s identity is unrelated to which droplet it lands in — so <span class="math display">\[
+\pi^{\text{noise}}_{g,c}=\pi^{\text{noise}}_{g,:}\,\pi^{\text{noise}}_{:,c}
+\quad\Longrightarrow\quad
+\mathbb{E}[Z_{g,c}]=a_g\,d_c \quad(\textbf{rank-1}).
+\]</span></li>
+<li>The <strong>signal</strong> stratum is the opposite — concentrated on the true <span class="math inline">\((g,c)\)</span> pairs, maximally <em>non</em>-independent.</li>
 </ul>
-<p>So “test <span class="math inline">\(N_{g,c}\)</span> against its margins” and “test against a fitted rank-1 ambient model” are the same statement. The methods differ only in <strong>how they fit that model in the presence of signal.</strong></p>
+<p>So <strong>detecting signal is detecting a departure from the rank-1 noise rate</strong>, and the whole difficulty is that <span class="math inline">\(a_g\)</span> and <span class="math inline">\(d_c\)</span> must be estimated from the pooled <span class="math inline">\(\pi_{g,c}\)</span>, in which <span class="math inline">\(S_u\)</span> is unobserved. <span class="math inline">\(S_u\)</span> is a genuine latent confounder: ignore it and the (rank-1-violating) signal stratum leaks into your estimate of the noise rate. Every method is a way to (i) estimate <span class="math inline">\(a_g d_c\)</span> despite <span class="math inline">\(S_u\)</span> and (ii) test <span class="math inline">\(N_{g,c}\)</span> against it — and they divide by <strong>how they treat <span class="math inline">\(S_u\)</span>.</strong></p>
+<hr>
 </section>
-<section id="sec-problem" class="level2" data-number="3">
-<h2 data-number="3" class="anchored" data-anchor-id="sec-problem"><span class="header-section-number">3</span> The one hard problem: a test statistic contaminated by its own alternative</h2>
-<p>To test <span class="math inline">\(H_0^{(g,c)}\)</span> we need the noise rate <span class="math inline">\(a_g d_c\)</span>, estimated from the matrix. But the matrix is <span class="math inline">\(S+Z\)</span>. Look at the <span class="math inline">\(2\times2\)</span> table for <span class="math inline">\((g,c)\)</span> (fishash Eq 1–2), written in the <span class="math inline">\(S+Z\)</span> decomposition:</p>
+<section id="sec-strategies" class="level2" data-number="3">
+<h2 data-number="3" class="anchored" data-anchor-id="sec-strategies"><span class="header-section-number">3</span> Two strategies for the confounder</h2>
+<section id="sec-model" class="level3" data-number="3.1">
+<h3 data-number="3.1" class="anchored" data-anchor-id="sec-model"><span class="header-section-number">3.1</span> Strategy 1 — model <span class="math inline">\(S_u\)</span> (mixtures, and thresholds)</h3>
+<p>Introduce the signal/noise indicator into the model as a latent <strong>component membership</strong> and integrate it out. For a guide <span class="math inline">\(g\)</span>, fit a two-component distribution to its counts across cells — an <em>ambient</em> component (the noise stratum) and a <em>native</em> component (the signal stratum) — and assign by the posterior <span class="math inline">\(P(\text{native}\mid N_{g,c})\)</span>. Because the noise rate <span class="math inline">\(a_g\)</span> is read off the ambient component — guide <span class="math inline">\(g\)</span>’s <strong>own low mode</strong> — it is signal-free by construction. This is the textbook handling of a latent confounder: <strong>model it, don’t pool over it.</strong></p>
+<ul>
+<li><strong>crispat (Poisson–Gauss):</strong> Poisson (ambient) + Gaussian (native) on <span class="math inline">\(\log_2\)</span> non-zero counts, per guide. No cell factor — <span class="math inline">\(d_c\equiv 1\)</span>.</li>
+<li><strong>SCEPTRE:</strong> per-guide Poisson-GLM mixture <span class="math inline">\(\log\mu_j=\gamma X_j+o_j\)</span>, <span class="math inline">\(X_j\sim\mathrm{Bern}(\pi)\)</span>; the offset <span class="math inline">\(o_j\)</span> carries a per-cell exposure from covariates (incl. library size) — so <span class="math inline">\(d_c\)</span> is modeled, but from a <strong>raw, signal-contaminated</strong> covariate.</li>
+<li><strong>CLEANSER:</strong> NB mixture with guide- <strong>and</strong> cell-specific normalization; the cell term <span class="math inline">\(L_i\)</span> is built from the count of <span class="math inline">\(\le 2\)</span>-UMI guides — a <strong>signal-free</strong> <span class="math inline">\(d_c\)</span>. Alone among the mixtures it decontaminates the cell exposure.</li>
+<li><strong>Otsu / smoothed-valley:</strong> the degenerate case — a hard 1-D split of guide <span class="math inline">\(g\)</span>’s distribution at the between-mode valley. Modeling <span class="math inline">\(S_u\)</span> with a threshold instead of a likelihood; no <span class="math inline">\(d_c\)</span>.</li>
+</ul>
+<p><strong>What this strategy costs.</strong> Fitting is <strong>per guide</strong>, so there is no shared, jointly-estimated rank-1 structure — each guide re-learns its own noise rate, and the cell factor is either ignored (crispat, Otsu), reintroduced raw (SCEPTRE), or estimated by a separate signal-free device (CLEANSER’s <span class="math inline">\(L\)</span>). Its characteristic vulnerability is <strong>mode separability</strong>: when the signal and noise modes overlap (weak signal, low counts) the latent split is uncertain and the posterior miscalibrates. Crucially, this strategy does <strong>not</strong> suffer Simpson’s paradox — modeling <span class="math inline">\(S_u\)</span> <em>is</em> the conditioning that prevents it — nor self-masking (§ below), because it never forms a shared, signal-contaminated exposure.</p>
+</section>
+<section id="sec-pool" class="level3" data-number="3.2">
+<h3 data-number="3.2" class="anchored" data-anchor-id="sec-pool"><span class="header-section-number">3.2</span> Strategy 2 — pool, then correct (contingency tests)</h3>
+<p>Don’t introduce <span class="math inline">\(S_u\)</span>; instead condition on the observed <strong>margins</strong> and test <span class="math inline">\(N_{g,c}\)</span> against the rank-1 independence fit with a one-sided Fisher/hypergeometric test. <strong>Here the <span class="math inline">\(2\times2\)</span> table is the native object, not an analogy.</strong> Its payoff is that the shared margins estimate a joint rank-1 rate <em>for free</em>: every cell informs <span class="math inline">\(a_g\propto N_{g,:}\)</span>, every guide informs <span class="math inline">\(d_c\propto N_{:,c}\)</span>, giving <span class="math inline">\(G+C\)</span> parameters for <span class="math inline">\(G\times C\)</span> data-starved entries. Its price is that <strong>pooling signal+noise into the margins reintroduces exactly the confounder the mixtures modeled away</strong> — and that surfaces as two failure modes.</p>
+<ul>
+<li><strong>geomux / our ambient test:</strong> the raw contingency test — rank-1 fit on the full (pooled) matrix, no correction. Exposed to both failure modes below.</li>
+<li><strong>fishash:</strong> the contingency test with the guide-side correction (§Simpson).</li>
+<li><strong>depth_fix (ours):</strong> fishash plus the cell-side correction (§self-masking).</li>
+</ul>
+<hr>
+</section>
+</section>
+<section id="sec-2x2" class="level2" data-number="4">
+<h2 data-number="4" class="anchored" data-anchor-id="sec-2x2"><span class="header-section-number">4</span> Inside Strategy 2: the <span class="math inline">\(2\times2\)</span>, and its two failure modes</h2>
+<p>For the pair <span class="math inline">\((g,c)\)</span> the table (fishash Eq 1–2), written in the <span class="math inline">\(S+Z\)</span> decomposition, is</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 21%">
@@ -2458,197 +2489,168 @@ H_1^{(g,c)}: S_{g,c} &gt; 0 .
 </tr>
 </tbody>
 </table>
-<p>with empirical odds ratio <span class="math inline">\(\hat R_{g,c} = \dfrac{N_{g,c}\,N_{-g,-c}}{N_{-g,c}\,N_{g,-c}}\)</span> and a one-sided test of <span class="math inline">\(H_0:R_{g,c}\le 1\)</span>.</p>
-<p>Under <span class="math inline">\(H_0\)</span> the cell we are testing, <span class="math inline">\(N_{g,c}\)</span>, is clean noise. <strong>Signal contaminates the other three cells</strong> — and each contaminated cell pushes the test statistic a definite way:</p>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 23%">
-<col style="width: 23%">
-<col style="width: 30%">
-<col style="width: 23%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Background cell</th>
-<th>What signal leaks in</th>
-<th style="text-align: center;">Position in <span class="math inline">\(\hat R\)</span></th>
-<th>Effect of the leak</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><span class="math inline">\(N_{-g,-c}\)</span></td>
-<td>other guides’ signal in other cells (<strong>large</strong>)</td>
-<td style="text-align: center;">numerator</td>
-<td>inflates <span class="math inline">\(\hat R\)</span> → <strong>false positive</strong></td>
-</tr>
-<tr class="even">
-<td><span class="math inline">\(N_{g,-c}\)</span></td>
-<td>guide <span class="math inline">\(g\)</span>’s signal in the cells that truly carry it</td>
-<td style="text-align: center;">denominator</td>
-<td>deflates <span class="math inline">\(\hat R\)</span> → conservative for <span class="math inline">\(g\)</span></td>
-</tr>
-<tr class="odd">
-<td><span class="math inline">\(N_{-g,c}\)</span></td>
-<td><strong>cell <span class="math inline">\(c\)</span>’s own</strong> true guide(s)</td>
-<td style="text-align: center;">denominator</td>
-<td>deflates <span class="math inline">\(\hat R\)</span> → conservative for co-occurring guides</td>
-</tr>
-</tbody>
-</table>
-<p>Two of these are the failure modes that separate the methods.</p>
-</section>
-<section id="sec-failuremodes" class="level2" data-number="4">
-<h2 data-number="4" class="anchored" data-anchor-id="sec-failuremodes"><span class="header-section-number">4</span> Two failure modes</h2>
+<p>with odds ratio <span class="math inline">\(\hat R_{g,c}=\dfrac{N_{g,c}N_{-g,-c}}{N_{-g,c}N_{g,-c}}\)</span>, tested one-sided against <span class="math inline">\(R\le1\)</span>. Under <span class="math inline">\(H_0\)</span> the tested cell <span class="math inline">\(N_{g,c}\)</span> is clean noise; <strong>signal leaks into the other three cells</strong>, and which one you fail to clean determines the failure mode.</p>
 <section id="sec-simpson" class="level3" data-number="4.1">
-<h3 data-number="4.1" class="anchored" data-anchor-id="sec-simpson"><span class="header-section-number">4.1</span> Failure mode A — Simpson’s paradox → false positives (calibration)</h3>
-<p>The dominant leak is into <span class="math inline">\(N_{-g,-c}\)</span>. Whatever guides are abundant as signal deposit their large counts into this “everything else, elsewhere” cell, inflating the numerator of <span class="math inline">\(\hat R\)</span> and making a <strong>mere-noise</strong> count <span class="math inline">\(N_{g,c}\)</span> look enriched. fishash’s Prop 1 makes this exact: even with <span class="math inline">\(g\)</span> truly absent from <span class="math inline">\(c\)</span> and <span class="math inline">\(g,c\)</span> noise-independent, <span class="math inline">\(\hat R_{g,c}&gt;1\)</span> can hold — a false positive with <strong>no signal in the tested cell at all</strong>.</p>
-<p>The paper’s cartoon (Fig 2a) is the cleanest illustration. In cell <span class="math inline">\(c\)</span>: <span class="math inline">\(g\)</span> has 1 (noise), other guides have 2 → ratio <span class="math inline">\(1/2=0.5\)</span>. In other cells: <span class="math inline">\(g\)</span> has <span class="math inline">\(9\)</span> (<span class="math inline">\(1\)</span> signal <span class="math inline">\(+8\)</span> noise), other guides have <span class="math inline">\(31\)</span> (<span class="math inline">\(23\)</span> signal <span class="math inline">\(+8\)</span> noise) → ratio <span class="math inline">\(9/31\approx0.29\)</span>. So <span class="math inline">\(\hat R = 0.5/0.29 \approx 1.7 &gt; 1\)</span> — spurious enrichment. The culprit is the <span class="math inline">\(23\)</span> signal reads of <em>other</em> guides inflating the background denominator. Recompute the background on <strong>noise only</strong>: <span class="math inline">\(8/8=1.0\)</span>, giving <span class="math inline">\(\hat R^\star = 0.5/1.0 = 0.5&lt;1\)</span> — corrected. This is anti-conservative and bites whenever the background carries signal (dense / low-SNR regimes) → it is a <strong>precision / FDR</strong> problem.</p>
+<h3 data-number="4.1" class="anchored" data-anchor-id="sec-simpson"><span class="header-section-number">4.1</span> Failure mode A — Simpson’s paradox → false positives (<em>precision</em>)</h3>
+<p>The dominant leak is into <span class="math inline">\(N_{-g,-c}\)</span>: whatever guides are abundant as signal dump their large counts into “everything else, elsewhere,” inflating the numerator and making a <em>mere-noise</em> <span class="math inline">\(N_{g,c}\)</span> look enriched. fishash’s Prop 1 makes it exact — even with <span class="math inline">\(g\)</span> truly absent from <span class="math inline">\(c\)</span> and <span class="math inline">\(g,c\)</span> noise-independent, <span class="math inline">\(\hat R_{g,c}&gt;1\)</span> can hold, a false positive with <strong>no signal in the tested cell at all</strong>. This is Simpson’s paradox: pooling over the latent <span class="math inline">\(S_u\)</span> flips the association. It is <em>specific to Strategy 2</em> — it exists only because the margins pooled signal and noise.</p>
+<p>The paper’s cartoon (Fig 2a): in cell <span class="math inline">\(c\)</span>, <span class="math inline">\(g\)</span> has 1 (noise), others 2 → ratio <span class="math inline">\(0.5\)</span>; in other cells, <span class="math inline">\(g\)</span> has <span class="math inline">\(9\)</span> (<span class="math inline">\(1\)</span> signal <span class="math inline">\(+8\)</span> noise), others <span class="math inline">\(31\)</span> (<span class="math inline">\(23\)</span> signal <span class="math inline">\(+8\)</span> noise) → ratio <span class="math inline">\(0.29\)</span>; so <span class="math inline">\(\hat R\approx1.7&gt;1\)</span>, spurious. Recompute the background on <strong>noise only</strong> (<span class="math inline">\(8/8=1\)</span>) and <span class="math inline">\(\hat
+R^\star=0.5&lt;1\)</span>, corrected. fishash estimates those noise-only counts by <strong>rank-1 Poisson completion of the signal-masked matrix</strong> (Eq 8–9, iterated) — i.e. it re-estimates the noise stratum the pooling discarded. Anti-conservative, worst in dense/low-SNR regimes → a <strong>precision</strong> problem.</p>
 </section>
-<section id="sec-depth" class="level3" data-number="4.2">
-<h3 data-number="4.2" class="anchored" data-anchor-id="sec-depth"><span class="header-section-number">4.2</span> Failure mode B — self-masking → power loss (high MOI)</h3>
-<p>The leak into <span class="math inline">\(N_{-g,c}\)</span> is different in character. This cell counts <em>other guides in the focal cell</em> — and it is dominated by cell <span class="math inline">\(c\)</span>’s <strong>own</strong> true guide(s). It sits in the denominator, so it <strong>deflates</strong> <span class="math inline">\(\hat R\)</span>: a strongly-transduced cell makes every <em>other</em> guide in it look like noise. At low MOI this is harmless (there are no other real guides to miss), but <strong>at high MOI a cell carries several real guides that mutually mask each other</strong> — the big primary guide inflates <span class="math inline">\(N_{-g,c}\)</span> for the secondary guide, burying it. Equivalently, in the hypergeometric the focal cell’s exposure (the “draws” <span class="math inline">\(N_{:,c}\)</span>) is overstated by its own signal, so the expected ambient count is too high and true secondary guides fail to clear it. This is conservative → a <strong>power / recall</strong> problem, and it is exactly the regime where fishash is documented to weaken.</p>
-<p><strong>The two corrections are not redundant and not mirror images.</strong> A cleans the <em>other-cells</em> column to fix false positives; B cleans the <em>focal cell’s own-signal</em> to fix false negatives. Different cells, opposite directions, different regimes.</p>
+<section id="sec-self" class="level3" data-number="4.2">
+<h3 data-number="4.2" class="anchored" data-anchor-id="sec-self"><span class="header-section-number">4.2</span> Failure mode B — self-masking → power loss (<em>high MOI</em>)</h3>
+<p>The leak into <span class="math inline">\(N_{-g,c}\)</span> is the mirror image. This cell — <em>other guides in the focal cell</em> — is dominated by cell <span class="math inline">\(c\)</span>’s <strong>own</strong> true guide(s); it sits in the denominator, so it <strong>deflates</strong> <span class="math inline">\(\hat R\)</span>, making every other guide in a strongly-transduced cell look like noise. Equivalently, the focal cell’s exposure (the hypergeometric “draws” <span class="math inline">\(N_{:,c}\)</span>) is overstated by its own signal. Harmless at low MOI, it bites at <strong>high MOI</strong>, where several real guides in one cell mutually mask — fishash’s documented weak spot. Conservative → a <strong>recall</strong> problem. Again <em>specific to Strategy 2</em>: it is the shared, signal-contaminated exposure that does the masking.</p>
+</section>
+<section id="sec-tool" class="level3" data-number="4.3">
+<h3 data-number="4.3" class="anchored" data-anchor-id="sec-tool"><span class="header-section-number">4.3</span> The tool, and who applies it where</h3>
+<p>Both corrections need the same object — an estimate of the <strong>noise-only</strong> counts <span class="math inline">\(\hat Z=\gamma_g\kappa_c\)</span> — and fishash’s masked rank-1 completion supplies it. The mask (assigned entries removed) is itself a hard estimate of <span class="math inline">\(S_u\)</span>; so <strong>fishash is doing, within the contingency frame, a coarse version of what the mixtures do natively</strong> — estimate the signal/noise split and hold signal out of the noise rate. The decisive detail: that one fit yields <em>both</em> a denoised guide factor <span class="math inline">\(\gamma_g\)</span> <strong>and</strong> a denoised cell factor <span class="math inline">\(\kappa_c\)</span>, but fishash uses <span class="math inline">\(\gamma_g\)</span> (fixing A) and plugs the <strong>raw</strong> <span class="math inline">\(N_{:,c}\)</span> back for the exposure (leaving B). fishash’s corrected p-value (Eq 7) shows it — the draws stay raw:</p>
+<p><span class="math display">\[
+P_{g,c}=1-F_{\text{hyper}}\!\Big(N_{g,c}-1;\;
+\underbrace{\hat N^{\text{noise}}_{:,-c}+N_{:,c}}_{\text{pop}},\;
+\underbrace{\hat N^{\text{noise}}_{g,-c}+N_{g,c}}_{\text{success (guide, denoised)}},\;
+\underbrace{N_{:,c}}_{\text{draws (cell, RAW)}}\Big).
+\]</span></p>
+<p>depth_fix simply uses the <span class="math inline">\(\kappa_c\)</span> fishash already computed. One line in <code>contingency_method.R</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>K <span class="ot">&lt;-</span> nr[i] <span class="sc">-</span> bgc <span class="sc">+</span> y                              <span class="co"># guide factor: denoised in BOTH modes (fixes A)</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (cell_margin <span class="sc">==</span> <span class="st">&quot;ambient&quot;</span>) {                   <span class="co"># depth_fix (OURS): also fix B</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  draws <span class="ot">&lt;-</span> nc[j] <span class="sc">-</span> bgc <span class="sc">+</span> y                         <span class="co">#   cell exposure = DENOISED ambient depth (kappa_c)</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  pop   <span class="ot">&lt;-</span> Tn <span class="sc">-</span> bgc <span class="sc">+</span> y</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {                                          <span class="co"># cell_margin == &quot;observed&quot;  ==  fishash exactly</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  draws <span class="ot">&lt;-</span> obs_col[j]                              <span class="co">#   cell exposure = RAW library size N_{:,c}</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  pop   <span class="ot">&lt;-</span> Tn <span class="sc">-</span> nc[j] <span class="sc">+</span> obs_col[j]</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>logp <span class="ot">&lt;-</span> <span class="fu">phyper</span>(y <span class="sc">-</span> <span class="dv">1</span>, K, pop <span class="sc">-</span> K, draws, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>cell_margin=&quot;observed&quot;</code> reproduces fishash bit-for-bit; the whole contribution is which quantity supplies <code>draws</code>.</p>
+<hr>
 </section>
 </section>
-<section id="sec-tool" class="level2" data-number="5">
-<h2 data-number="5" class="anchored" data-anchor-id="sec-tool"><span class="header-section-number">5</span> The cleaning tool, and who uses it</h2>
-<p>All the “cleaning” needs the same object: an estimate of the <strong>noise-only</strong> counts <span class="math inline">\(\hat Z\)</span>. fishash supplies it by fitting the rank-1 model to the matrix with the currently-assigned (signal) entries <strong>masked</strong> — <span class="math inline">\(\hat Z_{g,c}=\gamma_g\kappa_c\)</span> maximizing the masked Poisson likelihood, iterated so that as more signal is assigned and masked, the fit sharpens (Alg 1, Eq 8–9). This is precisely robust estimation of the rank-1 null with its own alternative held out.</p>
-<p>The decisive observation: <strong>this single fit gives both a denoised guide abundance <span class="math inline">\(\gamma_g\)</span> and a denoised cell exposure <span class="math inline">\(\kappa_c\)</span>.</strong> fishash uses <span class="math inline">\(\hat Z\)</span> to clean the two <em>other-cells</em> cells (failure mode A) but plugs the <strong>raw</strong> <span class="math inline">\(N_{:,c}\)</span> back in for the focal cell’s exposure — so it leaves failure mode B in place. The correction for B is not new machinery; it is <em>using the <span class="math inline">\(\kappa_c\)</span> fishash already computed and threw away.</em></p>
-<p>This is one line in our reference implementation (<code>scripts/contingency_method.R</code>), which is written precisely to ablate the two:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># guide margin: denoised in BOTH modes (this IS fishash&#39;s Simpson correction, failure mode A)</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>K <span class="ot">&lt;-</span> nr[i] <span class="sc">-</span> bgc <span class="sc">+</span> y</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (cell_margin <span class="sc">==</span> <span class="st">&quot;ambient&quot;</span>) {          <span class="co"># depth_fix (OURS): also fix failure mode B</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  draws <span class="ot">&lt;-</span> nc[j] <span class="sc">-</span> bgc <span class="sc">+</span> y               <span class="co">#   focal-cell exposure = DENOISED (kappa_c)</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  pop   <span class="ot">&lt;-</span> Tn <span class="sc">-</span> bgc <span class="sc">+</span> y</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {                                 <span class="co"># cell_margin == &quot;observed&quot;  ==  fishash exactly</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  draws <span class="ot">&lt;-</span> obs_col[j]                    <span class="co">#   focal-cell exposure = RAW library size N_{:,c}</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  pop   <span class="ot">&lt;-</span> Tn <span class="sc">-</span> nc[j] <span class="sc">+</span> obs_col[j]</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>logp <span class="ot">&lt;-</span> <span class="fu">phyper</span>(y <span class="sc">-</span> <span class="dv">1</span>, K, pop <span class="sc">-</span> K, draws, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>With <code>cell_margin=&quot;observed&quot;</code> it reproduces fishash bit-for-bit; <code>&quot;ambient&quot;</code> swaps in the denoised exposure. The whole contribution is which quantity supplies <code>draws</code>.</p>
-</section>
-<section id="sec-others" class="level2" data-number="6">
-<h2 data-number="6" class="anchored" data-anchor-id="sec-others"><span class="header-section-number">6</span> Where the non-contingency methods sit</h2>
-<p>Thresholds and per-guide mixtures attack the same estimand through a <strong>one-dimensional, per-guide</strong> lens instead of the <span class="math inline">\(2\times2\)</span> table. That trade has a clean upside and a clean downside.</p>
+<section id="sec-convergence" class="level2" data-number="5">
+<h2 data-number="5" class="anchored" data-anchor-id="sec-convergence"><span class="header-section-number">5</span> The convergence</h2>
+<p>The two strategies are two answers to the same latent confounder, and with the corrections in place they <strong>meet at the same statistical content</strong>: test <span class="math inline">\(N_{g,c}\)</span> against a <em>signal-free, rank-1</em> noise rate.</p>
 <ul>
-<li><strong>Naive threshold</strong> (<span class="math inline">\(N_{g,c}\ge t\)</span>): estimates neither <span class="math inline">\(a_g\)</span> nor <span class="math inline">\(d_c\)</span>; assumes the noise level is a global constant. Exposed to <em>both</em> failure modes. Empirically the <strong>“cutoff trap”</strong>: fine on easy/low-ambient data, FDR blows up on high-ambient data (<a href="#sec-empirical" class="quarto-xref">Section 8</a>).</li>
-<li><strong>Otsu / smoothed-valley:</strong> per guide, split that guide’s count distribution at the between-mode valley. This <em>does</em> separate <span class="math inline">\(g\)</span>’s signal from <span class="math inline">\(g\)</span>’s noise (a per-guide analogue of cleaning <span class="math inline">\(a_g\)</span>), but uses <strong>no cell information at all</strong> — <span class="math inline">\(d_c\)</span> is not modeled, so it cannot tell a deep cell from a shallow one.</li>
-<li><strong>crispat (Poisson–Gauss):</strong> per guide, a 2-component mixture (Poisson noise + Gaussian signal) on <span class="math inline">\(\log_2\)</span> non-zero counts. The latent component absorbs signal, so <span class="math inline">\(g\)</span>’s noise rate is estimated cleanly — but again <strong>no cell exposure term</strong>. Borrows across cells, not across guides.</li>
-<li><strong>SCEPTRE (assignment mixture):</strong> per guide, a latent-indicator Poisson GLM <span class="math inline">\(\log\mu_j=\gamma X_j + o_j\)</span> with a per-cell offset <span class="math inline">\(o_j\)</span> from covariates (including library size). The mixture cleans <span class="math inline">\(g\)</span>’s rate (signal → the <span class="math inline">\(X=1\)</span> component) <strong>and</strong> it carries a cell exposure — but a <strong>raw</strong> covariate-based one, not a denoised ambient depth. <em>(Legacy quirk: the historical mixture adds the offset as <span class="math inline">\(e^{o}+\gamma\)</span> rather than <span class="math inline">\(e^{o+\gamma}\)</span>; documented, works anyway.)</em></li>
-<li><strong>CLEANSER:</strong> a negative-binomial mixture with both a guide- and a <strong>cell-specific normalization <span class="math inline">\(L\)</span></strong>, where <span class="math inline">\(L\)</span> is built from the count of gRNAs with <strong><span class="math inline">\(\le 2\)</span> UMIs</strong> in the cell — i.e. a deliberately <strong>signal-free</strong> estimate of the cell’s ambient exposure. In our language, CLEANSER <strong>cleans failure mode B</strong> (via a hard low-count cutoff, inside a mixture) but has no Simpson correction for mode A.</li>
+<li>Mixtures reach it by <strong>modeling</strong> <span class="math inline">\(S_u\)</span> (the component membership) — automatically signal-free on the guide factor; CLEANSER additionally makes the cell factor signal-free via <span class="math inline">\(L\)</span>.</li>
+<li>Contingency tests reach it by <strong>pooling then re-estimating</strong> the noise stratum — fishash’s masked completion recovers the signal-free guide factor; depth_fix recovers the signal-free cell factor.</li>
 </ul>
-<p>The through-line: mixtures get a clean <em>guide</em> rate almost for free (the latent component eats the signal), but they either ignore the cell exposure (crispat, Otsu) or use a raw one (SCEPTRE), and they forgo the contingency table’s borrowing of a <strong>shared, denoisable</strong> cell factor across guides. CLEANSER is the exception that denoises the cell factor — the same insight as failure-mode-B, reached in the mixture world.</p>
+<p>So fishash is the contingency family importing the mixtures’ guide-side conditioning, and <strong>depth_fix is the contingency-family analogue of CLEANSER’s cell-side conditioning</strong> — the two families closing the same two gaps from opposite directions. The trade that remains is intrinsic, not incidental: mixtures buy robustness to Simpson/self-masking with per-guide fitting (and exposure to mode misspecification); contingency tests buy shared rank-1 borrowing with a susceptibility to pooling artifacts that must be patched. depth_fix is the fully-patched contingency corner.</p>
 </section>
-<section id="sec-map" class="level2" data-number="7">
-<h2 data-number="7" class="anchored" data-anchor-id="sec-map"><span class="header-section-number">7</span> The map</h2>
-<p>Two independent questions — is <span class="math inline">\(g\)</span>’s noise rate estimated free of <span class="math inline">\(g\)</span>’s signal? is <span class="math inline">\(c\)</span>’s exposure estimated free of <span class="math inline">\(c\)</span>’s signal? — and the failure mode each leaves open:</p>
+<section id="sec-map" class="level2" data-number="6">
+<h2 data-number="6" class="anchored" data-anchor-id="sec-map"><span class="header-section-number">6</span> The map</h2>
+<p>Reading each method by the fair, strategy-neutral axes — <em>how does it estimate the guide noise factor and the cell exposure, and is each estimate signal-free?</em> — and its characteristic vulnerability:</p>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 21%">
-<col style="width: 28%">
-<col style="width: 28%">
-<col style="width: 21%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
 </colgroup>
 <thead>
 <tr class="header">
 <th>Method</th>
-<th style="text-align: center;">Guide rate cleaned (mode A)</th>
-<th style="text-align: center;">Cell exposure cleaned (mode B)</th>
-<th>Exposed to</th>
+<th><span class="math inline">\(S_u\)</span> strategy</th>
+<th>guide factor <span class="math inline">\(a_g\)</span></th>
+<th>cell exposure <span class="math inline">\(d_c\)</span></th>
+<th>characteristic vulnerability</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
 <td>Fixed threshold</td>
-<td style="text-align: center;">–</td>
-<td style="text-align: center;">–</td>
-<td>A <strong>and</strong> B</td>
+<td>none</td>
+<td>global constant</td>
+<td>none</td>
+<td>everything</td>
 </tr>
 <tr class="even">
 <td>Otsu / valley</td>
-<td style="text-align: center;">✓ (per-guide split)</td>
-<td style="text-align: center;">— (no cell term)</td>
-<td>B (no depth)</td>
+<td>model (1-D split)</td>
+<td>own low mode (signal-free)</td>
+<td>none</td>
+<td>no cell adaptation</td>
 </tr>
 <tr class="odd">
 <td>crispat (Poisson–Gauss)</td>
-<td style="text-align: center;">✓ (mixture)</td>
-<td style="text-align: center;">— (no cell term)</td>
-<td>B (no depth)</td>
+<td>model (mixture)</td>
+<td>own low mode (signal-free)</td>
+<td>none</td>
+<td>no cell adaptation; separability</td>
 </tr>
 <tr class="even">
-<td>SCEPTRE mixture</td>
-<td style="text-align: center;">✓ (mixture)</td>
-<td style="text-align: center;">✗ (raw offset)</td>
-<td>B</td>
+<td>SCEPTRE</td>
+<td>model (mixture)</td>
+<td>own low mode (signal-free)</td>
+<td>raw covariate offset</td>
+<td>separability; raw exposure</td>
 </tr>
 <tr class="odd">
+<td>CLEANSER</td>
+<td>model (mixture)</td>
+<td>own low mode (signal-free)</td>
+<td><strong>signal-free (<span class="math inline">\(L\)</span>, <span class="math inline">\(\le2\)</span>)</strong></td>
+<td>separability; per-guide</td>
+</tr>
+<tr class="even">
 <td>geomux</td>
-<td style="text-align: center;">✗ (raw margins)</td>
-<td style="text-align: center;">✗ (raw)</td>
-<td>A and B</td>
-</tr>
-<tr class="even">
-<td>our ambient test</td>
-<td style="text-align: center;">✗ (raw margins)</td>
-<td style="text-align: center;">✗ (raw)</td>
-<td>A and B</td>
+<td>pool (uncorrected)</td>
+<td>pooled margin (contaminated)</td>
+<td>pooled margin (contaminated)</td>
+<td><strong>Simpson + self-masking</strong></td>
 </tr>
 <tr class="odd">
-<td><strong>fishash</strong></td>
-<td style="text-align: center;"><strong>✓ (Simpson / masked rank-1)</strong></td>
-<td style="text-align: center;">✗ (raw <span class="math inline">\(N_{:,c}\)</span>)</td>
-<td><strong>B</strong></td>
+<td>our ambient test</td>
+<td>pool (uncorrected)</td>
+<td>pooled margin (contaminated)</td>
+<td>pooled margin (contaminated)</td>
+<td><strong>Simpson + self-masking</strong></td>
 </tr>
 <tr class="even">
-<td><strong>CLEANSER</strong></td>
-<td style="text-align: center;">✗ (no Simpson)</td>
-<td style="text-align: center;"><strong>✓ (<span class="math inline">\(L\)</span> from <span class="math inline">\(\le 2\)</span>)</strong></td>
-<td><strong>A</strong></td>
+<td><strong>fishash</strong></td>
+<td>pool + correct</td>
+<td><strong>noise-only (imputed)</strong></td>
+<td>raw library <span class="math inline">\(N_{:,c}\)</span></td>
+<td><strong>self-masking (high MOI)</strong></td>
 </tr>
 <tr class="odd">
 <td><strong>depth_fix (ours)</strong></td>
-<td style="text-align: center;"><strong>✓</strong></td>
-<td style="text-align: center;"><strong>✓</strong></td>
-<td><strong>—</strong></td>
+<td>pool + correct</td>
+<td><strong>noise-only (imputed)</strong></td>
+<td><strong>ambient depth (imputed)</strong></td>
+<td>—</td>
 </tr>
 </tbody>
 </table>
-<p>fishash occupies “clean A only,” CLEANSER “clean B only,” in different frameworks. The empty lower-right — clean both, in one test — is where our method sits, and it is a one-line reach from fishash because fishash already computes the piece CLEANSER needs.</p>
+<p>Two things the table makes honest: the mixtures’ guide factor is signal-free <em>by construction</em> (not by “cleaning a <span class="math inline">\(2\times2\)</span> cell” — they have no table); and the only decontaminated-cell-exposure methods are CLEANSER (model side) and depth_fix (pool side), which is the convergence in one column.</p>
 </section>
-<section id="sec-empirical" class="level2" data-number="8">
-<h2 data-number="8" class="anchored" data-anchor-id="sec-empirical"><span class="header-section-number">8</span> Empirical fingerprints of the two failure modes</h2>
-<p>The theory predicts specific, checkable signatures; the benchmarks show them. <em>(Sim figures are as last recorded; the per-guide-fit sim redesign is edited but not re-run — treat as provisional.)</em></p>
+<section id="sec-empirical" class="level2" data-number="7">
+<h2 data-number="7" class="anchored" data-anchor-id="sec-empirical"><span class="header-section-number">7</span> Empirical fingerprints</h2>
+<p>The framing predicts specific signatures for the <em>Strategy-2</em> failure modes; the benchmarks show them. <em>(Sim figures are as last recorded; the per-guide-fit sim redesign is edited-but-not-re-run — provisional.)</em></p>
 <ul>
-<li><strong>Mode A is a precision effect.</strong> In hard/low-SNR sim regimes, only methods <strong>with</strong> the Simpson correction reach precision <span class="math inline">\(\ge 0.90\)</span>; the bare ambient test and geomux sit on a lower-precision frontier. The self-contained reproduction of fishash’s Fig 7 nails the mechanism: uncorrected FDR <span class="math inline">\(\approx0.20\)</span> (fails nominal 5% in 10/10 reps) <span class="math inline">\(\to\)</span> corrected <span class="math inline">\(\approx0.003\)</span> (0/10), <strong>recall unchanged</strong>. Cleaning the other-cells column removes false positives without costing power — exactly a mode-A signature.</li>
-<li><strong>Mode B is a recall effect, MOI-graded.</strong> Per-guide F1 at MOI 1/3/5: depth_fix <strong>0.96 / 0.93 / 0.89</strong> vs fishash 0.96 / 0.89 / 0.82. Identical at MOI 1 (no co-occurring guides to unmask), diverging as MOI rises (more mutual masking to undo) — exactly a mode-B signature, and exactly fishash’s documented weak spot.</li>
-<li><strong>On real barnyard</strong> (low-MOI, per-cell metric) depth_fix ties fishash (0.937 vs 0.942, no regression): with little mutual masking, fixing B costs nothing. The bare ambient test scores highest here (0.951) by being aggressive — i.e. by <em>lacking</em> the mode-A brake — which is the same coin as its low sim precision.</li>
-<li><strong>The cutoff trap</strong> is the no-cleaning corner: a fixed <span class="math inline">\(\ge 3\)</span> threshold ties depth_fix on easy/low-ambient data but its FDR explodes to <span class="math inline">\(\sim0.31\)</span> on high-ambient (primary-cell) data where depth_fix holds <span class="math inline">\(\sim0.027\)</span>.</li>
-<li><strong>CLEANSER</strong>, once a scoring artifact is fixed (an un-thresholded posterior collapsing to “assign if count <span class="math inline">\(\ge1\)</span>”), is competitive (Jaccard 0.893) — consistent with it having the mode-B fix.</li>
+<li><strong>A is a precision effect.</strong> In hard/low-SNR sim regimes only Simpson-corrected methods reach precision <span class="math inline">\(\ge0.90\)</span>; the raw contingency tests sit on a lower-precision frontier. The self-contained Fig-7 reproduction nails the mechanism: uncorrected FDR <span class="math inline">\(\approx0.20\)</span> (fails 5% in 10/10 reps) <span class="math inline">\(\to\)</span> corrected <span class="math inline">\(\approx0.003\)</span> (0/10), <strong>recall unchanged</strong>.</li>
+<li><strong>B is a recall effect, MOI-graded.</strong> Per-guide F1 at MOI 1/3/5: depth_fix <strong>0.96/0.93/0.89</strong> vs fishash 0.96/0.89/0.82 — identical with no co-occurring guides, diverging as MOI (mutual masking) rises.</li>
+<li><strong>Real barnyard</strong> (low-MOI, per-cell metric): depth_fix ties fishash (0.937 vs 0.942). The raw ambient test scores highest (0.951) by lacking the mode-A brake — the same coin as its low sim precision.</li>
+<li><strong>The cutoff trap</strong> is the no-strategy corner: fixed <span class="math inline">\(\ge3\)</span> ties depth_fix on easy data but its FDR hits <span class="math inline">\(\sim0.31\)</span> on high-ambient data where depth_fix holds <span class="math inline">\(\sim0.027\)</span>.</li>
+<li><strong>CLEANSER</strong>, once a scoring artifact is fixed, is competitive (Jaccard 0.893) — consistent with it being the mixture that also decontaminates the cell exposure.</li>
 </ul>
 </section>
-<section id="sec-ours" class="level2" data-number="9">
-<h2 data-number="9" class="anchored" data-anchor-id="sec-ours"><span class="header-section-number">9</span> What is actually ours</h2>
-<p>Stated as narrowly as the reading supports:</p>
+<section id="sec-ours" class="level2" data-number="8">
+<h2 data-number="8" class="anchored" data-anchor-id="sec-ours"><span class="header-section-number">8</span> What is actually ours</h2>
 <ol type="1">
-<li>The <strong>cell exposure should be a denoised ambient depth, not raw library size</strong> — but this is <em>not</em> our discovery. <strong>CLEANSER got there first</strong> (its <span class="math inline">\(\le2\)</span>-count <span class="math inline">\(L\)</span>). We credit it.</li>
-<li><strong>fishash cleans the guide side, not the cell side</strong> — verified from Eq 7 (draws <span class="math inline">\(=N_{:,c}\)</span>) and from our own reproduction (<code>cell_margin=&quot;observed&quot;</code> <span class="math inline">\(\equiv\)</span> fishash). So relative to fishash the denoised exposure is a real addition.</li>
-<li>The contribution is <strong>unification and economy:</strong> decontaminate all three background cells of the <span class="math inline">\(2\times2\)</span> in a single hypergeometric test — fishash’s mode-A correction <em>and</em> a denoised mode-B exposure — where the exposure is the <span class="math inline">\(\kappa_c\)</span> fishash’s own rank-1 completion already produces and discards. It closes the empty corner of <a href="#sec-map" class="quarto-xref">Section 7</a> and targets fishash’s high-MOI weakness, beating it there while tying on real barnyard.</li>
+<li>The cell exposure should be a signal-free ambient depth, not raw library size — but <strong>CLEANSER got there first</strong> (its <span class="math inline">\(\le2\)</span>-count <span class="math inline">\(L\)</span>), on the mixture side. We credit it.</li>
+<li><strong>fishash decontaminates the guide factor, not the cell exposure</strong> — verified from Eq 7 (draws <span class="math inline">\(=N_{:,c}\)</span>) and from our reproduction (<code>cell_margin=&quot;observed&quot;</code><span class="math inline">\(\equiv\)</span>fishash). So on the contingency side the ambient exposure is a real addition.</li>
+<li>The contribution is <strong>completing the pool-and-correct corner</strong>: give the contingency test <em>both</em> a denoised guide factor (fishash) and a denoised cell exposure (ours), using the <span class="math inline">\(\kappa_c\)</span> fishash’s own completion already produces and discards. It is the contingency-family analogue of CLEANSER’s cell-side fix, and it targets fishash’s high-MOI weakness — beating it there while tying on real barnyard.</li>
 </ol>
 </section>
-<section id="sec-open" class="level2" data-number="10">
-<h2 data-number="10" class="anchored" data-anchor-id="sec-open"><span class="header-section-number">10</span> Open questions</h2>
+<section id="sec-open" class="level2" data-number="9">
+<h2 data-number="9" class="anchored" data-anchor-id="sec-open"><span class="header-section-number">9</span> Open questions</h2>
 <ul>
-<li><strong>Downstream arbiter.</strong> All metrics here are upstream (assignment vs truth). The deciding test for FDR-vs-recall trade-offs is downstream <strong>SCEPTRE DE</strong> — negative-control calibration and power under each assignment. Not yet run.</li>
-<li><strong>depth_fix vs a correctly-scored CLEANSER</strong>, head to head — the single most informative comparison for our claim, since CLEANSER shares the mode-B fix. Not yet done directly.</li>
-<li><strong>Estimator quality of the denoised exposure.</strong> CLEANSER’s hard <span class="math inline">\(\le2\)</span> cutoff vs our rank-1 noise column — which is the better ambient-depth estimator is untested.</li>
-<li><strong>Overdispersion (a possible failure mode C).</strong> A conditional NB/beta-binomial tail rescues sim FDR under overdispersion but collapses on real barnyard (dispersion estimate not robust across chemistries). Keep the plain hypergeometric; revisit only if DE calibration demands it.</li>
+<li><strong>Downstream arbiter.</strong> All metrics here are upstream (assignment vs truth). The deciding test for precision-vs-recall trade-offs is downstream <strong>SCEPTRE DE</strong> — negative-control calibration and power under each assignment. Not yet run.</li>
+<li><strong>depth_fix vs a correctly-scored CLEANSER</strong>, head to head — the sharpest test, since CLEANSER is the <em>other</em> method that decontaminates the cell exposure, from the opposite strategy. Not yet done.</li>
+<li><strong>Estimator quality of the ambient depth.</strong> CLEANSER’s hard <span class="math inline">\(\le2\)</span> cutoff vs our rank-1 noise column — which is the better signal-free <span class="math inline">\(d_c\)</span> is untested.</li>
+<li><strong>Overdispersion.</strong> A conditional NB/beta-binomial tail rescues sim FDR under overdispersion but collapses on real barnyard (dispersion not robust across chemistries). Keep the plain hypergeometric; revisit only if DE calibration demands it.</li>
 </ul>
 </section>
-<section id="sec-refs" class="level2" data-number="11">
-<h2 data-number="11" class="anchored" data-anchor-id="sec-refs"><span class="header-section-number">11</span> Sources</h2>
-<p><code>literature/</code>: cleanser.pdf (Liu, Hamilton et al. 2025, <em>Cell Genomics</em>); fishash.pdf (Kamm et al. 2026, bioRxiv; package in <code>external/fishash/</code>); geomux.pdf (Teyssier 2024, UCSF thesis); crispat.pdf + crispat-supplement.pdf; sceptre-methods.html. Statistics: Simpson (1951); Fisher (1922); Guo &amp; Sarkar (2020); Benjamini–Hochberg (1995) / Yekutieli (2001); Fleming et al. (2023, CellBender); Yang et al. (2020, DecontX); Young &amp; Behjati (2020, SoupX).</p>
+<section id="sec-refs" class="level2" data-number="10">
+<h2 data-number="10" class="anchored" data-anchor-id="sec-refs"><span class="header-section-number">10</span> Sources</h2>
+<p><code>literature/</code>: cleanser.pdf (Liu, Hamilton et al. 2025, <em>Cell Genomics</em>); fishash.pdf (Kamm et al. 2026, bioRxiv; package in <code>external/fishash/</code>); geomux.pdf (Teyssier 2024, UCSF thesis); crispat.pdf + crispat-supplement.pdf; sceptre-methods.html. Statistics: Simpson (1951); Fisher (1922); Guo &amp; Sarkar (2020); Benjamini–Hochberg (1995) / Yekutieli (2001); Fleming et al. (2023, CellBender); Yang et al. (2020, DecontX); Young &amp; Behjati (2020, SoupX).</p>
 </section>
 
 </main>
