@@ -27,21 +27,37 @@ The one deferred piece — testing assignments through downstream association an
 the decisive next step; all metrics here are upstream (assignment-level vs. ground truth).
 :::
 
+::: {.callout-tip}
+## Companion documents
+For the **conceptual/statistical account** of the method landscape — the unifying framework and the
+sharper "three background cells" story — see **`literature_review.qmd`** (the canonical synthesis;
+this report's framework and failure-mode sections are a condensed pointer to it). For the **simulation
+apparatus and sim evidence**, see **`simulation_framework_report.qmd`** (which supersedes the
+"comprehensive sim" referenced in §Benchmarks below). This report is the **evidence + recommendation**.
+:::
+
 # Executive summary {-}
 
 **Recommendation.** Build on **fishash's contingency core** (a one-sided Fisher/hypergeometric test on
-a *noise-decontaminated* 2×2 table + the Guo–Sarkar block FDR), and add **one principled improvement of
-our own: decontaminate the *cell* margin** — use each cell's *ambient depth* as the test's exposure
-instead of its raw library size. This is the symmetric completion of fishash's own Simpson correction,
-it is motivated directly by our cross-dataset depth finding, and it recovers recall in the high-MOI /
-weak-signal regimes where fishash is over-conservative while **tying fishash on real data**.
+a *noise-decontaminated* 2×2 table + the Guo–Sarkar block FDR), and **decontaminate the *cell* margin**
+too — use each cell's *ambient depth* as the test's exposure instead of its raw library size. The
+ambient-depth idea is **not new to us: CLEANSER already decontaminates the cell margin** (its
+sub-threshold sum $L_i$ from ≤2-count guides). fishash, however, does *not* — it uses the raw library
+size for the focal cell's draws (verified from its Eq 7 and from our reproduction, which matches fishash
+exactly with `cell_margin="observed"`). **Our contribution is the *unification*:** bringing both
+corrections — fishash's guide-side Simpson correction *and* an ambient (decontaminated) cell margin —
+into a single transparent contingency test. It recovers recall in the high-MOI / weak-signal regimes
+where fishash is over-conservative while **tying fishash on real data**.
 
 **The five load-bearing findings:**
 
 1. **One framework.** Every ambient-aware method tests a count against a rank-1 ambient null
-   $\lambda_{g,c}=\gamma_g\kappa_c$ (guide ambient share × cell ambient depth). The methods differ only
-   in how they estimate that field and what tail they use. Two orthogonal failure modes: a contaminated
-   **mean** (Simpson's paradox) and an over-dispersed **variance**.
+   $\lambda_{g,c}=\gamma_g\kappa_c$ (guide ambient share × cell ambient depth), estimated from a matrix
+   that contains the very signal being detected. On the 2×2 table, signal leaks into the three
+   *background* cells, giving two failure modes (full account in `literature_review`): **Simpson's
+   paradox** (other-cells contamination → false positives → a *precision* loss, fixed by fishash) and
+   **self-masking** (the focal cell's own signal → co-occurring guides masked → a *recall* loss at high
+   MOI, fixed by the cell-margin decontamination). Overdispersion is a lesser third axis (§below).
 2. **Library size ≠ ambient depth — universally.** Across 17 real datasets, library size overstates
    ambient depth by a median **51×** (up to 424×) and is nearly uncorrelated with it at low MOI. This is
    the empirical basis for the cell-margin fix.
@@ -72,15 +88,10 @@ Write the ambient (noise) counts as a **rank-1 Poisson field**:
 $$\mathbb{E}\!\left[N^{\text{noise}}_{g,c}\right]=\gamma_g\,\kappa_c,\qquad \textstyle\sum_g\gamma_g=1,$$
 
 where $\gamma_g$ is guide $g$'s **share of the ambient pool** and $\kappa_c$ is cell $c$'s **ambient
-capture depth**. Assignment asks, per pair, whether $N_{g,c}$ exceeds this null. Two ways it can fail:
-
-| failure mode | what's wrong | fixed by |
-|---|---|---|
-| **Simpson's paradox** | the ambient **mean** is contaminated by signal in the margins | fishash (noise-conditioned table) |
-| **Overdispersion** | the ambient **variance**/tail is heavier than Poisson | CLEANSER (NB); implicitly by conditioning |
-
-Every method below is a different way to (a) estimate $\gamma_g,\kappa_c$ and (b) test against the
-resulting null.
+capture depth**. Assignment asks, per pair, whether $N_{g,c}$ exceeds this null — the catch being that
+the field must be estimated from a matrix that *contains the signal being detected* (see §The two
+failure modes). Every method below is a different way to (a) estimate $\gamma_g,\kappa_c$ — cleanly or
+not — and (b) test against the resulting null.
 
 | method | $\gamma_g$ (guide share) | $\kappa_c$ (cell depth) | test | extra |
 |---|---|---|---|---|
@@ -136,12 +147,16 @@ depth except on very deep direct-capture.](results/ambient_intuition/survey.png)
 
 # The two failure modes
 
-## Simpson's paradox (contaminated mean)
+Both are the same thing — signal leaking into the 2×2 table's *background* cells when the ambient null
+is estimated — landing in different cells and pushing the test opposite ways (the full "three background
+cells" account is in `literature_review`).
 
-The latent confounder is signal-vs-noise per UMI. Even when guide $g$ is truly absent from cell $c$ and
-$g,c$ are noise-independent, pooling signal+noise can flip the 2×2 odds ratio above 1 → a false positive.
-fishash corrects it by replacing the "other-cells" counts with **noise-only** counts, estimated by
-rank-1 Poisson completion of the signal-masked matrix.
+## Simpson's paradox — contaminated background → false positives (*precision*)
+
+Even when guide $g$ is truly absent from cell $c$ and $g,c$ are noise-independent, signal from *other*
+guides in *other* cells inflates the table's background and can flip the 2×2 odds ratio above 1 → a false
+positive. fishash corrects it by replacing the "other-cells" counts with **noise-only** counts, estimated
+by rank-1 Poisson completion of the signal-masked matrix.
 
 We reproduced this exactly with the authors' simulator and package: in the regime where ambient
 composition is uncorrelated with signal, the uncorrected test (= our bare ambient test) inflates FDR to
@@ -156,15 +171,27 @@ $g_2$ in a cell, the plain Fisher 2×2 gives odds ratio 20 (p = 0.0002, false po
 global rate is deflated by $g_1$'s signal; fishash replaces the one "other guides, other cells" entry
 (160 → 8, signal → noise), giving odds ratio 1 (p = 0.66, correctly rejected). One number flips it.
 
-## Overdispersion (heavy-tailed variance) — and why conditioning handles it implicitly
+## Self-masking — the focal cell's own signal → lost recall (*high MOI*)
 
-The hypergeometric assumes the ambient is *equidispersed*. Where the ambient is genuinely overdispersed,
-the test can over-reject. But most apparent overdispersion is **mean heterogeneity** — $\gamma_g$ spans
-20×, $\kappa_c$ spans 50× — and the **conditional (Fisher) test absorbs this for free** by conditioning
-on the margins (the sufficient statistics for the rank-1 rate). This is *why* fishash is robust without a
-dispersion parameter, and why our marginal NB attempt (which had to estimate the rates *and* a
-dispersion) was fragile. What conditioning cannot absorb is **residual clumping at a fixed mean** — and,
-as the experiments below show, that residual is small on real data and not robustly estimable.
+The complementary leak lands in the *focal cell's own* background cell: cell $c$'s true guide(s) inflate
+the "other guides in $c$" count — equivalently, its raw library size. A hypergeometric that uses that raw
+library as the cell's exposure therefore expects too much ambient and **buries co-occurring real guides**
+in the same cell. Harmless at low MOI (nothing else to miss), it bites hard at high MOI, where several
+real guides mutually mask each other — precisely fishash's documented weak spot. The fix is to
+decontaminate the cell margin (use the ambient depth). **CLEANSER already does exactly this** — its
+cell-specific $L_i$ is a sub-threshold (≤2-count) ambient-depth estimate; **fishash does not** (it keeps
+the raw library as its draws). This is the motivation for the recommended improvement (§below), and it is
+a *recall* effect — the mirror image of Simpson's *precision* effect. Worked example there.
+
+## A lesser third axis — overdispersion — and why we keep the plain hypergeometric
+
+The hypergeometric assumes the ambient is *equidispersed*. But most apparent overdispersion is **mean
+heterogeneity** — $\gamma_g$ spans 20×, $\kappa_c$ spans 50× — and the **conditional (Fisher) test
+absorbs this for free** by conditioning on the margins (the sufficient statistics for the rank-1 rate).
+This is *why* fishash is robust without a dispersion parameter, and why our marginal-NB attempt (which had
+to estimate the rates *and* a dispersion) was fragile. What conditioning cannot absorb is **residual
+clumping at a fixed mean** — and, as the experiments below show, that residual is small on real (cell-line
+barnyard) ambient and not robustly estimable, so it does not warrant a dispersion parameter.
 
 ---
 
@@ -213,9 +240,11 @@ by two failure modes.](results/benchmark_update/build_vs_adopt.png)
 
 fishash decontaminates the "other cells" but uses the **raw library size** as each cell's exposure (the
 hypergeometric draws). The symmetric completion — also decontaminating the *other guides in the focal
-cell* — makes the cell margin the **ambient depth**. Implemented modularly
-(`scripts/contingency_method.R`), it **reproduces fishash exactly** with the observed margin, so the
-ambient-depth swap is a clean one-factor ablation.
+cell* — makes the cell margin the **ambient depth**. (CLEANSER reaches the same ambient-depth cell margin
+by a different route — its sub-threshold $L_i$; our contribution is putting it inside fishash's
+contingency core *alongside* the Simpson correction, so both the guide side and the cell side are cleaned
+in one test.) Implemented modularly (`scripts/contingency_method.R`), it **reproduces fishash exactly**
+with the observed margin, so the ambient-depth swap is a clean one-factor ablation.
 
 ![As MOI rises, fishash loses recall (co-occurring real guides in a cell inflate the library margin and
 mask each other); the depth fix recovers it, at controlled FDR.](results/benchmark_update/depth_fix.png)
@@ -231,6 +260,13 @@ expectation → **missed** (p = 0.996). The depth fix uses draws = ambient depth
 guides stop masking each other.
 
 ## The comprehensive-sim caveat — and why it is a simulation artifact
+
+::: {.callout-note appearance="minimal"}
+The "comprehensive sim" below is the pre-framework apparatus (now in
+`archive/old_comprehensive_sim_pipeline/`), superseded by the barnyard-anchored Model A / Model B
+framework in `simulation_framework_report.qmd`. The artifact diagnosis it motivated — real ambient is
+~Poisson — still stands and is why the framework anchors on real barnyard ambient.
+:::
 
 On the lab's realistic comprehensive sim the picture looked different: the depth fix **helps at weak
 signal** (where fishash collapses to recall ~0.30) but **hurts at strong signal**, and the bare ambient
