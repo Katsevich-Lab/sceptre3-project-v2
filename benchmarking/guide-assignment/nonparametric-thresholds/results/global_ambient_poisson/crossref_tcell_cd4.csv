@@ -1,0 +1,4 @@
+"dataset","cell_set","n_cells","p_other_strong","p_other_mod","p_focal_max","med_other_max"
+"tcell_cd4","count-2 (tested)",834,0.511,0.297,0.192,62
+"tcell_cd4","count-1",21347,0.491,0.338,0.171,40
+"tcell_cd4","signal-mode (real integ.)",6383,0.215,0.007,0.9,134

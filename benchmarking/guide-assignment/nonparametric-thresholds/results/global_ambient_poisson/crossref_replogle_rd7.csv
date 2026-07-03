@@ -1,0 +1,4 @@
+"dataset","cell_set","n_cells","p_other_strong","p_other_mod","p_focal_max","med_other_max"
+"replogle_rd7","count-2 (tested)",12585,0.799,0.078,0.122,1547
+"replogle_rd7","count-1",595861,0.821,0.119,0.06,1440
+"replogle_rd7","signal-mode (real integ.)",40257,0.688,0.001,0.617,1503

@@ -1,0 +1,4 @@
+"dataset","cell_set","n_cells","p_other_strong","p_other_mod","p_focal_max","med_other_max"
+"ipsc_crispri","count-2 (tested)",10270,0.676,0.288,0.037,366
+"ipsc_crispri","count-1",113696,0.702,0.288,0.01,383
+"ipsc_crispri","signal-mode (real integ.)",3318,0.799,0.003,0.432,2344
