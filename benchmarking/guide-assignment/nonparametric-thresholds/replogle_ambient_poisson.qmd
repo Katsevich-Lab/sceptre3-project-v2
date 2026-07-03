@@ -181,6 +181,52 @@ agree: the soup carries a mild excess in its tail, on top of a Poisson core.
 
 ---
 
+## What depth_fix actually assigns on RAMAC — and a precision cross-reference
+
+The analysis above is about the *soup*; it never shows the method's actual output. Running the
+recommended **`depth_fix`** (conditional hypergeometric + Guo–Sarkar FDR at $q=0.05$, denoised
+ambient depth, `min_count=2`) on the full matrix (~20 s) assigns RAMAC to **245 cells** — the
+222-cell signal mode (≥70), the 10 gap-shoulder cells (3–7), and **13 count-2 cells**
+(`scripts/replogle_ramac_assignments.R`).
+
+![Cells depth_fix assigns to RAMAC (red). The signal mode and gap shoulder are all called; a sliver of the count-2 bar is recovered.](results/replogle_ambient_poisson/ramac_depthfix_assignments.png)
+
+**depth_fix vs. the plug-in mask.** They agree *exactly* on all 232 cells with count ≥3 — the
+conditional-hypergeometric-vs-plug-in-Poisson distinction makes **zero** difference in this
+sparse/large-margin regime. The entire discrepancy is 13 count-2 cells that depth_fix additionally
+calls, and it comes from the **FDR threshold** ($q=0.05$, Guo–Sarkar) being more lenient than the
+hard $p<10^{-6}$ mask, plus `min_count=2`. So depth_fix reaches down to the detection floor and
+recovers the count-2 cells whose *depth-adjusted* evidence is strong (2 UMIs in a *shallow* cell) —
+its recall, exactly where it is earned or risked.
+
+**The cross-reference (a precision caveat).** For each low-count RAMAC call, does the cell *also*
+carry a clear integration of a **different** guide (another guide with raw count ≥30)?
+
+| RAMAC cells | n | another guide ≥30 | median other-guide count |
+|---|---|---|---|
+| count-2, **assigned** by depth_fix | 13 | 9 (69%) | 817 |
+| count-2, not assigned (soup) | 40 | 25 (62%) | 1,348 |
+| count 3–7 (shoulder, assigned) | 10 | 7 (70%) | 234 |
+| count ≥70 (signal mode) | 222 | 153 (69%) | 430 |
+
+**Of RAMAC's 23 low-count calls (2–7), 16 sit in cells that clearly belong to another guide; only 7
+are clean.** The most parsimonious reading: those 16 are cells whose *real* integration is the other
+(strong) guide, with RAMAC's 2–7 UMIs being ambient/spillover — depth_fix calls them because it
+masks the strong guide, leaving a small $d_c$ against which even 2 UMIs looks significant. So the
+method's *marginal recall is bought partly with doublet/spillover false positives*, and that is
+where its ~4% FDR lives. Two consequences worth carrying forward: (i) the knobs `min_count` and $q$
+directly control this trade; (ii) it argues for a **doublet-aware** refinement — conditioning the
+call on whether the cell is already a confident singleton of another guide — since a weak count in a
+cell dominated by a different guide is the one case no per-entry test can resolve.
+
+**An incidental observation:** depth_fix assigns **1.53 guides/cell** overall, and ~70% of RAMAC's
+*strong* carriers also carry another strong guide (median 430) — so `replogle-rd7` carries a real
+multi-integration/doublet load. RAMAC-vs-soup is cleanly two populations, but many RAMAC-containing
+cells are also someone else's.
+
+*(Caveat: this is one guide, chosen because it is clean — don't extrapolate the exact fractions,
+but the mechanism, marginal calls concentrating in doublet-context cells, is general.)*
+
 ## Conclusion
 
 - **The soup is very nearly Poisson.** Conditional on the (properly denoised) rate, var/mean is
@@ -211,5 +257,8 @@ All figures and the decisive-test numbers are regenerated from the raw gRNA matr
   ramac_ambient_linear, ramac_denoised_fit, soup_dispersion_vs_rate}.png` and `soup_poisson_test.txt`.
 - `scripts/replogle_ambient_poisson.R` — the Poisson+NB mixture fit and the marginal density
   histograms (`replogle_ambient_poisson.png`, `replogle_marginal_hist.png`).
+- `scripts/replogle_ramac_assignments.R` — the plug-in mask vs real `depth_fix` assignment on RAMAC
+  and the doublet cross-reference (`ramac_labeled_cells.png`, `ramac_depthfix_assignments.png`,
+  `ramac_crossref.txt`).
 
 Render this document with `quarto render replogle_ambient_poisson.qmd`.

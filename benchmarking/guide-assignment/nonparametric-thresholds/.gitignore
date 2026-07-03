@@ -30,3 +30,5 @@ literature/*.html
 results/sim_framework/de/
 .venv_cleanser/
 results/method_decision/de_native/
+results/replogle_ambient_poisson/replogle_rank1_ad.rds
+results/replogle_ambient_poisson/ramac_depthfix_res.rds
