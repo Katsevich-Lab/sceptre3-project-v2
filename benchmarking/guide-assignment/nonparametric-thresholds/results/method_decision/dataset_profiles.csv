@@ -1,0 +1,12 @@
+"dataset","guides","cells","med_lib","med_cellmax","med_topfrac","MOI_med","MOI_mean","n_NT_guides","n_targets","hasGE","nGenes","med_geUMI"
+"a549_crispri_perturbseq_GSE236304",253,25220,395,232,0.617,2,3.15,5,54,TRUE,36601,26167.5
+"cd8_tcell_perturbcite_GSE279498",44,2426,2,1,1,0,0.42,2,22,TRUE,32285,2845
+"dctap_k562_highmoi_GSE303901",110,10932,1858,486,0.261,8,8.42,98,4,TRUE,93,614
+"dctap_k562_lowmoi_GSE303901",110,5397,353,299,0.862,1,1.65,98,4,TRUE,93,329
+"endoc_t2d_perturbseq_GSE273677",225,41642,438,274,0.6,2,2.4,21,62,TRUE,36601,26038
+"gastric_organoid_cropseq_GSE280506",96,42324,63,63,1,1,0.95,NA,NA,FALSE,NA,NA
+"invivo_cortex_perturbseq_GSE249416",17,11688,259,232,0.967,1,1.21,NA,NA,FALSE,NA,NA
+"ipsc_crispri_hipsci_figshare27989294",6824,322746,281,150,0.524,1,1.91,NA,NA,FALSE,NA,NA
+"perturb_multiome_erythroid_GSE274113",63,14525,28,15,0.421,1,1.36,NA,NA,TRUE,36601,13322
+"tcell_cd4_perturbseq_GSE314342",27272,137716,30,26,0.922,1,1.01,0,11891,TRUE,18130,7789
+"replogle_rd7",2666,616184,1174,954,0.808,NA,NA,113,2386,FALSE,NA,NA

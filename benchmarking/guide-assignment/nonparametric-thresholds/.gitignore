@@ -28,3 +28,5 @@ literature/*.pdf
 literature/*.html
 # downstream DE pushthrough intermediate outputs (large; regenerable)
 results/sim_framework/de/
+.venv_cleanser/
+results/method_decision/de_native/
