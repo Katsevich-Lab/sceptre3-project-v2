@@ -371,6 +371,92 @@ null protects exactly these guides, at the cost of the ~15% of count-2 cells tha
 
 ---
 
+## Is the ambient null overdispersed? Poisson vs. negative binomial — and why we keep Poisson
+
+The lower-mode calls dilute the effect. A natural hypothesis is that this is a **null-calibration**
+problem: on Replogle the count-2 rate is **2.2× the rank-1 Poisson prediction** (5× at count-3), so
+perhaps the soup is overdispersed, the Poisson null is too thin, and it over-calls at the floor. This
+section follows that hypothesis to its end — which is that **the Poisson is correct and the excess is
+signal, not overdispersion** (`scripts/method_comparison_lowermode.R`, `ambient_null_poisson_vs_nb.R`,
+`lowermode_dose_response.R`).
+
+**It's a family-wide floor property, not a depth_fix quirk.** Running the **real fishash** next to
+depth_fix: both reach the count-2 floor, but fishash's raw-library margin is more conservative than
+depth_fix's denoised-depth margin, so it dilutes less — pooled lower-mode fraction **6.5% (fishash) vs
+19% (depth_fix)**, and on the five example guides fishash sits between gap-based and depth_fix (TOP2A
+0.05 → **0.52** → 0.82). depth_fix's denoised depth (its recall feature) is what reaches furthest into
+the floor, but the floor is shared by the whole contingency family.
+
+![On-target effect for the five guides: gap-based (grey) vs all fishash calls (orange) vs all depth_fix calls (red). Both dilute; fishash less.](results/global_ambient_poisson/method_compare_effectsize.png)
+
+**Not hidden mean structure.** Could the excess be a misspecified mean — the rank-1 `a_g·d_c` too
+smooth? Refitting the ambient mean at **rank-2** (unsupervised, no batch labels) moves count-2 obs/exp
+only **2.18 → 2.15** (KL barely changes; the two depth estimates correlate 1.000). A richer mean does
+not absorb it, so it is not mean misspecification — if it's anything, it's genuine overdispersion.
+
+**The tempting fix — an ML negative-binomial null — even passes GOF.** The principled overdispersed
+null is the beta-binomial (Dirichlet-multinomial soup), whose hypergeometric limit is what fishash
+uses; NB is its stable form. Estimating the dispersion by **maximum likelihood on the full low-count
+noise distribution** (not a single-moment count-2 match, and not the signal-contaminated per-entry
+residual that made the old `tail="nb"` collapse) gives **ρ = 1.66**, and one parameter fits the whole
+low tail:
+
+| count | obs / Poisson | obs / NB(ρ=1.66) |
+|---|---|---|
+| 0, 1 | 1.00, 0.96 | 1.00, 1.00 |
+| **2** | **2.15** | **1.03** |
+| **3** | **5.13** | **1.07** |
+
+Through the sandbox, the NB null removes **49% of count-2 calls**, preserves signal recall (100%), and
+shifts effects toward the truth — but only part-way (count-3+ barely touched, 6% removed; 75% of the
+residual is doublet-context). At this point the NB looks like a validated, principled improvement. It
+isn't — and two checks say why.
+
+![depth_fix Poisson vs the ML-NB null on the five guides. The NB helps at the count-2 floor but leaves the count-3+ calls, so the effect only moves part-way toward gap-based.](results/global_ambient_poisson/nb_null_effectsize.png)
+
+**The below-mode cells are real — not doublets, not artifacts.** A two-cell doublet carries ~2× the
+RNA; cells with two strong guides have **1.05× single-cell RNA** (not 2×) — single cells with real
+co-integrations (high MOI), not doublets (30% two-strong-guide cells is far above any doublet rate;
+the ~1.7× RNA doublet signature only appears at 3+ guides). And binning the below-signal cells by
+count, **knockdown deepens smoothly with the count** — Replogle 0.94 (count 1) → 0.46 (count 20–40) →
+0.19 (signal) — a clean **dose-response**, with the count *not* tracking total gRNA (cor −0.07,
+refuting the chimera/index-hop artifact, which predicts the opposite). The count is a **proxy for
+guide dose**; CRISPRi is dose-dependent. Within-guide (composition-controlled) the effect holds (7/10
+guides, p≈0.05). So the count-3+ cells the NB null *keeps* are **genuine low-dose integrations** — and
+the "overdispersion" the ML fit absorbed *includes them*, because the p<10⁻⁶ carrier mask removes
+strong integrations but not weak ones.
+
+![Below-signal knockdown by count (Replogle): a monotone dose-response down to the signal mode — real low-dose integrations, not artifact.](results/global_ambient_poisson/dose_response.png)
+
+**The decisive test: barnyard says Poisson.** To separate "overdispersed soup" from "Poisson soup +
+weak-integration signal," go where the ambient is *provable*: barnyard wrong-species guides cannot have
+integrated, so their counts are pure soup. The identical count-2 diagnostic on de-doubleted barnyard
+ambient gives **obs/exp ≈ 0.90 — Poisson**, not 2.18. So the Replogle excess is **weak-integration
+signal**, which barnyard's provable ambient structurally cannot contain. The NB was **fitting signal**;
+inflating the null would **suppress the very weak integrations we are trying to detect.** NB is not
+just unnecessary — it's counterproductive.
+
+| ambient (count-2 obs/exp) | value |
+|---|---|
+| barnyard provable soup, de-doubleted | **0.90 (Poisson)** |
+| Replogle inferred ambient | 2.18 (soup + weak-integration signal) |
+
+**It generalizes.** The dose-response — the signature of "below-signal = real low-dose integrations" —
+holds on every dataset with clean modes and expression: **Replogle, EndoC, and CD4 T-cell** all show
+knockdown deepening monotonically with the below-signal count, down to the signal-mode effect.
+
+![Dose-response across Replogle, EndoC, and CD4 T-cell: all three show knockdown deepening with the below-signal count.](results/global_ambient_poisson/dose_response_xdataset.png)
+
+**Conclusion: keep the Poisson.** gRNA calling asks "which cells are above soup," and Poisson answers
+it correctly — it flags weak *and* strong integrations above the (Poisson) soup. The count-2 excess is
+not a miscalibrated tail; it is the weak integrations we want. So **keep the Poisson/hypergeometric
+null** (no NB, no dispersion parameter — the overdispersion was signal), and treat the lower-mode
+dilution as a **dose/estimand choice** (`min_count`, discussed above), not a null problem. This
+refines the "mild tail overdispersion" language below: on *provable* soup the tail is Poisson too; the
+apparent Replogle tail-heaviness was inferred-ambient contamination by weak-integration signal.
+
+---
+
 ## Reconciliation with the decisive soup test
 
 If the count-2 excess reaches 45× in some datasets, is the soup non-Poisson there? **In the mass that
@@ -465,5 +551,14 @@ too heavy" is **vindicated at the tail** and **refuted at the core**; the practi
 - `scripts/knockdown_cross_dataset_combine.R` — recomputes Replogle on the same generic thresholds,
   joins the survey CSVs, and writes `knockdown_cross_dataset_summary.csv` + `knockdown_cross_dataset.png`
   (with the implied weak-band functional fraction $f=(1-\text{kd}_\text{weak})/(1-\text{kd}_\text{strong})$).
+- `scripts/method_comparison_lowermode.R` — runs the real `fishash` and `depth_fix`, compares
+  lower-mode fraction and the five-guide effect estimates → `method_compare_effectsize.png`.
+- `scripts/ambient_null_poisson_vs_nb.R` — the Poisson-vs-NB arc: count-2 obs/exp (rank-1 & rank-2),
+  ML-NB dispersion fit + GOF, the NB sandbox, and the decisive **barnyard** provable-ambient count-2
+  test → `ambient_ml_fit.rds`, `nb_null_effectsize.png` (via the sandbox), and the barnyard verdict.
+- `scripts/lowermode_dose_response.R` — RNA-content doublet check, the below-signal dose-response
+  (pooled + per-guide + within-guide), and the cross-dataset dose-response (Replogle/EndoC/CD4) →
+  `dose_response.png`, `dose_response_perguide.png`, `dose_response_xdataset.{png,rds}`. *(The NB-null
+  effect figure `nb_null_effectsize.png` and `method_compare_effectsize.png` are the sandbox outputs.)*
 
 Render with `quarto render global_ambient_poisson.qmd`.

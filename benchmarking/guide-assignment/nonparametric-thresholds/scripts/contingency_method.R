@@ -16,7 +16,12 @@ suppressPackageStartupMessages({library(fishash); library(Matrix); library(extra
 
 contingency_assign <- function(counts, q = 0.05, refit = 10, min_count = 2,
                                cell_margin = c("ambient","observed"),
-                               tail = c("hyper","nb"), fdr = c("GS","BH")) {
+                               tail = c("hyper","nb"), fdr = c("GS","BH"),
+                               rho_fixed = NULL) {
+  # rho_fixed: if supplied, use this GLOBAL negative-binomial dispersion for tail="nb"
+  # instead of the per-entry Pearson-residual estimate (which is signal-contaminated).
+  # The clean way to set it is from the aggregate ambient count-2 excess over Poisson
+  # (soup-dominated): obs/exp_Poisson(count=2) ~ 1 + rho, so rho ~ excess - 1.
   cell_margin <- match.arg(cell_margin); tail <- match.arg(tail); fdr <- match.arg(fdr)
   counts  <- as(counts, "CsparseMatrix")
   G <- nrow(counts); C <- ncol(counts)
@@ -41,13 +46,17 @@ contingency_assign <- function(counts, q = 0.05, refit = 10, min_count = 2,
       un <- if (is.null(assigned)) rep(TRUE, length(y)) else !assigned[cbind(i, j)]
       # estimate phi from CONFIDENTLY-NOISE entries only: unassigned, estimable mean, and count not
       # in the upper tail (excludes signal that survived masking, esp. at high MOI). median-based.
-      ycap <- if (any(un)) as.numeric(quantile(y[un], 0.98, na.rm = TRUE)) else Inf
-      sel <- un & (lambda >= 0.5) & (y <= ycap)        # drop the upper-tail (signal leakage)
-      if (sum(sel) >= 20) {
-        d <- ((y[sel] - lambda[sel])^2 - lambda[sel]) / lambda[sel]^2
-        d <- d[d <= quantile(d, 0.95, na.rm = TRUE)]   # trim residual outliers, keep OD signal
-        rho <- max(mean(d, na.rm = TRUE), 0)
-      } else rho <- 0
+      if (!is.null(rho_fixed)) {
+        rho <- rho_fixed                                # clean global dispersion (count-2 calibrated)
+      } else {
+        ycap <- if (any(un)) as.numeric(quantile(y[un], 0.98, na.rm = TRUE)) else Inf
+        sel <- un & (lambda >= 0.5) & (y <= ycap)      # drop the upper-tail (signal leakage)
+        if (sum(sel) >= 20) {
+          d <- ((y[sel] - lambda[sel])^2 - lambda[sel]) / lambda[sel]^2
+          d <- d[d <= quantile(d, 0.95, na.rm = TRUE)] # trim residual outliers, keep OD signal
+          rho <- max(mean(d, na.rm = TRUE), 0)
+        } else rho <- 0
+      }
       logp <- if (rho > 0) stats::pnbinom(y - 1, mu = lambda, size = 1/rho, lower.tail = FALSE, log.p = TRUE)
               else          stats::phyper(y - 1, K, pop - K, draws, lower.tail = FALSE, log.p = TRUE)
     }
