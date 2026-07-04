@@ -22,14 +22,16 @@ p <- ggplot(df, aes(klab, observed)) +
   geom_col(fill = "grey80", width = 0.66) +
   geom_line(aes(y = model, group = 1), colour = "#D55E00", linewidth = 0.9) +
   geom_point(aes(y = model), colour = "#D55E00", size = 3) +
-  annotate("segment", x = 3, xend = 3, y = 12, yend = 45, colour = "grey30",
+  annotate("segment", x = 3, xend = 3, y = 9, yend = 53, colour = "grey30",
            arrow = grid::arrow(length = grid::unit(0.16, "cm"), ends = "both")) +
-  annotate("text", x = 3.35, y = 24, hjust = 0, size = 3.5, colour = "grey20",
+  annotate("text", x = 3.35, y = 22, hjust = 0, size = 3.5, colour = "grey20",
            label = "count 2:\n53 observed\n~9 predicted") +
-  scale_y_log10() +
+  scale_y_continuous(trans = scales::trans_new("log1p", log1p, expm1),
+                     breaks = c(0, 1, 10, 100, 1000, 10000, 1e5, 1e6),
+                     labels = scales::label_comma(), expand = expansion(mult = c(0, 0.05))) +
   labs(title = "RAMAC's ambient mode leaves a real excess at count 2",
-       subtitle = "Replogle guide RAMAC, cells below its empty gap. Bars = observed; orange = depth-mixed Poisson (a_g d_c).\nThe model fits counts 0-1; a separate signal mode (70-6072 UMIs) lies above an empty gap.",
-       x = "gRNA UMI count", y = "number of cells (log)") +
+       subtitle = "Replogle guide RAMAC, cells below its empty gap. Bars = observed; orange = depth-mixed Poisson.\nThe model fits counts 0-1; a separate signal mode (70-6072 UMIs) lies above an empty gap.",
+       x = "gRNA UMI count", y = "number of cells (log1p — axis floor at 0)") +
   theme_bw(base_size = 11.5)
 ggsave(file.path(OUT, "ramac_ambient_fit.png"), p, width = 8.5, height = 4.8, dpi = 130)
 cat(sprintf("count-2: obs=%d model=%.1f (%.1fx excess)\n", obs[3], pred[3], obs[3]/pred[3]))

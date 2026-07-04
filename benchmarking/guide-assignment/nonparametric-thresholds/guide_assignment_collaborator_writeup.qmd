@@ -33,9 +33,10 @@ that follows, and its practical consequence.
 1. **The contamination is Poisson.** On a ground-truth benchmark (a human/mouse cell mixture) the
    background counts follow a Poisson distribution whose rate scales with each cell's contamination
    level. This holds even for the direct-capture chemistry, which a recent method (CLEANSER) modeled as
-   over-dispersed; we show that apparent over-dispersion is fully explained by two mundane effects
-   (cell doublets and cell-to-cell variation in contamination level), so no extra dispersion parameter
-   is needed.
+   over-dispersed; we show that apparent over-dispersion is two mundane effects, not soup dispersion —
+   **cell doublets** (most excluded once the standard purity gate is tightened from 0.90 to 0.99, the
+   last few GEX-invisible and cleaned on the gRNA side) and **cell-to-cell variation in contamination
+   level** (a Poisson with a per-cell rate). No extra dispersion parameter is needed.
 
 2. **A method that exploits this: fishash+.** We take an existing, well-validated method (fishash) and
    make one change — how it measures each cell's contamination level — which recovers assignments it
@@ -117,33 +118,94 @@ Taken at face value the direct-capture soup looks over-dispersed. It is not — 
 steps below, because it says CLEANSER's observation is real but its interpretation adds a parameter
 that the data do not require. **This complements CLEANSER's analysis rather than contradicting it.**
 
-## The over-dispersion is two mundane effects, not soup over-dispersion
-
 A variance/mean ratio lumps together everything that makes counts spread. Two ordinary effects do so
-here, and neither means the soup itself is over-dispersed.
+here, and neither means the soup itself is over-dispersed: **cell doublets** and **cell-to-cell variation
+in ambient depth**. We take them in turn — and the first one turns out to hinge on a QC threshold that
+is usually set too loosely.
 
-**(a) Cell doublets.** Two cells occasionally end up in one droplet. A human droplet that captured a
-stray mouse cell carries a whole mouse cell's worth of mouse-guide UMIs — a large wrong-species count
-that has nothing to do with the soup. These are rare but extreme, so they dominate the variance.
-Dropping the cells whose gRNA is mostly wrong-species (a simple purity filter) collapses the
-over-dispersion onto the Poisson line:
+## Most of the over-dispersion is doublets — and the standard purity gate is too loose
 
-![Direct-capture per-guide variance vs mean, as a doublet-removing purity cut is tightened (orange → gold → blue). The cloud pulls onto the dashed Poisson line; the per-guide median variance/mean falls from ~10 to 1.0. The excess variance lived almost entirely in a tiny fraction of doublet cells (the top 1% of cells by wrong-species load carry ~98% of it).](results/collaborator_writeup/barnyard_dedoublet_collapse.png)
+Two cells occasionally land in one droplet. A human droplet that also caught mouse material carries
+mouse-guide UMIs that have nothing to do with the soup — a few large wrong-species counts that, being
+squared, dominate the variance. The standard defense is a **GEX-purity gate**: keep a cell only if its
+gene-expression is almost entirely one species. CLEANSER (and most pipelines) use a **0.90** threshold.
+But 0.90 is too loose. Plotting the *mouse* fraction of each cell's gene-expression on a **log axis**
+shows why (a log axis resolves the human cells, which are all bunched near zero mouse-GEX):
 
-**(b) Cell-to-cell variation in ambient depth.** Even after removing doublets, a single guide's counts
-are not one Poisson — they are a *mixture* of Poissons, because the ambient rate $a_g d_c$ differs from
-cell to cell (the depth $d_c$ varies). A mixture of Poissons has variance slightly above its mean even
-though every individual cell is exactly Poisson. This is the residual, mild over-dispersion, and it is
-captured by modeling the rate as $a_g d_c$ per cell — **a depth-mixed Poisson** — with no dispersion
-parameter. We can see the model fit each guide's count histogram directly. For the wrong-species
-(pure-ambient) guides, a depth-mixed Poisson reproduces the observed counts while a single
-one-rate Poisson cannot:
+![Fraction of each cell's gene-expression UMIs that are mouse, per cell, on a log axis (direct-capture 0hr; sqrt y). The human cells form a sharp spike at ~0.007 mouse-GEX (blue); a shoulder of minority-partner doublets (gold) trails out to 0.10. The old 0.90 gate (grey dashed, at mouse fraction 0.10) admits the whole shoulder; the new 0.99 gate (red, at mouse fraction 0.01) removes it. Mouse cells (orange) sit at the far right.](results/collaborator_writeup/barnyard_frac_mouse.png)
 
-![Six wrong-species (never-integrated) guides from the direct-capture barnyard. Bars are observed cell counts; orange is the depth-mixed Poisson (rate $a_g d_c$ per cell); blue is a single Poisson at the guide's mean. Because these guides never integrated, the whole histogram is ambient. The single Poisson misses the count-2 cells; the depth-mixed model matches them.](results/collaborator_writeup/barnyard_marginal_wrongspecies.png)
+The genuine human cells form a tight spike at ~0.007 mouse-GEX (frac_homo ≈ 0.993); to its right, a
+broad shoulder of **minority-partner doublets** trails out to 0.10 mouse-GEX (frac_homo 0.90) — droplets
+that are mostly one cell plus a smaller partner of the other species. The 0.90 gate lets the whole
+shoulder through. **Moving the gate to 0.99** (which costs only **9% of cells**: 2499 → 2277) removes it,
+and the ambient variance drops onto the Poisson line:
+
+![Per wrong-species guide, variance vs mean across host cells (CLEANSER's Fig-3B statistic); dashed = Poisson. Left → middle: tightening the gate 0.90 → 0.99 pulls the per-guide median var/mean from 10.4 to 1.1. Right: a non-circular check of the dozen-odd guides still above the line at 0.99 — deleting each guide's *single largest cell* collapses them onto the line (median var/mean → 1.0). A genuinely over-dispersed soup is a *distributed* heavy tail and would barely move; the collapse shows the residual is instead **isolated single-cell spikes**.](results/collaborator_writeup/barnyard_vmr_threshold.png)
+
+The per-guide median variance/mean — CLEANSER's exact statistic — falls from **10.4 to 1.1**. So the
+bulk of the "direct-capture over-dispersion" was simply doublets the conventional 0.90 gate let through.
+And the handful of guides still above the line at 0.99 are **not** a residual over-dispersed *soup*: a
+soup would be a distributed heavy tail, but deleting each guide's single largest cell collapses them
+straight onto the Poisson line (right panel, median var/mean → 1.0). That could only happen if the
+excess lives in **one cell per guide** — isolated spikes, not soup. (CROP-seq sits at var/mean ≈ 1.0
+regardless — it never had the doublet problem, because its poly-A capture doesn't produce these spikes.)
+
+## GEX can't quite finish the job — a soup floor, and five stubborn cells
+
+Tightening to 0.99 does not get all the way to var/mean = 1, though: the *pooled* value is still 4.8,
+held up by a **handful of spike cells** that survive the gate. (Because each such debris cell carries
+*several* mouse guides at once, these few cells are what put the ~dozen guides above the line in the
+right panel above; the **five** clearest — those with a spike ≥ 10 UMIs — are tabulated below.) And you
+cannot fix this by tightening GEX further, because **GEX purity has a ceiling.** Even a perfectly clean
+293T cell carries ~0.7% mouse-mRNA *soup*, so frac_homo tops out around 0.998 (median 0.993); a 0.995
+gate already discards **90%** of the cohort, and 0.999 keeps essentially none. So GEX runs out of room
+right where these spike cells live. What are they? Each row below is one **droplet**
+(cell), labeled by the single mouse guide that spikes in it — and all five spike a *different* guide,
+i.e. five independent contamination events, not one guide misbehaving:
+
+```{r offenders-table}
+off <- read_if(file.path(COL, "barnyard_offenders.csv"))
+if (!is.null(off)) {
+  off <- cbind(cell = seq_len(nrow(off)), off)
+  names(off) <- c("cell", "spiking mouse guide", "wrong-species count", "human-GEX fraction",
+                  "mouse mRNA UMIs", "human mRNA UMIs", "total gRNA")
+  knitr::kable(off)
+}
+```
+
+Each is a GEX-clean human droplet (human-GEX fraction > 0.99) carrying one loud mouse guide (12–58
+UMIs). Against a baseline of ~66 mouse-mRNA UMIs in clean human cells, they split into two kinds:
+
+- **Tiny minority-partner doublets** — cells 2 and 4 (spiking nt_131 and nt_101) have *elevated* mouse
+  mRNA (134, 104), i.e. a small co-encapsulated mouse cell or fragment — too minor to move the GEX
+  fraction below 0.99, but enough to bring a real mouse guide.
+- **gRNA-only artifacts** — the other three (cell 1 / nt_176: a 58-UMI spike but only 33 mouse mRNA,
+  *below* baseline; cell 3 / nt_143: 27 UMIs; cell 5 / nt_106: 12 UMIs) each carry a loud mouse-guide
+  *spike* with mouse mRNA at or below baseline — no accompanying mouse transcriptome. The spike is
+  chimeric / index-hopped reads: a mouse guide's molecules landing on a human barcode. (Cell 3's droplet
+  is itself a strongly guide-carrying human cell — total gRNA 2,581 — with the mouse spike riding on top.)
+
+Both kinds are **GEX-invisible by construction** — they barely perturb the transcriptome — which is
+exactly why no GEX threshold can catch them. They are removed on the *gRNA* side instead (fishash's own
+carrier-masking flags a several-UMI spike in an otherwise-shallow cell and holds it out of the ambient
+fit). This is the honest reason "GEX purity didn't fully work": it's not that 0.90 was a badly chosen
+number, it's that the mouse-mRNA soup floor caps GEX resolution at ~0.998, and the last few contaminants
+live inside that ceiling.
+
+## What genuinely remains is depth-mixing, not soup over-dispersion
+
+With the doublet shoulder gated out (0.99), the wrong-species counts on guides free of an offender spike
+are *pure ambient* — and they are still not a *single* Poisson. The reason is benign: the ambient
+rate $a_g d_c$ differs from cell to cell (the depth $d_c$ varies), so a guide's marginal is a *mixture*
+of Poissons, which sits mildly above var/mean = 1 even though every individual cell is exactly Poisson.
+This is captured by modeling the rate per cell — **a depth-mixed Poisson** — with no dispersion
+parameter. The fit is visible directly in each guide's histogram:
+
+![Six wrong-species (never-integrated) guides, direct-capture, GEX gate 0.99. Bars are observed cell counts; orange is the depth-mixed Poisson (rate $a_g d_c$ per cell); blue is a single Poisson at the guide's mean. The whole histogram is ambient (no signal mode). The single Poisson misses the count-2 cells; the depth-mixed model matches them.](results/collaborator_writeup/barnyard_marginal_wrongspecies.png)
 
 Both models trivially match counts 0 and 1, but at **count 2** the single Poisson falls short while the
 depth-mixed model lands on the observed bar — those count-2 cells come from the high-depth tail, which
-only a per-cell rate reproduces. The fit is decisive (Pearson $\chi^2$, smaller = better):
+only a per-cell rate reproduces (Pearson $\chi^2$, smaller = better):
 
 ```{r gof-table}
 gof <- read_if(file.path(COL, "barnyard_marginal_gof.csv"))
@@ -154,15 +216,16 @@ if (!is.null(gof)) {
 }
 ```
 
-The variance/mean is only ~1.1–1.2 (the mild mixture effect), the depth-mixed model fits
-($\chi^2 \approx 1$–6), and the single Poisson is rejected ($\chi^2$ up to ~230) *only* because of the
-count-2 cells. A formal, bootstrap-calibrated goodness-of-fit test agrees: the de-doubled direct-capture
+The variance/mean is only ~1.0–1.2 (the mild mixture effect), the depth-mixed model fits
+($\chi^2 \approx 2$–5), and the single Poisson is rejected ($\chi^2$ up to ~180) *only* because of the
+count-2 cells. A formal, bootstrap-calibrated goodness-of-fit test agrees: the cleaned direct-capture
 ambient is statistically indistinguishable from $\mathrm{Poisson}(a_g d_c)$ (details in
 [`doublet_overdispersion.html`](doublet_overdispersion.html)).
 
-**Conclusion.** Once doublets and depth variation are accounted for, the ground-truth ambient — in both
-chemistries — is Poisson. CLEANSER's variance/mean observation is real, but it does not call for an
-over-dispersed soup: the Poisson rate model $a_g d_c$ is the right null, and it is the null the method
+**Conclusion.** CLEANSER's over-dispersion was real, but it decomposes cleanly: **doublets** — mostly
+excluded by a properly-tightened GEX gate (0.99), the last handful GEX-invisible and cleaned on the gRNA
+side — plus **depth-mixing**, a Poisson with a per-cell rate. Neither calls for an over-dispersed soup.
+The Poisson rate model $a_g d_c$ is the right null in both chemistries, and it is the null the method
 below is built on.
 
 ---
@@ -220,6 +283,14 @@ ground-truth accuracy:
 
 ![Assignment accuracy on the barnyard ground truth (the standard per-cell "correct species" metric), averaged over the four barnyard samples. fishash+ (0.937) matches fishash (0.942), and both lead the published methods. Our fishash reproduction reproduces the published fishash number exactly, so the scales are directly comparable.](results/collaborator_writeup/barnyard_benchmark.png)
 
+(This benchmark uses the barnyard authors' original QC, including their 0.90 GEX gate, so our fishash
+reproduction lands exactly on the published number and the comparison is apples-to-apples; the tighter
+0.99 gate of §1 is for characterizing the *ambient distribution*, a separate question from assignment
+accuracy. For completeness: a bare ambient-proportion test of our own — the un-denoised special case —
+scores marginally higher on this particular per-cell metric (~0.955), but it over-rejects under the
+stricter per-guide precision metric used in the simulation below, which is why we build on fishash's
+denoised contingency core rather than the bare test.)
+
 The advantage appears as MOI rises and cells carry co-occurring guides. In simulation, fishash's recall
 falls off with MOI as self-masking bites, while fishash+ holds up — recovering ~10 percentage points of
 recall at MOI 5, at negligible cost to the false-discovery rate:
@@ -254,8 +325,8 @@ counts 0 and 1 essentially perfectly — but leaves a real excess at count 2 (�
 
 Is that residual over-dispersed contamination, or real signal hiding in the low counts? The barnyard
 answers it directly. On *provable* soup — the wrong-species guides — the same count-2 diagnostic sits
-exactly at the Poisson prediction (observed/expected ≈ 0.9), because provable soup contains no
-integrations to inflate it. So the Replogle excess is **not** contamination. It is signal.
+exactly at the **depth-mixed Poisson** prediction (observed/expected ≈ 0.9), because provable soup
+contains no integrations to inflate it. So the Replogle excess is **not** contamination. It is signal.
 
 We can confirm that independently, because Replogle is a CRISPR-interference screen: a functional guide
 **knocks down its own target gene**, a readout entirely separate from the counts. We measure each
@@ -351,10 +422,11 @@ This note is a self-contained synthesis; each result has a fully-computed backin
 | Global clean-gap cohort; knockdown dose-response across datasets | [`global_ambient_poisson.html`](global_ambient_poisson.html) |
 | Full method benchmarks (barnyard, simulations) | [`sceptre3_assignment_report.html`](sceptre3_assignment_report.html), [`simulation_framework_report.html`](simulation_framework_report.html) |
 
-**Reproducibility of this note's figures.** The barnyard figures are produced by
-`scripts/barnyard_poisson_figures.R` (Figs 1–2), `scripts/barnyard_marginal_fit.R` (the per-guide fit +
-goodness-of-fit table), `scripts/barnyard_benchmark_fishashplus.R` + `scripts/collab_benchmark_figs.R`
-(the benchmarks), `scripts/collab_ramac_fig.R` (the RAMAC fit), and
-`scripts/collab_dose_response_fig.R` (the dose-response); the cross-dataset dose-response and
-functional-fraction results come from the `global_ambient_poisson` pipeline. Render with
-`quarto render guide_assignment_collaborator_writeup.qmd`.
+**Reproducibility of this note's figures.** The barnyard §1 figures (CLEANSER Fig-3B reproduction, the
+log-scale mouse-GEX-fraction histogram, the 0.90-vs-0.99 variance/mean plot, and the residual-offender
+table) are produced by `scripts/barnyard_ambient_figures.R`; the per-guide depth-mixing fit +
+goodness-of-fit table (at the 0.99 gate) by `scripts/barnyard_marginal_fit.R`; the benchmarks by
+`scripts/barnyard_benchmark_fishashplus.R` + `scripts/collab_benchmark_figs.R`; the RAMAC fit by
+`scripts/collab_ramac_fig.R`; and the dose-response by `scripts/collab_dose_response_fig.R`. The
+cross-dataset dose-response and functional-fraction results come from the `global_ambient_poisson`
+pipeline. Render with `quarto render guide_assignment_collaborator_writeup.qmd`.
