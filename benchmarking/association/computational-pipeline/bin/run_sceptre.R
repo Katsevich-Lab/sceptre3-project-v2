@@ -70,7 +70,8 @@ cat("Setting analysis parameters...\n")
 scep <- set_analysis_parameters(
   sceptre_object = scep,
   discovery_pairs = discovery_pairs,
-  formula_object = formula_object
+  formula_object = formula_object,
+  resampling_mechanism = "permutations"   # match sceptre-pipeline; default is CRT for high-MOI -> not apples-to-apples
 )
 
 scep <- assign_grnas(

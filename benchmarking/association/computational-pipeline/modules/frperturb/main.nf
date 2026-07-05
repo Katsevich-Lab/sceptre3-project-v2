@@ -35,11 +35,13 @@ process FRPERTURB_COMPUTATIONAL {
   echo "Dataset directory: ${dataset_dir}"
   ls -l "${dataset_dir}" || true
 
-  # Fair benchmarking: control thread-level parallelism for Python/NumPy/BLAS
-  # export OMP_NUM_THREADS=${task.cpus}
-  # export OPENBLAS_NUM_THREADS=${task.cpus}
-  # export MKL_NUM_THREADS=${task.cpus}
-  # export NUMEXPR_NUM_THREADS=${task.cpus}
+  # Fair benchmarking: pin EVERY threading layer to 1 core so no method sneaks a
+  # second core via BLAS. Set BEFORE python loads numpy/BLAS. Verify via trace %cpu ~100.
+  export OMP_NUM_THREADS=1
+  export OPENBLAS_NUM_THREADS=1
+  export MKL_NUM_THREADS=1
+  export NUMEXPR_NUM_THREADS=1
+  export VECLIB_MAXIMUM_THREADS=1
 
   # Ensure writable temp directory (prevents issues on some cluster nodes)
   export TMPDIR="\$PWD/tmp"

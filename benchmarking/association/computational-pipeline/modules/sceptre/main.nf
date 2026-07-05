@@ -27,9 +27,13 @@ process SCEPTRE_COMPUTATIONAL {
   echo "dataset_dir: ${dataset_dir}"
   ls -l "${dataset_dir}" || true
 
-  # Fair benchmarking: disable thread-level parallelism, use process-level only
-  # This ensures fair comparison across methods
-  # export OMP_NUM_THREADS=1
+  # Fair benchmarking: pin EVERY threading layer to 1 core so no method sneaks a
+  # second core via BLAS. Set BEFORE Rscript loads BLAS. Verify via trace %cpu ~100.
+  export OMP_NUM_THREADS=1
+  export OPENBLAS_NUM_THREADS=1
+  export MKL_NUM_THREADS=1
+  export NUMEXPR_NUM_THREADS=1
+  export VECLIB_MAXIMUM_THREADS=1
 
   # R needs writable temp and (if any package tries) a user lib dir
   export TMPDIR="\$PWD/tmp";           mkdir -p "\$TMPDIR"
