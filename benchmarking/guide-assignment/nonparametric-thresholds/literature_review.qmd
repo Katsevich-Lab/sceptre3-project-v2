@@ -1,0 +1,601 @@
+---
+title: "Guide assignment as inference under a latent signal/noise confounder"
+subtitle: "One estimand, two strategies, and where our method fits"
+author: "SCEPTRE3 guide-assignment investigation"
+date: last-modified
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    theme: cosmo
+    df-print: kable
+    code-fold: true
+    embed-resources: true
+---
+
+## The one-paragraph version {.unnumbered}
+
+Every guide-assignment method answers the same question for each (guide $g$, cell $c$): **is the
+observed count $N_{g,c}$ larger than ambient contamination alone would produce?** Contamination has a
+**rank-1** rate $a_g d_c$ (guide ambient abundance × cell ambient exposure), and the obstacle is a
+**latent confounder**: each UMI is secretly *signal* or *noise*, and that label must be untangled from a
+matrix that pools the two. There are exactly **two strategies** for the confounder, and they sort the
+methods cleanly. **Model it** — the mixture models (CLEANSER, SCEPTRE, crispat) posit a latent
+signal/noise component per guide and integrate it out; this conditions on the confounder and so
+sidesteps Simpson's paradox, at the price of per-guide fitting. **Pool then correct it** — the
+contingency tests (geomux, fishash, ours) condition on the observed margins and test on a $2\times2$
+table; pooling reintroduces the confounder, which surfaces as two failure modes that must be patched.
+The $2\times2$ picture is the native object for the *second* strategy only. Deeper still, the two
+strategies turn out to be **soft-EM and hard-EM of one latent-variable model** (a rank-1 ambient rate +
+a latent-gated signal component) — fishash's Algorithm 1 *is* hard-EM — so the families are a single
+estimator differing only in four switches (hard-vs-soft assignment, parametric-vs-tail native,
+per-guide-vs-shared baseline, Poisson-vs-overdispersed ambient), and our contribution reduces to
+**completing that model's M-step**.
+
+::: {.callout-note}
+## Notation (one symbol, one meaning)
+
+| symbol | meaning |
+|---|---|
+| $N_{g,c}=S_{g,c}+Z_{g,c}$ | observed count = signal + noise (ambient) counts; margins $N_{g,:}$ (guide/row), $N_{:,c}$ (cell/col) |
+| $a_g,\;d_c$ | ambient **rank-1 factors** — guide ambient abundance, cell ambient exposure (depth); ambient mean $=a_gd_c$ |
+| $\hat a_g,\hat d_c,\;\hat Z_{g,c}=\hat a_g\hat d_c$ | their estimates and the estimated **noise counts** (this is fishash's $N^{\text{noise}}$) |
+| $X_{g,c}\in\{0,1\}$ | latent **signal indicator** ($=1$ iff $g$ truly integrated in $c$, i.e. $S_{g,c}>0$) — *the confounder* |
+| $\pi=\Pr(X_{g,c}=1)$ | signal **prevalence** (mixing weight) |
+| $\gamma$ | signal **boost** — log fold-change of native over ambient $=$ log-odds-ratio $=$ the interaction coefficient |
+| $U_{g,c}$ | ambient **dispersion** multiplier ($U\equiv1$: Poisson; $U\sim\mathrm{Gamma}$: NB) |
+| $\hat R_{g,c}$ | the $2\times2$ odds ratio |
+
+$\pi$ (how *often* a pair is signal) and $\gamma$ (how *large* the signal boost is) are distinct — a
+prevalence vs a magnitude.
+:::
+
+---
+
+## The estimand: one test, repeated {#sec-estimand}
+
+Write each observed count as signal plus noise,
+$$
+N_{g,c} \;=\; S_{g,c} \;+\; Z_{g,c},
+$$
+where $S_{g,c}$ counts UMIs from a **true integration** of guide $g$ in cell $c$ and $Z_{g,c}$ counts
+**ambient contamination** (soup, chimeras, index hopping). Assignment is the family of tests
+$$
+H_0^{(g,c)}: S_{g,c}=0
+\qquad\text{vs}\qquad
+H_1^{(g,c)}: S_{g,c}>0 .
+$$
+Under $H_0$, $N_{g,c}=Z_{g,c}$ is pure noise, so the test reduces to: **is $N_{g,c}$ surprisingly large
+for noise?** Everything below is a way to pin down "for noise."
+
+## The latent confounder and the rank-1 noise rate {#sec-confounder}
+
+The reason "for noise" is hard is a hidden variable. Every UMI is secretly *signal* (from a true
+integration) or *noise* (ambient); aggregating to the pair, let $X_{g,c}\in\{0,1\}$ indicate whether
+guide $g$ is truly integrated in cell $c$ (so $X_{g,c}=\mathbb{1}[S_{g,c}>0]$, and $H_0^{(g,c)}$ is
+$X_{g,c}=0$). We never observe $X$, yet it governs whether $N_{g,c}$ is boosted — a **latent
+confounder**.
+
+**The ambient generative model.** Index the UMIs; each carries a latent label, and a *noise* UMI draws
+its (guide, cell) independently — a floating contaminant's identity is unrelated to which droplet
+captures it:
+$$
+\Pr(G_u=g,\,C_u=c\mid \text{noise}) \;=\; \phi_g\,\psi_c,\qquad \textstyle\sum_g\phi_g=\sum_c\psi_c=1,
+$$
+with $\phi$ the ambient **guide profile** and $\psi$ the ambient **cell profile**. Taking the number of
+noise UMIs Poisson$(n_0)$, the counts thin into independent Poissons,
+$$
+Z_{g,c}\;\overset{\text{ind}}{\sim}\;\mathrm{Poisson}(a_g d_c),\qquad a_g:=n_0\phi_g,\quad d_c:=\psi_c,
+$$
+so $\mathbb{E}[Z_{g,c}]=a_g d_c$ is **rank-1** (the split of $n_0$ between $a$ and $d$ is a scale gauge,
+fixed below by $\sum_g a_g=1$). The **signal** stratum is the opposite: $\Pr(G_u{=}g,C_u{=}c\mid\text{signal})$
+puts mass only on truly-integrated pairs, so it is rank-1-*violating*. This has a clean contingency
+reading: **a table is pure ambient iff every $2\times2$ odds ratio equals 1** (independence), and signal
+is exactly a positive $(g,c)$ interaction on top of that independence baseline — the fact Propositions 1–2
+below turn into the two method families.
+
+So **detecting signal is detecting a departure from the rank-1 noise rate**, and the whole difficulty is
+that $a_g,d_c$ must be estimated from data pooling both strata with $X$ unobserved — ignore $X$ and the
+(rank-1-violating) signal leaks into the noise-rate estimate. Every method is a way to (i) estimate
+$a_g d_c$ despite $X$ and (ii) test $N_{g,c}$ against it; they divide by **how they treat $X$.**
+
+---
+
+## A generative model for the counts {#sec-genmodel}
+
+The pieces assemble into one clean generative model. Under "ambient molecules + native molecules, both
+captured" — and because the sum of independent Poissons is Poisson — the observed count is
+$$
+N_{g,c}\mid X_{g,c}\ \sim\ \mathrm{Poisson}\!\Big(\underbrace{a_g d_c}_{\text{ambient}}+X_{g,c}\underbrace{\mu_g s_c}_{\text{signal}}\Big),\qquad X_{g,c}\sim\mathrm{Bernoulli}(\pi_g),
+$$
+i.e. $N_{g,c}=Z_{g,c}+X_{g,c}W_{g,c}$ with $Z_{g,c}\sim\mathrm{Poisson}(a_gd_c)$ (ambient) and
+$W_{g,c}\sim\mathrm{Poisson}(\mu_gs_c)$ (native), independent. New symbols: $\mu_g$ = guide $g$'s native
+expression/capture strength, $s_c$ = cell $c$'s **native-capture depth**, $\pi_g$ = prevalence of $g$
+($\propto$ MOI × representation).
+
+Four commitments, each now verified rather than assumed:
+
+1. **Additive ambient + signal** — the count is soup molecules *plus* the cell's own transcripts, a sum
+   $Z+XW$, not ambient-times-a-boost.
+2. **Ambient is Poisson conditional on $d_c$** — no Gamma on the ambient; the shared soup has no per-cell
+   rate heterogeneity beyond the exposure. *Empirically confirmed:* on the de-doubleted barnyard ambient a
+   bootstrap-calibrated GOF is indistinguishable from $\mathrm{Poisson}(a_gd_c)$ ($\phi\approx0.99$;
+   `doublet_overdispersion.html`).
+3. **Two distinct per-cell depths, $d_c\neq s_c$** — the load-bearing piece. A cell's counts are mostly
+   its own true guide, so $N_{:,c}\approx\mu_{g^\*}s_c\gg d_c$: **library size $\approx s_c$, not $d_c$**.
+   The "library size ≠ ambient depth (~50×)" finding is a *theorem* of this model, not a surprise.
+4. **Overdispersion, if any, lives in the signal** — native counts vary cell-to-cell (copy number,
+   expression), so $W$ may be NB; the ambient stays Poisson. This is exactly CLEANSER's Poisson-ambient /
+   NB-native split, derived rather than assumed. (Doublets are a *separate* contaminant — a co-encapsulated
+   cell's $s_{c'}$-scaled foreign signal — removed by QC.)
+
+Everything downstream is inference on this model. The null $H_0^{(g,c)}:X_{g,c}=0$ is
+$N_{g,c}\sim\mathrm{Poisson}(a_gd_c)$; assignment tests the latent $X_{g,c}$; and the correct per-cell
+exposure is $\hat d_c$ (ambient), **not** $N_{:,c}\approx s_c$ — which is *why* using library size
+self-masks. In the signal-dominant limit $\mu_gs_c\gg a_gd_c$ the additive mean approximates the
+multiplicative $\log\mathbb E[N]=\log a_g+\log d_c+\gamma X$ with $\gamma\approx\log(\mu_gs_c/a_gd_c)$ — the
+odds ratio $e^\gamma$ that Fisher's exact test targets — so the contingency machinery below is a
+large-separation approximation to this generative model. **The full parametric model — Poisson ambient
+(always on) + a gated NB signal, its convolution likelihood, and the EM that fits it — is written out in
+[`canonical_model.html`](canonical_model.html).**
+
+---
+
+## Two strategies for the confounder {#sec-strategies}
+
+### Strategy 1 — model $X$ (mixtures, and thresholds) {#sec-model}
+
+Introduce the signal/noise indicator into the model as a latent **component membership** and integrate
+it out. For a guide $g$, fit a two-component model to its counts across cells — ambient
+$f_0(\,\cdot\,;a_g d_c)=\mathrm{Poisson}(a_g d_c)$ (the noise stratum) and native $f_1$ (the signal
+stratum, elevated) — and assign by the posterior responsibility
+$$
+r_{g,c}\;=\;\Pr(X_{g,c}=1\mid N_{g,c})\;=\;\frac{\pi\,f_1(N_{g,c})}{\pi\,f_1(N_{g,c})+(1-\pi)\,f_0(N_{g,c};a_gd_c)} .
+$$
+Because $a_g$ is estimated from the ambient component — guide $g$'s **own low mode**, i.e. the cells the
+fit gives $r_{g,c}\approx0$ — it is signal-free by construction. This is the textbook handling of a latent
+confounder: **model it, don't pool over it.** (The full soft-EM that alternates $r_{g,c}$ with the
+weighted rate fit is derived in §One model; the mixtures are its per-guide instance.)
+
+- **crispat (Poisson–Gauss):** Poisson (ambient) + Gaussian (native) on $\log_2$ non-zero counts, per
+  guide. No cell factor — $d_c\equiv 1$.
+- **SCEPTRE:** per-guide Poisson-GLM mixture $\log\mu_j=\gamma X_j+o_j$, $X_j\sim\mathrm{Bern}(\pi)$; the
+  offset $o_j$ carries a per-cell exposure from covariates (incl. library size) — so $d_c$ is modeled,
+  but from a **raw, signal-contaminated** covariate. (Note this is already the unified notation: $\gamma$
+  boost, $\pi$ prevalence, $X$ indicator.)
+- **CLEANSER:** NB mixture with guide- **and** cell-specific normalization; the cell term $L_i$ is built
+  from the count of $\le 2$-UMI guides — a **signal-free** $d_c$. Alone among the mixtures it
+  decontaminates the cell exposure.
+- **Otsu / smoothed-valley:** the degenerate case — a hard 1-D split of guide $g$'s distribution at the
+  between-mode valley. Modeling $X$ with a threshold instead of a likelihood; no $d_c$.
+
+**What this strategy costs.** Fitting is **per guide** in the sense that matters here — the
+**signal/noise mode separation** is learned from each guide's own counts, so each guide re-estimates its
+own native-vs-ambient split. That per-guide split is the source of its characteristic vulnerability,
+**mode separability**: when the signal and noise modes overlap (weak signal, low counts) the latent split
+is uncertain and the posterior miscalibrates. The cell factor $d_c$, by contrast, is still borrowed
+*across* guides wherever a shared estimate is used: crispat and Otsu ignore it entirely; SCEPTRE
+reintroduces it raw (signal-contaminated) via a covariate offset; and CLEANSER borrows it across guides
+through $L$ — a sum over guides of the $\le2$-UMI entries, i.e. a genuine cross-guide statistic — so
+CLEANSER *does* pool the cell factor, but with a fixed $\le2$ cutoff computed once as a plug-in. That
+plug-in is a restricted, frozen estimate (less efficient, and biased low by truncating the ambient tail
+$\ge3$), not the joint iterated rank-1 MLE that pools all currently-noise entries. Crucially, this
+strategy does **not** suffer Simpson's paradox — modeling $X$ *is* the conditioning that prevents it —
+nor self-masking (§ below): its cell exposure is **signal-free** (crispat forms none; CLEANSER forms a
+signal-free one via the $\le2$ cutoff), so the focal cell's own signal never inflates the exposure.
+
+### Strategy 2 — pool, then correct (contingency tests) {#sec-pool}
+
+Don't introduce $X$; instead condition on the observed **margins** and test $N_{g,c}$ against the rank-1
+independence fit with a one-sided Fisher/hypergeometric test. **Here the $2\times2$ table is the native
+object, not an analogy.** Its payoff is that the shared margins estimate a joint rank-1 rate *for free*:
+every cell informs $a_g\propto N_{g,:}$, every guide informs $d_c\propto N_{:,c}$, giving $G+C$ parameters
+for $G\times C$ data-starved entries. Its price is that **pooling signal+noise into the margins
+reintroduces exactly the confounder the mixtures modeled away** — and that surfaces as two failure modes.
+
+- **geomux / our ambient test:** the raw contingency test — rank-1 fit on the full (pooled) matrix, no
+  correction. Exposed to both failure modes below.
+- **fishash:** the contingency test with the guide-side correction (§Simpson).
+- **depth_fix (ours):** fishash plus the cell-side correction (§self-masking).
+
+---
+
+## Inside Strategy 2: the $2\times2$, and its two failure modes {#sec-2x2}
+
+For the pair $(g,c)$ the table (fishash Eq 1–2), written in the $S+Z$ decomposition, is
+
+|                    | cell $c$                          | other cells $-c$                       |
+|--------------------|-----------------------------------|----------------------------------------|
+| **guide $g$**      | $N_{g,c}=Z_{g,c}$ *(pure noise under $H_0$)* | $N_{g,-c}=Z_{g,-c}+\,S_{g,-c}$ |
+| **other guides**   | $N_{-g,c}=Z_{-g,c}+\,S_{-g,c}$    | $N_{-g,-c}=Z_{-g,-c}+\,S_{-g,-c}$      |
+
+with odds ratio $\hat R_{g,c}=\dfrac{N_{g,c}N_{-g,-c}}{N_{-g,c}N_{g,-c}}$, tested one-sided against
+$\hat R\le1$. Under $H_0$ the tested cell $N_{g,c}$ is clean noise; **signal leaks into the other three
+cells**, and which one you fail to clean determines the failure mode.
+
+### Failure mode A — Simpson's paradox → false positives (*precision*) {#sec-simpson}
+
+The dominant leak is into $N_{-g,-c}$: whatever guides are abundant as signal dump their large counts
+into "everything else, elsewhere," inflating the numerator and making a *mere-noise* $N_{g,c}$ look
+enriched. fishash's Prop 1 makes it exact — even with $g$ truly absent from $c$ and $g,c$
+noise-independent, $\hat R_{g,c}>1$ can hold, a false positive with **no signal in the tested cell at
+all**. This is Simpson's paradox: pooling over the latent $X$ flips the association. It is *specific to
+Strategy 2* — it exists only because the margins pooled signal and noise.
+
+The paper's cartoon (Fig 2a): in cell $c$, $g$ has 1 (noise), others 2 → ratio $0.5$; in other cells,
+$g$ has $9$ ($1$ signal $+8$ noise), others $31$ ($23$ signal $+8$ noise) → ratio $0.29$; so
+$\hat R\approx1.7>1$, spurious. Recompute the background on **noise only** ($8/8=1$) and $\hat
+R^\star=0.5<1$, corrected. fishash estimates those noise-only counts by **rank-1 Poisson completion of
+the signal-masked matrix** (Eq 8–9, iterated) — i.e. it re-estimates the noise stratum the pooling
+discarded. Anti-conservative, worst in dense/low-SNR regimes → a **precision** problem.
+
+### Failure mode B — self-masking → power loss (*high MOI*) {#sec-self}
+
+The leak into $N_{-g,c}$ is the mirror image. Under the null the hypergeometric expected count is
+$$
+\mathbb{E}[N_{g,c}\mid H_0]=\frac{(\text{draws})\cdot(\text{success})}{\text{pop}}=\frac{N_{:,c}\,N_{g,:}}{N_{:,:}},
+$$
+using the raw draws $N_{:,c}$. But if cell $c$ truly carries another guide $g_0$ with signal
+$S_{g_0,c}$, then $N_{:,c}=\hat Z_{:,c}+S_{g_0,c}+\dots$ is inflated by that signal, scaling the expected
+ambient for the *tested* $g$ up by $\approx N_{:,c}/\hat Z_{:,c}$ — so the observed $N_{g,c}$ looks
+*below* expectation and is missed. Concretely, a cell hit by $g_0(=100)$ and $g_2(=30)$, testing $g_2$:
+raw draws $130\Rightarrow\mathbb E=34.7\Rightarrow p=0.996$ (missed); noise draws $\hat Z_{:,c}\approx35
+\Rightarrow\mathbb E=25.5\Rightarrow p=0.006$ (called). Harmless at low MOI, it bites at **high MOI**,
+where several real guides in one cell mutually mask — fishash's documented weak spot. Conservative → a
+**recall** problem. Again *specific to Strategy 2*: it is the shared, signal-contaminated exposure that
+does the masking, and the fix is simply to feed the M-step's $\hat d_c$ (noise exposure) as the draws
+instead of the raw $N_{:,c}$.
+
+### The tool, and who applies it where {#sec-tool}
+
+Both corrections need the same object — an estimate of the **noise-only** counts $\hat Z_{g,c}=\hat a_g\hat d_c$
+— and fishash's masked rank-1 completion supplies it. The mask (assigned entries removed) is itself a
+hard estimate of $X$; so **fishash is doing, within the contingency frame, a coarse version of what the
+mixtures do natively** — estimate the signal/noise split and hold signal out of the noise rate. The
+decisive detail: that one fit yields *both* a denoised guide factor $\hat a_g$ **and** a denoised cell
+factor $\hat d_c$, but fishash uses $\hat a_g$ (fixing A) and plugs the **raw** $N_{:,c}$ back for the
+exposure (leaving B). fishash's corrected p-value (Eq 7, its $N^{\text{noise}}$ written as our $\hat Z$)
+shows it — the draws stay raw:
+
+$$
+P_{g,c}=1-F_{\text{hyper}}\!\Big(N_{g,c}-1;\;
+\underbrace{\hat Z_{:,-c}+N_{:,c}}_{\text{pop}},\;
+\underbrace{\hat Z_{g,-c}+N_{g,c}}_{\text{success (guide, denoised)}},\;
+\underbrace{N_{:,c}}_{\text{draws (cell, RAW)}}\Big).
+$$
+
+depth_fix simply uses the $\hat d_c$ fishash already computed. One line in `contingency_method.R`:
+
+```r
+K <- nr[i] - bgc + y                              # guide factor: denoised in BOTH modes (fixes A)
+if (cell_margin == "ambient") {                   # depth_fix (OURS): also fix B
+  draws <- nc[j] - bgc + y                         #   cell exposure = DENOISED ambient depth (hat d_c)
+  pop   <- Tn - bgc + y
+} else {                                          # cell_margin == "observed"  ==  fishash exactly
+  draws <- obs_col[j]                              #   cell exposure = RAW library size N_{:,c}
+  pop   <- Tn - nc[j] + obs_col[j]
+}
+logp <- phyper(y - 1, K, pop - K, draws, lower.tail = FALSE, log.p = TRUE)
+```
+
+`cell_margin="observed"` reproduces fishash bit-for-bit; the whole contribution is which quantity
+supplies `draws`.
+
+---
+
+## One model, two EM variants {#sec-em}
+
+The two strategies are not two models — they are **soft-EM and hard-EM of the *same* latent-variable
+model**. Seeing this collapses the landscape to one object with a few estimation switches, and turns the
+"convergence" of the two families into a mechanism rather than a coincidence.
+
+### The single model {#sec-onemodel}
+
+Take the latent signal indicator $X_{g,c}$ from §confounder, and add a latent rate multiplier $U_{g,c}>0$
+so the model is honest about dispersion (§below):
+
+$$
+N_{g,c}\mid X_{g,c},U_{g,c}\;\sim\;(1-X_{g,c})\,\underbrace{\mathrm{Poisson}(a_g d_c\,U_{g,c})}_{\text{ambient (rank-1 mean)}}\;+\;X_{g,c}\,\underbrace{\text{[native]}}_{\text{boosted}},\qquad X_{g,c}\sim\mathrm{Bern}(\pi).
+$$
+
+The invariant is the **rank-1 ambient mean** $a_gd_c$; the multiplier $U_{g,c}$ is the **dispersion
+knob**. With $U\equiv1$ the ambient is Poisson (equidispersed). With $U_{g,c}\sim\mathrm{Gamma}(\nu,\nu)$
+(mean 1, variance $1/\nu$), marginalizing $U$ gives, for an $X{=}0$ entry,
+$$
+N_{g,c}\sim\mathrm{NB}\ \text{ with }\ \mathbb E[N_{g,c}]=a_gd_c,\quad \mathrm{Var}[N_{g,c}]=a_gd_c\Big(1+\tfrac{a_gd_c}{\nu}\Big)
+$$
+— the **same rank-1 mean**, dispersion $1/\nu$ ($\mathrm{NB}=\text{Poisson–Gamma}$). So overdispersion is
+literally *another latent variable*, and the model subsumes **CLEANSER's chemistry-dependent choice**
+(Poisson ambient for CROP-seq, NB for direct-capture) as a *setting of $U$*, not a different model. On the
+log scale the ambient mean is a **rank-1 baseline plus a latent guide×cell interaction**,
+$$
+\log\mathbb{E}[N_{g,c}\mid X_{g,c}]=\underbrace{\log a_g+\log d_c}_{\text{rank-1 ambient (independence)}}+\underbrace{\gamma\,X_{g,c}}_{\text{signal}},
+$$
+so **assignment = a test for the interaction $\gamma>0$ above the independence baseline.** Two facts wire
+this exactly to the contingency machinery.
+
+::: {.callout-note appearance="simple"}
+**Proposition 1 (the rank-1 baseline MLE is the margin product).** Under the all-noise model
+$N_{g,c}\overset{\text{ind}}\sim\mathrm{Poisson}(a_gd_c)$, the MLE fitted values are
+$\hat a_g\hat d_c = N_{g,:}N_{:,c}/N_{:,:}$ — the contingency independence expectation.
+
+*Proof.* $\ell(a,d)=\sum_{g,c}\!\big[N_{g,c}\log(a_gd_c)-a_gd_c\big]$. Then
+$\partial_{a_g}\ell=\sum_c(N_{g,c}/a_g-d_c)=0\Rightarrow a_g\!\sum_c d_c=N_{g,:}$, and symmetrically
+$d_c\!\sum_g a_g=N_{:,c}$. Writing $A=\sum_g a_g,\ D=\sum_c d_c$ gives $\hat a_g=N_{g,:}/D$,
+$\hat d_c=N_{:,c}/A$; summing either stationarity condition gives $AD=N_{:,:}$, hence
+$\hat a_g\hat d_c=N_{g,:}N_{:,c}/N_{:,:}$. $\square$
+:::
+
+::: {.callout-note appearance="simple"}
+**Proposition 2 (the one-sided Fisher test is the conditional test of $\gamma$).** Collapse to the
+$2\times2$ at $(g,c)$ (rows $g/\lnot g$, cols $c/\lnot c$; margins $N_{g,:},N_{:,c},N_{:,:}$). Under
+independent Poisson cell counts with log-linear means carrying odds ratio $\theta:=e^{\gamma}$, the law of
+$N_{g,c}$ **conditional on the margins** is Fisher's noncentral hypergeometric with parameter $\theta$.
+Since $\gamma=0$ ($\theta=1$) is exactly the rank-1/independence case (Prop 1), testing $H_0:\gamma\le0$
+is the upper tail of the central hypergeometric — fishash's $P_{g,c}=1-F_{\text{hyper}}(N_{g,c}-1;\,N_{:,:},N_{g,:},N_{:,c})$.
+
+*Proof.* The four cell counts are independent Poisson, so their joint pmf factors as
+$\big[\text{function of the margins, carrying }(\lambda,\rho_i,\sigma_j)\big]\times\theta^{N_{g,c}}/(N_{g,c}!\,N_{g,-c}!\,N_{-g,c}!\,N_{-g,-c}!)$.
+The margins are complete-sufficient for the nuisance $(\lambda,\rho_i,\sigma_j)$, so conditioning on them
+cancels those factors, leaving $\Pr(N_{g,c}=k\mid\text{margins})\propto\binom{N_{g,:}}{k}\binom{N_{:,:}-N_{g,:}}{N_{:,c}-k}\theta^{k}$
+— noncentral hypergeometric$(\theta)$, central at $\theta=1$ (Agresti, *Categorical Data Analysis*). $\square$
+:::
+
+So the mixture and the contingency test are the **latent-variable fit** (integrate $X$) and the
+**conditional test** (condition out the nuisance baseline) of the *same* interaction $\gamma$. SCEPTRE
+writes the model verbatim: $\log\mu_j=\gamma X_j+o_j$ with offset $o_j=\log a_g+\log d_c$.
+
+::: {.callout-note appearance="simple"}
+**Attribution.** Propositions 1–2 and the hard-EM unification below (margins = rank-1 Poisson MLE; Fisher
+exact = conditional test of the interaction; completion = M-step; test = conditional inference — hence
+"one model") are **this review's synthesis** via standard categorical-data-analysis theory (Agresti); the
+fishash paper does *not* state these connections. fishash grounds its contingency test in a **Multinomial**
+model (its §2.1, $N\sim\mathrm{Multinomial}(n_{\text{umi}},\pi)$) and invokes **Poisson explicitly only**
+for (i) the rank-1 noise-count completion (its Appendix B.2) and (ii) its CellBender-style simulator (its
+§2.4). The propositions themselves are correct and standard — the multinomial and the log-linear/Poisson
+formulations coincide under conditioning, which is exactly the equivalence used here to unify fishash's
+pieces.
+:::
+
+### fishash's Algorithm 1 is hard-EM {#sec-hardem}
+
+The bridge is exact. The **complete-data log-likelihood** (Poisson ambient, $U\equiv1$; native density
+$f_1$; prevalence $\pi$) is
+$$
+\ell_{\text{c}}(a,d,\pi)=\sum_{g,c}(1-X_{g,c})\big[\log(1-\pi)+N_{g,c}\log(a_gd_c)-a_gd_c\big]
++X_{g,c}\big[\log\pi+\log f_1(N_{g,c})\big].
+$$
+
+**E-step** — replace $X_{g,c}$ by its responsibility $r_{g,c}=\Pr(X_{g,c}{=}1\mid N)$ (§Strategy 1).
+**M-step** — the ambient block of $\mathbb E[\ell_{\text{c}}]$ is a $(1-r)$-weighted copy of Prop 1's
+likelihood, so the same stationarity argument gives **weighted margins**,
+$$
+\hat a_g=\frac{\sum_c (1-r_{g,c})N_{g,c}}{\sum_c (1-r_{g,c})\hat d_c},\qquad
+\hat d_c=\frac{\sum_g (1-r_{g,c})N_{g,c}}{\sum_g (1-r_{g,c})\hat a_g},\qquad
+\hat\pi=\tfrac1{GC}\textstyle\sum_{g,c}r_{g,c}.
+$$
+That is *soft*-EM — CLEANSER and SCEPTRE run exactly this (Bayes/MCMC or EM), restricted per guide.
+
+::: {.callout-note appearance="simple"}
+**Proposition 3 (Algorithm 1 is hard-EM).** Take a hard E-step $\hat X_{g,c}=\mathbb1[p_{g,c}\le\tau]$
+(mask $\Omega_{g,c}=1-\hat X_{g,c}$) and a non-parametric native (any excess above the ambient tail). Then
+the M-step maximizing the **masked** ambient log-likelihood
+$\sum_{g,c}\Omega_{g,c}\big[N_{g,c}\log(a_gd_c)-a_gd_c\big]$ has the alternating solution
+$$
+\hat d_c=\frac{\sum_g\Omega_{g,c}N_{g,c}}{\sum_g\Omega_{g,c}\hat a_g},\qquad
+\hat a_g=\frac{\sum_c\Omega_{g,c}N_{g,c}}{\sum_c\Omega_{g,c}\hat d_c}
+$$
+— **identically fishash's Eq 8–9 rank-1 Poisson completion** (its masked objective, and its stated update
+$\kappa_c=\sum_g\Omega_{g,c}N_{g,c}\big/\sum_g\Omega_{g,c}\gamma_g$ under $a\!\leftrightarrow\!\gamma,\,d\!\leftrightarrow\!\kappa$).
+The score step — the hypergeometric tail against $\hat a\hat d$ (Eq 7) — is the next E-step. So Algorithm 1's
+loop *(test → assign → mask → refit)* is *(E → M)* iterated with hard weights $\Omega\in\{0,1\}$ replacing
+soft $r\in[0,1]$. $\square$
+:::
+
+The loop and its soft counterpart, side by side:
+
+| EM step | mixture (CLEANSER / SCEPTRE), soft | fishash Algorithm 1, hard |
+|---|---|---|
+| **E-step** (infer $X$) | responsibility $r_{g,c}\in[0,1]$ | $\hat X_{g,c}=\mathbb1[p_{g,c}\le\tau]$ via GS-FDR (Eq 10) |
+| **M-step** (fit ambient on $X{=}0$) | $(1-r)$-weighted margins (above) | $\Omega$-masked margins = Eq 8–9 completion |
+| **score** (next responsibilities) | native/ambient density ratio | hypergeometric tail vs $\hat a\hat d$ (Eq 7) |
+
+The two families then differ in only **four switches**: E-step
+**soft vs hard**; native component **parametric** (NB / boosted-Poisson) **vs non-parametric** ("just
+exceeds the ambient tail"); baseline fit **per-guide vs shared** across all guides/cells via the margins;
+and ambient dispersion **Poisson vs NB** (the $U$ knob).
+
+These switches are **not independent** — and the coupling is the point. The conditional/exact route
+(Fisher, hypergeometric) is clean *only* under an equidispersed Poisson ambient: its null literally *is*
+the hypergeometric. So a contingency test can go NB only through an approximate NB/beta-binomial
+conditional tail — the construction we built and rejected as not robustly estimable on real data
+(§Open questions). A mixture, carrying an explicit ambient density, swaps Poisson→NB for free. **That is
+why CLEANSER (a mixture) uses an NB ambient for direct-capture while fishash and depth_fix (conditional
+tests) stay Poisson** — the dispersion knob is tied to the inference style, not a free choice. The
+empirical fact that real cell-line barnyard ambient is ~Poisson (§Empirical fingerprints) is what makes
+the conditional route's forced $U\equiv1$ acceptable rather than a liability. The qualification is that
+direct-capture's *marginal* per-guide dispersion is not Poisson (var/mean ~10); but this is
+**doublet-driven** — the top 1% of cells by wrong-species load produce ~98.5% of the excess variance, and
+a gRNA-channel purity cut collapses it, and a bootstrap-calibrated goodness-of-fit then finds the
+de-doubleted ambient indistinguishable from $\mathrm{Poisson}(a_gd_c)$ (Pearson $\phi\approx0.99$, null
+band $[0.96,1.02]$; the raw ambient trips the same test at $\phi=2.8$, CROP-seq passes). So CLEANSER's
+direct-capture NB is largely absorbing **residual doublets**, not genuine soup overdispersion, and once
+the ambient is de-doubleted the conditional-Poisson (hypergeometric) null is correct
+(code-backed reproduction: `doublet_overdispersion.html`).
+
+### Three consequences {#sec-consequences}
+
+1. **geomux and the bare ambient test are EM stopped at iteration 0.** At initialization nothing is
+   assigned, $\Omega\equiv1$, so the M-step update collapses to Prop 1 — the fit is the raw margins
+   $\hat a_g\hat d_c=N_{g,:}N_{:,c}/N_{:,:}$ — and the score is the *central* hypergeometric against it,
+   i.e. plain Fisher. With $n_{\text{iter}}=1$ the E-step never runs, so signal is never separated from the
+   baseline fit: **Simpson's paradox is EM halted before its first E-step.**
+2. **The two decontaminations are a single thing — the M-step, done fully.** The M-step (Prop 3) fits
+   *both* $a_g$ and $d_c$ on the $X{=}0$ stratum, yielding $\hat Z_{g,c}=\hat a_g\hat d_c$. fishash uses
+   $\hat a_g$ for the guide/success margin but feeds the **raw** $N_{:,c}$ as the cell draws — a
+   **half-completed M-step**. depth_fix instead feeds the M-step's own noise exposure,
+   $\hat Z_{:,c}-\hat Z_{g,c}+N_{g,c}$ ($\propto\hat d_c$), as the draws; CLEANSER's $L$ is that same
+   $d_c$-on-noise in the soft-EM world. "Decontaminate the cell margin" is *finishing the M-step*, and the
+   guide-side/cell-side symmetry is just its two coordinates $(\hat a_g,\hat d_c)$.
+3. **The convergence is now mechanistic.** Hard- and soft-EM of one model must agree as the modes separate
+   (the hard and soft E-steps coincide when signal and noise don't overlap) and can differ only in the
+   overlap regime — exactly where the empirics show the mixtures' separability wobble and the contingency
+   tests' cleaner behavior. Mixtures and contingency tests are **the same estimator at high separation**;
+   the family choice is a bias/robustness trade in the hard regime, not a difference of model.
+
+### The honest caveat {#sec-emcaveat}
+
+This is an identity at the **model + EM** level, not an algebraic identity of the p-values. Two honest
+gaps. First, fishash's hard E-step is an **FDR-controlled classification** $\hat X=\mathbb1[p\le\tau]$, a
+deliberately conservative variant of the MAP label $\mathbb1[r_{g,c}>\tfrac12]$ that textbook
+classification-EM would use — same skeleton, a stricter labelling rule (which is *why* it controls FDR).
+Second, the Fisher $2\times2$ for $(g,c)$ tests a single 1-df contrast of the interaction field,
+conditioning locally; the mixture models the *global* latent field $X$ with a shared boost $\gamma$ and a
+Bernoulli prior — so it borrows strength on the signal side that the per-pair exact test does not. Same model, same EM skeleton;
+different inference at the leaves. That residual difference is the real, intrinsic trade: mixtures buy
+robustness to Simpson/self-masking with per-guide fitting (and exposure to mode misspecification);
+contingency tests buy shared rank-1 borrowing at the price of pooling artifacts that the EM iterations
+must patch. **depth_fix is the fully-patched contingency corner** — every EM step run, both M-step
+coordinates decontaminated.
+
+## The map {#sec-map}
+
+Reading each method by the fair, strategy-neutral axes — *how does it estimate the guide factor $a_g$ and
+the cell exposure $d_c$, and is each estimate signal-free?* — and its characteristic vulnerability:
+
+| Method | $X$ strategy | guide factor $a_g$ | cell exposure $d_c$ | characteristic vulnerability |
+|---|---|---|---|---|
+| Fixed threshold | none | global constant | none | everything |
+| Otsu / valley | model (1-D split) | own low mode (signal-free) | none | no cell adaptation |
+| crispat (Poisson–Gauss) | model (mixture) | own low mode (signal-free) | none | no cell adaptation; separability |
+| SCEPTRE | model (mixture) | own low mode (signal-free) | raw covariate offset | separability; raw exposure |
+| CLEANSER | model (mixture) | own low mode (signal-free) | **signal-free ($L$, $\le2$)** | separability; per-guide |
+| geomux | pool (uncorrected) | pooled margin (contaminated) | pooled margin (contaminated) | **Simpson + self-masking** |
+| our ambient test | pool (uncorrected) | pooled margin (contaminated) | pooled margin (contaminated) | **Simpson + self-masking** |
+| **fishash** | pool + correct | **noise-only $\hat a_g$ (imputed)** | raw library $N_{:,c}$ | **self-masking (high MOI)** |
+| **depth_fix (ours)** | pool + correct | **noise-only $\hat a_g$ (imputed)** | **ambient depth $\hat d_c$ (imputed)** | — |
+
+Two things the table makes honest: the mixtures' guide factor is signal-free *by construction* (not by
+"cleaning a $2\times2$ cell" — they have no table); and the only decontaminated-cell-exposure methods are
+CLEANSER (soft-EM, model side) and depth_fix (hard-EM, pool side) — the same M-step cell coordinate
+$d_c$ (§One model, two EM variants), reached from the two families.
+
+## The cell factor, quantitatively: one estimator, three masks {#sec-masks}
+
+The map is qualitative ("is $d_c$ signal-free?"). Quantitatively, fishash, CLEANSER, and depth_fix
+estimate the cell's ambient exposure by the **same formula** — a masked column-sum of counts,
+$$
+\hat A_c=\sum_g w_{g,c}\,N_{g,c},\qquad \hat d_c\propto \hat A_c,
+$$
+differing *only in the mask* $w_{g,c}$:
+
+| method | mask $w_{g,c}$ | includes |
+|---|---|---|
+| fishash (draws $=N_{:,c}$) | $w\equiv1$ — none | ambient **+ signal** |
+| CLEANSER ($L_i$) | $w=\mathbb1[N_{g,c}\le2]$ — fixed threshold | ambient $\le2$ only |
+| depth_fix | $w=\Omega_{g,c}$ — adaptive (unassigned) | all ambient, no signal |
+
+So the two published methods are the **crude endpoints of one estimator** — no mask vs a frozen
+hard-threshold mask — and depth_fix is the adaptive mask between them. Their biases point **opposite ways**:
+$$
+\underbrace{\hat A_c^{\text{CLEANSER}}}_{\text{bias }-\sum_g Z_{g,c}\mathbb1[Z_{g,c}\ge3]}
+\ \le\ \underbrace{\hat A_c^{\text{truth}}=\textstyle\sum_g Z_{g,c}}_{\text{depth\_fix}}\ \le\
+\underbrace{\hat A_c^{\text{fishash}}}_{\text{bias }+\sum_g S_{g,c}} .
+$$
+fishash over-counts by the cell's **signal** $\sum_g S_{g,c}$ (large; scales with MOI/expression);
+CLEANSER under-counts by the truncated **ambient tail** $\sum_g Z_{g,c}\mathbb1[Z_{g,c}\ge3]$ (scales with
+ambient load). *Numerical illustration* — a cell with one true guide at $N=100$ and ambient $20$ ($=15$
+in $\le2$-count guides $+\,5$ in the $\ge3$ tail): CLEANSER $=15\le$ truth $=20\le$ fishash $=120$.
+
+**A testable crossover (hypothesis).** Because the two biases point opposite ways and scale with
+different quantities, the cell-factor estimators of fishash and CLEANSER should **cross**:
+
+- **high MOI** (large co-occurring signal): fishash's $+\sum S$ bias explodes → inflated depth →
+  co-occurring guides self-masked → **CLEANSER's signal-free $L_i$ should win** (it is exactly the fix for
+  fishash's high-MOI weakness);
+- **high-ambient, low MOI** (ambient runs 3–5, little signal): fishash's signal bias $\approx0$ while
+  CLEANSER truncates the real tail → under-counts → over-calls → **fishash should win**.
+
+depth_fix dominates both — it removes signal *and* keeps the ambient tail. This is directly runnable: on
+the barnyard's provably-ambient (wrong-species) column, compare $\sum_g N_{g,c}$, $\sum_{N\le2}N_{g,c}$,
+and $\sum_g\Omega_{g,c}N_{g,c}$ against the true ambient sum, stratified by MOI and ambient load.
+
+The same masked-sum reading covers *both* rank-1 factors and makes fishash's asymmetry legible — it masks
+the guide factor but leaves the cell factor unmasked:
+
+| method | guide factor $a_g$ (mask over cells) | cell factor $d_c$ (mask over guides) |
+|---|---|---|
+| geomux / ambient | none | none |
+| **fishash** | adaptive $\Omega$ | **none** ← the gap depth_fix closes |
+| **CLEANSER** | per-guide low-mode $\approx\mathbb1[N\le\text{valley}_g]$ | fixed $\mathbb1[N\le2]$ |
+| **depth_fix** | adaptive $\Omega$ | adaptive $\Omega$ |
+
+## Empirical fingerprints {#sec-empirical}
+
+The framing predicts specific signatures for the *Strategy-2* failure modes; the benchmarks show them.
+*(Sim figures are as last recorded; the per-guide-fit sim redesign is edited-but-not-re-run — provisional.)*
+
+- **A is a precision effect.** In hard/low-SNR sim regimes only Simpson-corrected methods reach precision
+  $\ge0.90$; the raw contingency tests sit on a lower-precision frontier. The self-contained Fig-7
+  reproduction nails the mechanism: uncorrected FDR $\approx0.20$ (fails 5% in 10/10 reps) $\to$ corrected
+  $\approx0.003$ (0/10), **recall unchanged**.
+- **B is a recall effect, MOI-graded.** Per-guide F1 at MOI 1/3/5: depth_fix **0.96/0.93/0.89** vs fishash
+  0.96/0.89/0.82 — identical with no co-occurring guides, diverging as MOI (mutual masking) rises.
+- **Real barnyard** (low-MOI, per-cell metric): depth_fix ties fishash (0.937 vs 0.942). The raw ambient
+  test scores highest (0.951) by lacking the mode-A brake — the same coin as its low sim precision.
+- **The cutoff trap** is the no-strategy corner: fixed $\ge3$ ties depth_fix on easy data but its FDR
+  hits $\sim0.31$ on high-ambient data where depth_fix holds $\sim0.027$.
+- **CLEANSER**, once a scoring artifact is fixed, is competitive (Jaccard 0.893) — consistent with it
+  being the mixture that also decontaminates the cell exposure.
+- **Ambient shape is ~Poisson once de-doubleted**, licensing the conditional route's $U\equiv1$. CROP-seq
+  ambient is Poisson directly (var/mean ≈ 1.0, max 5). Direct-capture ambient is **conditionally Poisson**
+  (a bootstrap-calibrated GOF is indistinguishable from Poisson, $\phi\approx0.99$ in $[0.96,1.02]$) but
+  **marginally overdispersed due to doublets** (raw var/mean ~10; the top 1%
+  of cells by wrong-species load carry ~98.5% of the excess), collapsing to Poisson under a gRNA-channel
+  purity cut. So CLEANSER's direct-capture NB is largely absorbing residual doublets, not genuine soup
+  overdispersion (code-backed reproduction: `doublet_overdispersion.html`).
+
+## What is actually ours {#sec-ours}
+
+1. The cell exposure should be a signal-free ambient depth, not raw library size — but **CLEANSER got
+   there first** (its $\le2$-count $L$), on the mixture side. We credit it.
+2. **fishash decontaminates the guide factor, not the cell exposure** — verified from Eq 7 (draws $=N_{:,c}$)
+   and from our reproduction (`cell_margin="observed"`$\equiv$fishash). So on the contingency side the
+   ambient exposure is a real addition.
+3. The contribution is **completing the pool-and-correct corner**: give the contingency test *both* a
+   denoised guide factor $\hat a_g$ (fishash) and a denoised cell exposure $\hat d_c$ (ours), using the
+   $\hat d_c$ fishash's own completion already produces and discards. It is the contingency-family analogue
+   of CLEANSER's cell-side fix, and it targets fishash's high-MOI weakness — beating it there while tying
+   on real barnyard.
+
+## Open questions {#sec-open}
+
+- **Downstream arbiter.** All metrics here are upstream (assignment vs truth). The deciding test for
+  precision-vs-recall trade-offs is downstream **SCEPTRE DE** — negative-control calibration and power
+  under each assignment. Not yet run.
+- **depth_fix vs a correctly-scored CLEANSER**, head to head — the sharpest test, since CLEANSER is the
+  *other* method that decontaminates the cell exposure, from the opposite strategy. Not yet done.
+- **Estimator quality of the ambient depth — now a concrete hypothesis.** The three cell-factor masks
+  (§The cell factor, quantitatively) predict a **crossover**: CLEANSER's $\le2$ $L_i$ should beat fishash's
+  raw draws at high MOI (signal exclusion) and lose at high ambient load (tail truncation), with depth_fix
+  ($\Omega$-masked) dominating both. Test on the barnyard's provably-ambient column, stratified by MOI and
+  ambient load.
+- **Overdispersion (the $U$ knob).** Setting $U\sim\mathrm{Gamma}$ in a *conditional* test means an
+  NB/beta-binomial conditional tail; it rescues sim FDR under overdispersion but collapses on real
+  barnyard (dispersion not robust across chemistries). Real *de-doubleted* cell-line ambient is ~Poisson —
+  CROP-seq directly, and direct-capture once a gRNA-channel purity cut removes doublets (its raw per-guide
+  var/mean ~10 is doublet-driven, ~98.5% of the excess from the top 1% of cells; a bootstrap GOF finds the
+  de-doubleted ambient indistinguishable from Poisson, $\phi\approx0.99$; `doublet_overdispersion.html`) —
+  so we keep $U\equiv1$ (plain hypergeometric). The open
+  question is whether a primary-cell or genuinely overdispersed screen forces the mixture (soft-EM,
+  explicit-NB) route — where the $U$ knob is cheap — over the conditional one. Revisit if DE calibration
+  demands it.
+
+## Sources {#sec-refs}
+
+`literature/`: cleanser.pdf (Liu, Hamilton et al. 2025, *Cell Genomics*); fishash.pdf (Kamm et al. 2026,
+bioRxiv; package in `external/fishash/`); geomux.pdf (Teyssier 2024, UCSF thesis); crispat.pdf +
+crispat-supplement.pdf; sceptre-methods.html. Statistics: Simpson (1951); Fisher (1922); Guo & Sarkar
+(2020); Benjamini–Hochberg (1995) / Yekutieli (2001); Fleming et al. (2023, CellBender); Yang et al.
+(2020, DecontX); Young & Behjati (2020, SoupX).

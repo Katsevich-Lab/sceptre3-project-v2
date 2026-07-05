@@ -1,0 +1,6 @@
+"sample","chemistry","fishash","fishash+"
+"mix0hr_Cropseq","CROP-seq",0.9563,0.9501
+"mix72hr_Cropseq","CROP-seq",0.9533,0.9479
+"mix0hr_DirectCapture","direct-capture",0.91,0.9033
+"mix72hr_DirectCapture","direct-capture",0.9491,0.9459
+"MEAN","",0.9422,0.9368

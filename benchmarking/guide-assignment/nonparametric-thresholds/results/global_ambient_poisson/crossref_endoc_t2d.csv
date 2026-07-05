@@ -1,0 +1,4 @@
+"dataset","cell_set","n_cells","p_other_strong","p_other_mod","p_focal_max","med_other_max"
+"endoc_t2d","count-2 (tested)",314,0.946,0.032,0.022,487
+"endoc_t2d","count-1",7458,0.941,0.043,0.016,389
+"endoc_t2d","signal-mode (real integ.)",2348,0.888,0.006,0.367,386

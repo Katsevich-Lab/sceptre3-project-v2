@@ -1,0 +1,4 @@
+"dataset","cell_set","n_cells","p_other_strong","p_other_mod","p_focal_max","med_other_max"
+"dctap_k562_lowmoi","count-2 (tested)",2654,0.836,0.16,0.004,406
+"dctap_k562_lowmoi","count-1",14667,0.833,0.167,0.001,367
+"dctap_k562_lowmoi","signal-mode (real integ.)",544,0.219,0.002,0.875,828

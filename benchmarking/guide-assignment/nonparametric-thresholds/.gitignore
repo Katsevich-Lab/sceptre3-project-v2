@@ -1,0 +1,34 @@
+# Python envs (regenerable; .venv_geomux_v5 = correct geomux 0.5.5)
+.venv_geomux*/
+.venv_crispat/
+__pycache__/
+*.pyc
+# simulation-framework datasets (large, regenerable from scripts)
+results/sim_framework/datasets/
+# cloned upstream repos (reproduction harness)
+external/fishash/
+external/fishash_analysis/
+# large regenerable intermediates
+results/comprehensive_bench/
+results/_archive/
+# large raw Slack dump (regenerable)
+sceptre3-context/sceptre3_slack_raw.json
+# regenerable barnyard reproduction intermediates (keep .py/.R scripts + ours_table2_exact.csv)
+external/repro_work/*.mtx
+external/repro_work/*.h5ad
+external/repro_work/*.tsv
+external/repro_work/*.tsv.gz
+# our QC'd barnyard cohort export (regenerable)
+results/barnyard_cohort_export/
+# macOS junk
+.DS_Store
+**/.DS_Store
+# external reference papers (copyrighted; available online; not project artifacts)
+literature/*.pdf
+literature/*.html
+# downstream DE pushthrough intermediate outputs (large; regenerable)
+results/sim_framework/de/
+.venv_cleanser/
+results/method_decision/de_native/
+results/replogle_ambient_poisson/replogle_rank1_ad.rds
+results/replogle_ambient_poisson/ramac_depthfix_res.rds

@@ -1,0 +1,385 @@
+---
+title: "Guide assignment for single-cell CRISPR screens"
+subtitle: "A comprehensive review of methods, data, and simulations — and a recommendation for SCEPTRE3"
+author: "gRNA-assignment investigation"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    number-sections: true
+    code-fold: true
+    theme: cosmo
+    embed-resources: true
+    fig-cap-location: bottom
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+::: {.callout-note}
+This report **supersedes** the two earlier write-ups (`report.qmd`/`report.pdf` and
+`methods_review.qmd`/`methods_review.html`). It consolidates everything learned: the published
+methods, our datasets and simulations, the empirical findings, the experiments, and a recommendation.
+The one deferred piece — testing assignments through downstream association analysis — is flagged as
+the decisive next step; all metrics here are upstream (assignment-level vs. ground truth).
+:::
+
+::: {.callout-tip}
+## Companion documents
+For the **conceptual/statistical account** of the method landscape — the unifying framework and the
+sharper "three background cells" story — see **`literature_review.qmd`** (the canonical synthesis;
+this report's framework and failure-mode sections are a condensed pointer to it). For the **simulation
+apparatus and sim evidence**, see **`simulation_framework_report.qmd`** (which supersedes the
+"comprehensive sim" referenced in §Benchmarks below). This report is the **evidence + recommendation**.
+:::
+
+# Executive summary {-}
+
+**Recommendation.** Build on **fishash's contingency core** (a one-sided Fisher/hypergeometric test on
+a *noise-decontaminated* 2×2 table + the Guo–Sarkar block FDR), and **decontaminate the *cell* margin**
+too — use each cell's *ambient depth* as the test's exposure instead of its raw library size. The
+ambient-depth idea is **not new to us: CLEANSER already decontaminates the cell margin** (its
+sub-threshold sum $L_i$ from ≤2-count guides). fishash, however, does *not* — it uses the raw library
+size for the focal cell's draws (verified from its Eq 7 and from our reproduction, which matches fishash
+exactly with `cell_margin="observed"`). **Our contribution is the *unification*:** bringing both
+corrections — fishash's guide-side Simpson correction *and* an ambient (decontaminated) cell margin —
+into a single transparent contingency test. It recovers recall in the high-MOI / weak-signal regimes
+where fishash is over-conservative while **tying fishash on real data**.
+
+**The five load-bearing findings:**
+
+1. **One framework.** Every ambient-aware method tests a count against a rank-1 ambient null
+   $\lambda_{g,c}=\gamma_g\kappa_c$ (guide ambient share × cell ambient depth), estimated from a matrix
+   that contains the very signal being detected. On the 2×2 table, signal leaks into the three
+   *background* cells, giving two failure modes (full account in `literature_review`): **Simpson's
+   paradox** (other-cells contamination → false positives → a *precision* loss, fixed by fishash) and
+   **self-masking** (the focal cell's own signal → co-occurring guides masked → a *recall* loss at high
+   MOI, fixed by the cell-margin decontamination). Overdispersion is a lesser third axis (§below).
+2. **Library size ≠ ambient depth — universally.** Across 17 real datasets, library size overstates
+   ambient depth by a median **51×** (up to 424×) and is nearly uncorrelated with it at low MOI. This is
+   the empirical basis for the cell-margin fix.
+3. **fishash is the principled state of the art** — the only published method that corrects Simpson's
+   paradox and controls FDR across regimes, and the only one strong on *both* CROP-seq and direct-capture
+   barnyard. We reproduced its Simpson correction and its FDR behavior.
+4. **CLEANSER did not actually underperform on our sims** — that was a one-line scoring bug in the
+   benchmark (an un-thresholded posterior); corrected, CLEANSER is competitive.
+5. **The depth fix's one apparent weakness was a simulation artifact.** It looked bad at strong signal on
+   our comprehensive sim — but only because that sim's *ambient model is unrealistically lumpy*. Real,
+   de-doubleted barnyard ambient is Poisson (bootstrap-GOF-indistinguishable from Poisson) in both
+   chemistries — CROP-seq directly, and
+   direct-capture once a gRNA-channel purity cut removes doublets (its raw per-guide overdispersion is
+   doublet-driven; §caveat + `doublet_overdispersion.html`) — and on real data the depth fix is fine.
+
+Two from-scratch alternatives were built and **rejected**: a marginal NB test (dominated by the
+conditional test) and an explicit overdispersion tail (its dispersion parameter is not robustly
+estimable and collapses on real data).
+
+---
+
+# The problem and a unifying framework
+
+A single-cell CRISPR screen yields a gRNA UMI count matrix $N_{g,c}$ (guide $g$, cell $c$). **Guide
+assignment** decides which cells each guide truly perturbs. The difficulty is **ambient contamination**:
+guides leak between droplets (lysate, PCR chimeras, index hopping), so a cell shows nonzero counts for
+many guides it doesn't carry.
+
+Write the ambient (noise) counts as a **rank-1 Poisson field**:
+
+$$\mathbb{E}\!\left[N^{\text{noise}}_{g,c}\right]=\gamma_g\,\kappa_c,\qquad \textstyle\sum_g\gamma_g=1,$$
+
+where $\gamma_g$ is guide $g$'s **share of the ambient pool** and $\kappa_c$ is cell $c$'s **ambient
+capture depth**. Assignment asks, per pair, whether $N_{g,c}$ exceeds this null — the catch being that
+the field must be estimated from a matrix that *contains the signal being detected* (see §The two
+failure modes). Every method below is a different way to (a) estimate $\gamma_g,\kappa_c$ — cleanly or
+not — and (b) test against the resulting null.
+
+| method | $\gamma_g$ (guide share) | $\kappa_c$ (cell depth) | test | extra |
+|---|---|---|---|---|
+| per-guide threshold (Otsu/valley) | — | — | bimodal cut on log counts | none |
+| **ambient test** (ours, simple) | global share $N_{g,\cdot}/N$ | library $N_{\cdot,c}$ | Poisson/hypergeom + BH | one knob $q$ |
+| **geomux** | guide margin | cell margin | hypergeometric + BH | adaptive log-odds gate |
+| **fishash** | **noise-only** (rank-1 completion) | column margin | hypergeometric on noise table | Simpson corr. + **GS block FDR** |
+| **CLEANSER** | per-guide fitted $\lambda_j$ | **sub-threshold sum $L_i$** | per-guide **NB mixture** (MCMC) | overdispersion, Bayesian priors |
+| **recommended** | noise-only (rank-1) | **ambient depth (decontaminated)** | hypergeometric + GS | fishash + cell-margin fix |
+
+The spectrum runs **simple test → contingency table (geomux, fishash, ours) → mixture model (CLEANSER)**.
+
+---
+
+# Data
+
+We assembled a broad evidence base; the only one with clean assignment ground truth is the barnyard.
+
+| dataset(s) | n | type | role |
+|---|---|---|---|
+| **Barnyard** (Liu 2025, GSE272457) | 4 samples | CROP-seq + direct-capture, species-mixing | **real ground truth** (wrong-species = ambient) |
+| **Perturb-seq survey** (2024–26) | 10 | diverse real screens | depth/composition characterization |
+| **McCutcheon 2023** (GSE218988, *new*) | 1 | direct-capture CD8 T-cell | low-UMI direct-capture (CLEANSER's data) |
+| Gasperini, Replogle | 2 | reference real screens | parameter calibration |
+| Schraivogel (`crispat_schraivogel`) | 1 | CROP-seq | single-dataset deep dives |
+| **Comprehensive sim** | 1800 gd × 50k cells, 30 groups | lab "sum-process" simulator | realistic $\mu_\text{pert}$ × dispersion × MOI grid |
+| **fishash `guidebender`** | configurable | CellBender-based simulator | Simpson × overdispersion × MOI experiments |
+| lab Replogle/Gasperini sims | several | sum-process | the lab's existing benchmark |
+
+All published methods analyze a subset of these or their own data: fishash uses the barnyard + Replogle
++ its simulator; CLEANSER uses the barnyard + Gasperini + McCutcheon + a CRISPRa set (no simulator);
+geomux is simulation-only.
+
+## What the data say about ambient structure
+
+We measured the two halves of the ambient field across the 17 real datasets.
+
+![Ambient depth and composition across 17 real datasets. (A) Library size overstates ambient depth in
+every dataset (median 51×, up to 424×). (B) The decoupling is worst at low MOI. (C) The ambient pool is
+uneven everywhere (Gini median 0.43). (D) CLEANSER's cheap sub-threshold depth tracks the true ambient
+depth except on very deep direct-capture.](results/ambient_intuition/survey.png)
+
+- **Library size is not ambient depth.** A cell's gRNA library is ~89–100% its own real integration, so
+  naive library size overstates ambient depth by a **median 51× (range 2.7–424×)** and is nearly
+  uncorrelated with it at low MOI (corr 0.12–0.90, rising with MOI). This is the empirical motivation for
+  the cell-margin fix, and it holds universally.
+- **The ambient pool is uneven** (Gini median 0.43; ~10–40× span between common and rare ambient guides),
+  most concentrated in direct-capture.
+- **Guide-margin contamination** (signal inflating a guide's apparent global rate) is mild in small
+  libraries but reaches **8.2×** in large ones (iPSC, 6800 guides).
+
+---
+
+# The two failure modes
+
+These are the failure modes of the **contingency strategy** our method belongs to — the one that pools
+signal+noise into the margins and tests on a 2×2. (The mixture methods take the other strategy — they
+model the latent signal/noise variable directly and so avoid both; full account, and why the 2×2 is the
+contingency family's *native* object rather than a universal frame, in `literature_review`.) Both modes
+are the same thing — signal leaking into the 2×2's *background* cells when the ambient null is estimated
+from the pooled margins — landing in different cells and pushing the test opposite ways.
+
+## Simpson's paradox — contaminated background → false positives (*precision*)
+
+Even when guide $g$ is truly absent from cell $c$ and $g,c$ are noise-independent, signal from *other*
+guides in *other* cells inflates the table's background and can flip the 2×2 odds ratio above 1 → a false
+positive. fishash corrects it by replacing the "other-cells" counts with **noise-only** counts, estimated
+by rank-1 Poisson completion of the signal-masked matrix.
+
+We reproduced this exactly with the authors' simulator and package: in the regime where ambient
+composition is uncorrelated with signal, the uncorrected test (= our bare ambient test) inflates FDR to
+~0.20 and **fails the nominal 5% in 10/10 replicates**; the correction restores it to 0.003 with
+unchanged recall.
+
+![Reproducing fishash's Simpson's-paradox correction (their Fig. 7): uncorrected (plain Fisher = our
+ambient core) vs corrected.](results/simpson_paradox_repro.png)
+
+**Worked example (oracle noise).** A 2-guide / 3-cell case shows the mechanic: testing an ambient guide
+$g_2$ in a cell, the plain Fisher 2×2 gives odds ratio 20 (p = 0.0002, false positive) because $g_2$'s
+global rate is deflated by $g_1$'s signal; fishash replaces the one "other guides, other cells" entry
+(160 → 8, signal → noise), giving odds ratio 1 (p = 0.66, correctly rejected). One number flips it.
+
+## Self-masking — the focal cell's own signal → lost recall (*high MOI*)
+
+The complementary leak lands in the *focal cell's own* background cell: cell $c$'s true guide(s) inflate
+the "other guides in $c$" count — equivalently, its raw library size. A hypergeometric that uses that raw
+library as the cell's exposure therefore expects too much ambient and **buries co-occurring real guides**
+in the same cell. Harmless at low MOI (nothing else to miss), it bites hard at high MOI, where several
+real guides mutually mask each other — precisely fishash's documented weak spot. The fix is to
+decontaminate the cell margin (use the ambient depth). **CLEANSER already does exactly this** — its
+cell-specific $L_i$ is a sub-threshold (≤2-count) ambient-depth estimate; **fishash does not** (it keeps
+the raw library as its draws). This is the motivation for the recommended improvement (§below), and it is
+a *recall* effect — the mirror image of Simpson's *precision* effect. Worked example there.
+
+## A lesser third axis — overdispersion — and why we keep the plain hypergeometric
+
+The hypergeometric assumes the ambient is *equidispersed*. But most apparent overdispersion is **mean
+heterogeneity** — $\gamma_g$ spans 20×, $\kappa_c$ spans 50× — and the **conditional (Fisher) test
+absorbs this for free** by conditioning on the margins (the sufficient statistics for the rank-1 rate).
+This is *why* fishash is robust without a dispersion parameter, and why our marginal-NB attempt (which had
+to estimate the rates *and* a dispersion) was fragile. What conditioning cannot absorb is **residual
+clumping at a fixed mean** — and, as the experiments below show, that residual is small on real (cell-line
+barnyard) ambient and not robustly estimable, so it does not warrant a dispersion parameter.
+
+---
+
+# Benchmarks and experiments
+
+## Real ground truth: the barnyard
+
+On the species-mixing barnyard (per-cell Table-2 accuracy: ≥1 correct-species guide and 0 wrong-species),
+the contingency methods cluster tightly and the simple test is competitive:
+
+| method | mean Table-2 accuracy | note |
+|---|---|---|
+| ambient test (ours) | ~0.95 | highest, but not FDR-calibrated (see §FDR) |
+| **fishash** | ~0.94 | strong on **both** chemistries |
+| **recommended (depth fix)** | ~0.94 | ties fishash; no regression on direct-capture |
+| Otsu / smoothed valley | ~0.91 | fail when modes overlap |
+| geomux | ~0.80 | **collapses on direct-capture** (assigns nothing in many cells) |
+
+![Barnyard accuracy across methods (the Table-2 metric).](results/Final_Barnyard_AllMethods.png)
+
+## CLEANSER's "underperformance" was a scoring bug
+
+Our lab benchmark reported CLEANSER at Jaccard 0.43 / 0.22 on the Replogle sims. The cause was in the
+*scoring*, not CLEANSER: `process_clns()` took **every** guide–cell pair CLEANSER emitted a posterior for
+as a positive assignment — it never thresholded the posterior. Re-scoring the **same** output files at
+the standard 0.5 threshold gives **Jaccard 0.89 / 0.95** (precision ~0.99), competitive with SCEPTRE and
+crispat. The arithmetic matches exactly (true / emitted = reported "precision"). CLEANSER's real cost is
+runtime (MCMC, ~14–50 min vs SCEPTRE's 0.2 min), not accuracy.
+
+## FDR control across regimes (fishash simulator)
+
+Sweeping Simpson × overdispersion on the (Poisson-ambient) `guidebender` simulator:
+
+- The **bare ambient test does not control FDR** in any regime (realized FDR 0.06–0.40) — its barnyard
+  win is on a forgiving per-cell metric, not per-guide FDR.
+- **fishash controls FDR at recall ≈ 0.95** across Simpson and overdispersion — the only method in the
+  good corner.
+- A from-scratch **marginal NB candidate is dominated**: a global dispersion parameter is caught between
+  over-conservatism (FDR controlled, recall halved) and anti-conservatism (recall restored, FDR broken).
+
+![Realized FDR (top, dashed = 5%) and recall (bottom) across regimes. fishash (green) is the only method
+that controls FDR *and* keeps high recall; the bare ambient test fails FDR; the NB candidate is bracketed
+by two failure modes.](results/benchmark_update/build_vs_adopt.png)
+
+## The recommended improvement: decontaminate the cell margin
+
+fishash decontaminates the "other cells" but uses the **raw library size** as each cell's exposure (the
+hypergeometric draws). The symmetric completion — also decontaminating the *other guides in the focal
+cell* — makes the cell margin the **ambient depth**. (CLEANSER reaches the same ambient-depth cell margin
+by a different route — its sub-threshold $L_i$; our contribution is putting it inside fishash's
+contingency core *alongside* the Simpson correction, so both the guide side and the cell side are cleaned
+in one test.) Implemented modularly (`scripts/contingency_method.R`), it **reproduces fishash exactly**
+with the observed margin, so the ambient-depth swap is a clean one-factor ablation.
+
+![As MOI rises, fishash loses recall (co-occurring real guides in a cell inflate the library margin and
+mask each other); the depth fix recovers it, at controlled FDR.](results/benchmark_update/depth_fix.png)
+
+On the `guidebender` simulator the depth fix **beats fishash for MOI ≥ 1** (per-guide F1 0.96 / 0.93 /
+0.89 at MOI 1/3/5 vs fishash 0.96 / 0.89 / 0.82), **ties at low MOI**, and **ties fishash on the real
+barnyard** including direct-capture.
+
+**Worked example (high MOI).** In a cell hit by two real guides ($g_1$=100, $g_2$=30), testing $g_2$:
+fishash uses draws = library 130 (incl. $g_1$'s signal) → expected 34.7 → $g_2$'s 30 looks *below*
+expectation → **missed** (p = 0.996). The depth fix uses draws = ambient depth 35 → expected 25.5 →
+**called** (p = 0.006). One number changes (the other guide's cell entry, 100 → 5): co-occurring real
+guides stop masking each other.
+
+## The comprehensive-sim caveat — and why it is a simulation artifact
+
+::: {.callout-note appearance="minimal"}
+The "comprehensive sim" below is the pre-framework apparatus (now in
+`archive/old_comprehensive_sim_pipeline/`), superseded by the barnyard-anchored Model A / Model B
+framework in `simulation_framework_report.qmd`. The artifact diagnosis it motivated — real ambient is
+~Poisson — still stands and is why the framework anchors on real barnyard ambient.
+:::
+
+On the lab's realistic comprehensive sim the picture looked different: the depth fix **helps at weak
+signal** (where fishash collapses to recall ~0.30) but **hurts at strong signal**, and the bare ambient
+test has the best aggregate Jaccard.
+
+![Recommended method vs fishash vs ambient test on the comprehensive sim. fishash is fragile at weak
+signal; the depth fix and ambient test rescue that; the depth fix plateaus at strong signal.](results/benchmark_update/comprehensive_depthfix.png)
+
+We diagnosed the strong-signal deficit: the depth fix's false positives are **bursty ambient counts**
+(median 5) whose rank-1 Poisson mean is 0.08 — **62× over expectation** — and stricter $q$ does not remove
+them (structural). fishash avoids them only because its inflated library margin (66× larger) accidentally
+predicts the burst size.
+
+**But that burstiness is not real.** Using the barnyard's *provably-ambient* wrong-species entries as
+ground truth (full reproduction with code in `doublet_overdispersion.html`):
+
+| chemistry | var/mean (index of dispersion) | max ambient count |
+|---|---|---|
+| **direct-capture** (before removing doublets) | 54 → ≈ 1.0 as purity tightens | 484 → ~3 |
+| CROP-seq | **≈ 1.0** (Poisson) | 5 |
+
+Real CROP-seq ambient is **Poisson** (var/mean ≈ 1.0, max 5). Direct-capture ambient is **conditionally
+Poisson** — a bootstrap-calibrated goodness-of-fit finds the de-doubleted ambient indistinguishable from
+$\mathrm{Poisson}(a_gd_c)$ (Pearson $\phi\approx0.99$, null band $[0.96,1.02]$; it rules out NB
+$\alpha\gtrsim1$, is consistent with $\alpha\approx0$, cannot exclude mild $\alpha\lesssim0.25$) — but its
+*raw* per-guide dispersion is **doublet-driven** (the
+top 1% of cells by wrong-species load produce ~98.5% of the excess variance — a "human" cell with 484
+mouse-guide UMIs is a doublet, not ambient) and only **collapses to Poisson** (var/mean → ~1.0, max 484 →
+~3) once a gRNA-channel purity cut removes those doublets. So the trustworthy statement is that real,
+de-doubleted ambient is ~Poisson in **both** chemistries. The comprehensive sim's ambient — the lab's sum-process
+model, parameterized here as per-guide gated NB events (`prob_endo=0.02`, `mu_endo=3`) — is **far lumpier
+than reality**, which penalizes any sensitive test and rewards conservatism. Consistent with this, the
+depth fix **did not** show the strong-signal pathology on the real barnyard.
+
+> **Takeaway for the lab's benchmark:** the sum-process simulator's ambient is unrealistically
+> overdispersed (its per-guide gated-NB design), so it distorts *assignment*-method comparisons. The
+> fishash `guidebender` (smooth Poisson ambient, overdispersion as an explicit optional knob) and the
+> real barnyard are the trustworthy arbiters for anything sensitive to ambient shape.
+
+---
+
+# The recommended method (specification)
+
+For each $(g,c)$ with $N_{g,c}>0$:
+
+1. **Estimate the ambient field** $\hat N^{\text{noise}}$ by rank-1 Poisson completion of the
+   signal-masked matrix (fishash's `impute_masked_counts`), iterated with its mask schedule. *(fishash)*
+2. **Build the fully noise-decontaminated 2×2 table:** focal $=N_{g,c}$; guide-row total
+   $K=\hat N^{\text{noise}}_{g,\cdot}-\hat N^{\text{noise}}_{g,c}+N_{g,c}$ *(fishash)*; **cell-column total
+   (draws) $=\hat N^{\text{noise}}_{\cdot,c}-\hat N^{\text{noise}}_{g,c}+N_{g,c}$ — the ambient depth, not
+   the library** *(new)*; population $=T_{\text{noise}}-\hat N^{\text{noise}}_{g,c}+N_{g,c}$.
+3. **Test** $p=P(X\ge N_{g,c})$ under the hypergeometric. **Keep the plain hypergeometric tail** — do not
+   add an NB/overdispersion term (not robustly estimable; real ambient is ~Poisson).
+4. **Guo–Sarkar block FDR** at level $q$; assign if significant and count $\ge 2$.
+
+One knob ($q$, default 0.05). `cell_margin="observed"` reproduces stock fishash, so the gain is
+attributable to this single change.
+
+---
+
+# What we tried and rejected
+
+- **Bare ambient test as the flagship** — fast and competitive on aggregate accuracy, but **not
+  FDR-calibrated** (over-rejects in Simpson-prone regimes). Keep it as a fast high-signal default, not the
+  rigorous method.
+- **Marginal NB ambient test** — *dominated* by the conditional test; conditioning self-calibrates
+  against rate errors that a marginal test cannot.
+- **Explicit overdispersion (NB / beta-binomial) tail** — works on simulations but its dispersion
+  parameter is **not robustly estimable** (inflated → recall collapses; deflated → FDR breaks) and it
+  **collapses on the real barnyard**. Real ambient being ~Poisson, fishash's equidispersed hypergeometric
+  is the right choice.
+
+---
+
+# Honest caveats and the decisive next step
+
+- **The high-MOI win is shown on simulators**, consistent with fishash's documented Fig. 6 weakness; on
+  real data it is a *tie* because the barnyard is low-MOI and **we lack a real high-MOI dataset with
+  ground truth**. The newly-added McCutcheon data and the survey's high-MOI screens can probe it
+  qualitatively but cannot confirm recall without truth.
+- **Ambient overdispersion** is the genuine open difficulty. Real cell-line barnyard ambient is Poisson,
+  so it is mild *there*; a primary-cell or truly overdispersed screen could differ, and that is the one
+  place an (as-yet-unrobust) overdispersion treatment would matter.
+- **Assignment-level metrics are proxies.** A false assignment contaminates a perturbation's treatment
+  group with systematically-biased ambient cells (unrecoverable downstream); a missed assignment only
+  costs power. That asymmetry is *why* FDR control matters — but the gold standard is downstream
+  validity + power.
+
+> **The decisive experiment we deferred:** run the downstream SCEPTRE differential-expression test under
+> each assignment method (ambient / fishash / depth-fix / corrected-CLEANSER), and compare **calibration**
+> (type-I error on negative-control pairs) and **power** (true gene-effect recovery). That measures the
+> thing that actually matters and should set the final method and operating point. **This is the planned
+> next step.**
+
+---
+
+::: {.callout-note collapse="true"}
+## Sources, code, and provenance
+Methods: fishash (Kamm et al. 2026, bioRxiv 2026.01.22.701179; pkg `jackkamm/fishash`); CLEANSER (Liu et
+al. 2025, *Cell Genomics* 5:100766; `Gersbachlab-Bioinformatics/CLEANSER`); geomux (Teyssier 2024,
+`noamteyssier/geomux`). Recommended method: `scripts/contingency_method.R` (reproduces fishash with
+`cell_margin="observed"`). Cross-dataset metrics: `scripts/ambient_survey_compute.R`,
+`results/ambient_intuition/`. Simpson reproduction: `scripts/simpson_paradox_repro.R`. CLEANSER
+re-analysis: `assignment-analysis/assignment-writeup.Rmd` (`process_clns`) vs CLEANSER outputs in
+`outputs/run_all_sims_100k/`. Benchmarks/figures: `results/benchmark_update/`. Lumpiness check: barnyard
+wrong-species entries (`~/data/external/liu-2025-cleanser/GSE272457/`). Comprehensive sim:
+`scripts/build_comprehensive_sim.R` on the lab `grna_simulator_iid_sum_process`. Detailed notes:
+`CLAUDE.md` and project memory. Short quotations are attributed and used under fair-use for technical
+review.
+:::

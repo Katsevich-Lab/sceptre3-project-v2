@@ -1,0 +1,3 @@
+"dataset","guide","gap_lo","gap_hi","gap_ratio","n_amb","n_sig","a_g","max_amb_rate","obs2","exp2_single","exp2_den","c2_oe_single","c2_oe_den","tail_oe_single","tail_oe_den"
+"barnyard_mch2_0hr","nt_44",11,37,3.36,52,25,0.00198874472772521,0.3857,2,0.3,1.29,6.72,1.55,20.1,4.48
+"barnyard_mch2_0hr","nt_160",1,4,4,84,117,0.00233232098290891,0.4523,NA,NA,NA,NA,NA,NA,NA

@@ -1,0 +1,275 @@
+---
+title: "A canonical generative model for gRNA assignment, and its EM fit"
+subtitle: "Poisson ambient (always on) + a gated negative-binomial signal — the principled parametric method"
+author: "SCEPTRE3 guide-assignment investigation"
+date: last-modified
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    theme: cosmo
+    df-print: kable
+    embed-resources: true
+---
+
+## Scope {.unnumbered}
+
+This is the fully parametric model that the whole investigation points to, and the EM that fits it. It
+keeps the one thing we validated empirically — **the ambient is Poisson conditional on the cell's soup
+depth, whether or not the guide is present** ([`doublet_overdispersion.html`](doublet_overdispersion.html))
+— and adds a parametric, overdispersed **signal** layer. fishash, CLEANSER, geomux and our depth_fix all
+fall out as special cases (§Special cases). Companion: [`literature_review.html`](literature_review.html)
+(the method landscape and the two-strategies / EM unification this model formalizes).
+
+---
+
+## The model {#sec-model}
+
+Guides $g=1,\dots,G$, cells $c=1,\dots,C$. A latent **integration indicator** $X_{g,c}\in\{0,1\}$ says
+whether guide $g$ is truly in cell $c$. The observed count is **ambient molecules plus (if integrated)
+native molecules, both captured** — a sum, not a replacement:
+$$
+\boxed{\;N_{g,c}=Z_{g,c}+X_{g,c}\,W_{g,c},\qquad
+Z_{g,c}\sim\mathrm{Poisson}(a_g d_c),\quad
+W_{g,c}\sim\mathrm{NB}(\mu_g s_c,\theta),\quad
+X_{g,c}\sim\mathrm{Bernoulli}(\pi_g),\;}
+$$
+all independent, with $\mathrm{NB}(m,\theta)$ meaning mean $m$, size $\theta$, $\mathrm{Var}=m+m^2/\theta$.
+
+The **ambient layer $Z$ is always on and always Poisson** — the soup deposits its contribution in every
+droplet. The **signal layer $W$ is gated by $X$ and is negative-binomial** — native counts vary
+cell-to-cell (copy number, expression), so they are overdispersed. Hence the two hypotheses are
+$$
+N_{g,c}\mid X_{g,c}{=}0\ \sim\ \mathrm{Poisson}(a_g d_c),
+\qquad
+N_{g,c}\mid X_{g,c}{=}1\ \sim\ \mathrm{Poisson}(a_g d_c)\ \circledast\ \mathrm{NB}(\mu_g s_c,\theta),
+$$
+a **convolution** under the alternative — **not** $\mathrm{NB}(a_gd_c+\mu_gs_c,\theta)$, which would
+(wrongly) let the ambient turn overdispersed when the guide is present.
+
+**Poisson–Gamma form (the cleanest statement that "ambient stays Poisson").** Writing the NB as a
+Poisson–Gamma mixture, $W_{g,c}=\mathrm{Poisson}(\mu_g s_c\,U_{g,c})$ with $U_{g,c}\sim\mathrm{Gamma}(\theta,\theta)$
+(mean 1, variance $1/\theta$),
+$$
+N_{g,c}\mid X_{g,c},U_{g,c}\ \sim\ \mathrm{Poisson}\big(\underbrace{a_g d_c}_{\text{Poisson offset, no }U}+\;X_{g,c}\,\underbrace{\mu_g s_c\,U_{g,c}}_{\text{overdispersed signal}}\big).
+$$
+The dispersion $U$ multiplies **only** the signal rate; the ambient rate $a_gd_c$ is a fixed Poisson
+offset under both $X=0$ and $X=1$. That is exactly what "ambient is Poisson even under the alternative"
+means, and it matters precisely in the **low-separation regime** ($\mu_gs_c$ not $\gg a_gd_c$) where
+assignment is hard; at high separation the convolution and $\mathrm{NB}(a_gd_c+\mu_gs_c)$ coincide.
+
+### Parameters, gauges, identifiability {#sec-params}
+
+| symbol | meaning | stratum it is learned from |
+|---|---|---|
+| $a_g$ | ambient soup profile (guide share), $\sum_g a_g=1$ | noise ($X{=}0$) |
+| $d_c$ | cell **ambient exposure** (soup depth) | noise ($X{=}0$) |
+| $\mu_g$ | guide native expression/capture strength | signal ($X{=}1$) |
+| $s_c$ | cell **native-capture depth** | signal ($X{=}1$) |
+| $\theta$ | signal dispersion (Poisson as $\theta\to\infty$) | signal residuals |
+| $\pi_g$ | integration prevalence ($\propto$ MOI × representation) | responsibilities |
+
+Two rank-1 rate fields, each with a guide factor and a cell factor. **Gauges:** $\sum_g a_g=1$ fixes the
+ambient scale (so $d_c$ carries ambient magnitude); a matching normalization on $\mu$ or $s$ fixes the
+signal scale. **The two per-cell depths are distinct and separately identified** because they are
+estimated from **disjoint strata** — $d_c$ from cells/entries where the guide is absent, $s_c$ from where
+it is present — and empirically $s_c\gg d_c$ (native capture dominates library size, so $N_{:,c}\approx
+\mu_{g^\*}s_c\gg d_c$: "library size $\approx s_c$, not $d_c$"). Exogenous/barcode-swap noise, if modeled,
+is a second Poisson term folded into $a_gd_c$ (still "not signal, and Poisson").
+
+*Empirical status:* the ambient-Poisson layer is not assumed — it is validated on the real barnyard by a
+bootstrap-calibrated goodness-of-fit ($\hat\phi=0.99$ inside the Poisson null band;
+[`doublet_overdispersion.html`](doublet_overdispersion.html) §Part 4), and it is the same assumption as
+CellBender's $N^{\text{endo}}\sim\mathrm{Poisson}$ layer.
+
+### The ambient profile tracks native abundance (empirical) {#sec-ambient-tracks}
+
+We keep $a_g$ a **free parameter**, MLE'd from the noise stratum ($X{=}0$ entries) by M-step 1 — we do
+**not** couple it to the signal parameters $(\mu_g,\pi_g)$ or impose any prior on it, so the method stays
+frequentist. Nonetheless there is a clean empirical regularity worth recording: **the ambient soup
+profile tracks the native abundance,** $a_g\approx\kappa\,\pi_g\mu_g$ for a shared constant $\kappa$.
+Measured cross-species on the de-doubleted barnyard (a guide's ambient share in wrong-species cells vs its
+native share in own-species cells), the relationship is tight — slope $\approx 1$, correlation
+$r\approx 0.95$ on direct-capture. The residual ~2× per-guide scatter is mostly sampling noise: split-half
+reproducibility is ICC $\approx 0.35$ (so ~60–65% of it is per-cell Poisson sampling, confirmed against
+the Poisson floor), and the reproducible ~35% does **not** persist across runs (0 hr vs 72 hr residual
+correlation $\approx 0$) — i.e. it is a per-run finite-soup-draw realization (~1.25× fold), not a stable
+guide-intrinsic effect. So $a_g\propto\pi_g\mu_g$ holds **in expectation**; the deviations are sampling at
+two levels (per-cell capture + per-run soup formation).
+
+This is a validated empirical fact, not a modeling assumption, and it earns its keep in three
+non-Bayesian ways ($a_g$ stays a free MLE throughout):
+
+1. **EM initialization.** Warm-start $a_g^{(0)}=\pi_g\mu_g$ from a rough threshold assignment; the ambient
+   layer then converges faster and more stably than from a blind start.
+2. **Diagnostic / goodness-of-fit.** The fitted $\hat a_g$ should track $\pi_g\mu_g$ to within ~1.25×; a
+   gross departure flags a problem (residual doublets, a mis-specified guide, a QC issue).
+3. **Mechanistic origin of the guide-margin (Simpson) contamination.** Because the ambient composition
+   equals the native composition, the raw guide margin $N_{g,:}$ is signal-contaminated **by
+   construction** — which is exactly why $a_g$ must be estimated from the noise stratum ($X{=}0$ entries),
+   not the raw margin. This is the generative reason fishash's Simpson correction exists.
+
+---
+
+## Likelihood {#sec-likelihood}
+
+Let $f_0(n)=\mathrm{Pois}(n;a_gd_c)$ and $f_1(n)=\sum_{k=0}^{n}\mathrm{Pois}(k;a_gd_c)\,\mathrm{NB}(n-k;\mu_gs_c,\theta)$
+be the null and alternative densities at $(g,c)$ (the latter the convolution). The **observed-data
+log-likelihood** is a mixture,
+$$
+\ell(\Theta)=\sum_{g,c}\log\!\Big[(1-\pi_g)\,f_0(N_{g,c})+\pi_g\,f_1(N_{g,c})\Big],\qquad
+\Theta=\big(\{a_g\},\{d_c\},\{\mu_g\},\{s_c\},\theta,\{\pi_g\}\big).
+$$
+Direct maximization is awkward (the convolution couples the layers); the latent structure makes **EM**
+the natural route.
+
+---
+
+## Fitting by EM {#sec-em}
+
+Augment with $X_{g,c}$ and, within the signal component, the Poisson–Gamma scale $U_{g,c}$ and the
+**split** $N_{g,c}=Z_{g,c}+W_{g,c}$. The key fact that makes the split tractable: given $X{=}1$ and $U$,
+$Z$ and $W$ are independent Poissons summing to $N$, so
+$$
+Z_{g,c}\mid N_{g,c},X{=}1,U_{g,c}\ \sim\ \mathrm{Binomial}\!\Big(N_{g,c},\ \tfrac{a_gd_c}{a_gd_c+\mu_gs_cU_{g,c}}\Big)
+$$
+(Poisson thinning). Ambient and signal are thereby fit on cleanly separated expected counts.
+
+### E-step {#sec-estep}
+
+At the current $\Theta$:
+
+- **Responsibility** (the calibrated soft assignment):
+$$
+r_{g,c}=\Pr(X_{g,c}{=}1\mid N_{g,c})=\frac{\pi_g\,f_1(N_{g,c})}{(1-\pi_g)\,f_0(N_{g,c})+\pi_g\,f_1(N_{g,c})}.
+$$
+- **Expected ambient/signal split.** With
+  $\;e_{g,c}:=\mathbb E[Z_{g,c}\mid N_{g,c},X{=}1]=\dfrac{1}{f_1(N_{g,c})}\sum_{k=0}^{N_{g,c}}k\,\mathrm{Pois}(k;a_gd_c)\,\mathrm{NB}(N_{g,c}-k;\mu_gs_c,\theta)$,
+  the **expected ambient count** (used to fit the ambient layer) and **expected signal count** (used to
+  fit the signal layer) are
+$$
+\widetilde Z_{g,c}=(1-r_{g,c})\,N_{g,c}+r_{g,c}\,e_{g,c},
+\qquad
+\widetilde W_{g,c}=r_{g,c}\,\big(N_{g,c}-e_{g,c}\big).
+$$
+  (In noise cells all of $N$ is ambient; in signal cells only the small imputed part $e_{g,c}$ is.)
+- **Dispersion sufficient statistics** $\mathbb E[U_{g,c}\mid N,X{=}1]$ and
+  $\mathbb E[\log U_{g,c}\mid N,X{=}1]$ for the $\theta$ update (or defer to a residual estimator, below).
+
+Because $a_gd_c$ is tiny, the sums over $k$ truncate at $k=1$–$2$: the convolution and split are cheap.
+
+### M-step {#sec-mstep}
+
+Each layer is a recognizable fit on its expected counts:
+
+1. **Ambient — rank-1 Poisson MLE of $\widetilde Z$.** The independence/rank-1 fit is the margin product,
+$$
+\hat a_g\hat d_c=\frac{\big(\textstyle\sum_c\widetilde Z_{g,c}\big)\big(\sum_g\widetilde Z_{g,c}\big)}{\sum_{g,c}\widetilde Z_{g,c}},
+\qquad\text{gauge }\ \hat a_g=\frac{\sum_c\widetilde Z_{g,c}}{\sum_{g,c}\widetilde Z_{g,c}},\ \ \hat d_c=\textstyle\sum_g\widetilde Z_{g,c}.
+$$
+   This is fishash's rank-1 completion with **soft** weights — and it yields the **decontaminated ambient
+   depth $\hat d_c$** (the depth_fix quantity), because signal cells contribute only their imputed ambient
+   $e_{g,c}$, not their signal.
+2. **Signal — rank-1 NB GLM of $\widetilde W$** with log-mean $\log\mu_g+\log s_c$ (and the known offset
+   $a_gd_c$ where you keep the exact convolution). Fit by IRLS; in the $\theta\to\infty$ (Poisson) limit it
+   reduces to the same weighted-margin update as the ambient layer,
+$$
+\hat\mu_g\hat s_c\ \approx\ \frac{\big(\textstyle\sum_c\widetilde W_{g,c}\big)\big(\sum_g\widetilde W_{g,c}\big)}{\sum_{g,c}\widetilde W_{g,c}} .
+$$
+3. **Dispersion $\theta$** — Gamma MLE from $\mathbb E[U],\mathbb E[\log U]$, or a robust
+   method-of-moments on the signal-stratum Pearson residuals
+   $(N_{g,c}-\hat\mu_g\hat s_c)^2/\hat\mu_g\hat s_c$ weighted by $r_{g,c}$. May be shared or per-guide
+   ($\theta_g$).
+4. **Prevalence** $\hat\pi_g=\frac1C\sum_c r_{g,c}$.
+
+Iterate E/M to convergence.
+
+### The high-separation simplification {#sec-approx}
+
+Where $r_{g,c}$ is large, $\mu_gs_c\gg a_gd_c$, so $e_{g,c}\approx a_gd_c$ (negligible) and
+$\widetilde W_{g,c}\approx r_{g,c}N_{g,c}$. Then the offset drops and the signal component is a plain NB
+with $U\mid N\sim\mathrm{Gamma}(\theta+N,\theta+\mu_gs_c)$ conjugate updates
+$\mathbb E[U\mid N]=(\theta+N)/(\theta+\mu_gs_c)$. This is the practical recipe for direct-capture (huge
+separation); keep the exact convolution for tight CROP-seq / weak-signal regimes.
+
+---
+
+## Assignment and error control {#sec-assign}
+
+Error control is frequentist: the one-sided **Poisson-null $p$-value** the whole family shares,
+$$
+p_{g,c}=\Pr\{\mathrm{Pois}(\hat a_g\hat d_c)\ge N_{g,c}\},
+$$
+corrected by **Guo–Sarkar** (tests within a cell as a dependent block) or BH — it needs only the fitted
+null, and is fishash's decision rule. When the signal layer is fit, the responsibility $r_{g,c}$ is
+available as a plug-in **score** (assign where $r_{g,c}\ge 1-q$, i.e. threshold the plug-in
+$1-r_{g,c}$), but the reported guarantee is the $p$-value / GS rule, not a posterior. One knob ($q$).
+
+---
+
+## Special cases {#sec-special}
+
+Every method we benchmarked is this model with a layer dropped, a component non-parametric, or the E-step
+hardened:
+
+| method | ambient layer | signal layer | E-step | fit scope |
+|---|---|---|---|---|
+| geomux / bare ambient | rank-1 Poisson, **raw margins** | none | — (1 pass) | shared |
+| **fishash** | rank-1 Poisson, denoised (masked) | **none** — omnibus upper-tail | **hard** | shared |
+| **depth_fix (ours)** | rank-1 Poisson, denoised $\hat d_c$ | none — upper-tail | hard | shared |
+| CLEANSER | Poisson/NB, $L_i$ depth | NB | soft (MCMC) | **per-guide** |
+| **this model** | rank-1 Poisson, denoised $\hat d_c$ | **rank-1 NB $(\mu_gs_c,\theta)$** | **soft** | shared |
+
+- **fishash / depth_fix** $=$ freeze the signal layer to the non-parametric alternative "$N_{g,c}$ exceeds
+  the ambient Poisson tail" (equivalently $\theta$-agnostic) and harden the E-step to a 0/1 FDR call.
+  depth_fix additionally uses the denoised $\hat d_c$ — which this model produces automatically in M-step 1.
+- **CLEANSER** $=$ the same two layers but fit **per guide** (no shared rank-1) with a hard-cutoff depth
+  $L_i$; this model shares the rank-1 across guides and decontaminates the depth in the fit.
+
+So the parametric signal layer is what fishash gives up (for omnibus robustness) and CLEANSER has (but
+per-guide). Adding it, **shared**, buys: strength-borrowing on $(\mu_g,s_c)$ so weak $(g,c)$ get a
+calibrated signal expectation (power in the overlap regime), an NB $\theta$ that absorbs signal
+overdispersion, and a genuine soft score. The costs are the NB/rank-1 signal assumptions and EM
+initialization — but **not** the convolution, which no reduction ever evaluates (next).
+
+### Neither reduction evaluates the convolution {#sec-noconv}
+
+The Poisson$\circledast$NB convolution lives only in the alternative $f_1$, and $f_1$ is needed only for
+the responsibility $r_{g,c}$ and for fitting the signal parameters. Both practical methods sidestep it:
+
+- **fishash / depth_fix — never form $f_1$.** A one-sided test of $H_0:X_{g,c}{=}0$ ("is $N_{g,c}$ large
+  under $\mathrm{Pois}(\hat a_g\hat d_c)$?") uses only the **null** $f_0$; the alternative — and thus the
+  convolution — is never constructed. It loses little because ambient $\ll$ signal in signal cells, so the
+  alternative *is* essentially "$N$ above the Poisson tail," which is exactly what the test detects.
+- **The NB-mixture variant — approximate $f_1$ by dropping the offset.** Since $a_gd_c\ll\mu_gs_c$ in a
+  cell that carries $g$,
+$$
+f_1(n)=\mathrm{Pois}(a_gd_c)\circledast\mathrm{NB}(\mu_gs_c,\theta)\ \approx\ \mathrm{NB}(\mu_gs_c,\theta),\qquad\text{error }O\!\big(a_gd_c/\mu_gs_c\big),
+$$
+  a sub-percent shift on direct-capture (a few percent on CROP-seq). The two components are then a plain
+  $\{\mathrm{Poisson}(a_gd_c),\ \mathrm{NB}(\mu_gs_c)\}$ mixture — CLEANSER's form, here with the shared,
+  denoised ambient — and the EM runs with no convolution.
+
+So the convolution is the mechanistically-honest object but a computational non-issue: it is only
+non-negligible in the vanishing-separation limit ($\mu_gs_c\sim a_gd_c$), exactly where the guide is
+barely detectable and the correction is second-order. **The generative model contains a convolution; no
+useful method has to evaluate one.**
+
+---
+
+## Practical recipe {#sec-recipe}
+
+1. **Initialize** the ambient layer with one depth_fix / fishash pass (rank-1 masked Poisson) → $\hat a_g,
+   \hat d_c$ and an initial hard $X$; initialize the signal layer by a rank-1 NB fit to $N$ on the
+   $X{=}1$ cells; set $\pi_g$ from the initial $X$.
+2. **Iterate** E/M (§§E-step, M-step) ~5–10 times; use the high-separation simplification unless signal is
+   weak.
+3. **Assign** by the Poisson-null $p$-value + Guo–Sarkar/BH at level $q$ (the $r_{g,c}\ge 1-q$ plug-in is an optional score).
+4. **Reductions to sanity-check the code:** $\theta\to\infty$ + hard E-step should reproduce depth_fix;
+   raw margins + no E-step iteration should reproduce geomux/the bare ambient test.
+
+The model is exactly as parametric as the data support: the ambient layer is empirically Poisson
+(validated), the signal layer is where overdispersion is allowed to live, and the two per-cell depths
+$d_c\neq s_c$ are what make the null exposure ($\hat d_c$) different from the library size — the reason the
+whole family self-masks when it uses $N_{:,c}$ instead.

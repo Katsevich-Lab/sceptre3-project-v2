@@ -1,0 +1,11 @@
+sim,method,jaccard,precision,recall,note
+1.5pct_pert_25guides,SCEPTRE,0.93,0.96,0.97,writeup (correct)
+1.5pct_pert_25guides,crispat,0.959,0.998,0.961,writeup (correct)
+1.5pct_pert_25guides,pertpy,0.075,0.260,0.081,writeup (correct)
+1.5pct_pert_25guides,CLEANSER_buggy,0.431,0.432,0.995,writeup (NO posterior threshold = BUG)
+1.5pct_pert_25guides,CLEANSER_fixed,0.892,0.987,0.903,re-scored at posterior>0.5
+0.5pct_pert_10guides,SCEPTRE,0.928,0.960,0.966,writeup (correct)
+0.5pct_pert_10guides,crispat,0.950,0.980,0.969,writeup (correct)
+0.5pct_pert_10guides,pertpy,0.108,0.510,0.110,writeup (correct)
+0.5pct_pert_10guides,CLEANSER_buggy,0.217,0.217,0.997,writeup (NO posterior threshold = BUG)
+0.5pct_pert_10guides,CLEANSER_fixed,0.951,0.981,0.969,re-scored at posterior>0.5

@@ -1,0 +1,15 @@
+=== RAMAC assignments: depth_fix vs plug-in, and doublet cross-reference ===
+
+depth_fix total assignments (all guides): 944858 over 616184 cells = 1.53 guides/cell
+RAMAC assigned by depth_fix: 245 (count 2..6072)
+RAMAC labeled by plug-in mask: 232 (count 3..6072)
+agreement on count>=3: both=232 ; depth_fix-only (all count-2)=13
+
+Cross-reference: does the cell ALSO have another guide with raw count>=30?
+  count-2, ASSIGNED by depth_fix             n= 13  another-guide>=30:   9 (69%)  median-other=817
+  count-2, NOT assigned (soup)               n= 40  another-guide>=30:  25 (62%)  median-other=1348
+  count 3-7 (gap shoulder, all assigned)     n= 10  another-guide>=30:   7 (70%)  median-other=234
+  count >=70 (signal mode)                   n=222  another-guide>=30: 153 (69%)  median-other=430
+
+RAMAC depth_fix calls with count<=7: 23 ; of these, 16 are in cells with another guide>=30 (probable spillover),
+  7 are clean (no other integration -> plausibly real weak RAMAC).

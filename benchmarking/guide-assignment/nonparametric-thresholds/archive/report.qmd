@@ -1,0 +1,288 @@
+---
+title: "Simple, principled gRNA assignment: methods, simulations, and a fair benchmark against geomux and fishash"
+author: "Guide-assignment investigation"
+date: today
+format:
+  pdf:
+    toc: true
+    number-sections: true
+    geometry: margin=1in
+    fig-pos: "H"
+    keep-tex: false
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(knitr)
+res <- function(f) file.path("results", f)
+csv <- function(f) read.csv(res(f))
+kt  <- function(d, ...) kable(d, booktabs = TRUE, ...)
+```
+
+# Summary {-}
+
+We study guide-RNA (gRNA) assignment in single-cell CRISPR screens: deciding which
+perturbation(s) each cell received from noisy gRNA UMI counts. We ask whether a *simple,
+principled* method can match the published state of the art. Our findings:
+
+- Simple per-guide count thresholds (**Otsu** on $\log(1+y)$, a **smoothed-valley** cut) work
+  only when the background and perturbed count modes are cleanly separated, and fail when they
+  overlap.
+- The principled alternative — an **ambient-proportion test** (assign a cell--guide pair when
+  its count significantly exceeds the ambient null at a controlled FDR) — is *exactly the
+  statistical core of geomux*. We verified this by installing and running the real **geomux**
+  and **fishash** packages on an identical cohort.
+- On the real **barnyard** ground truth our simple test is competitive (and on a fixed-FDR,
+  recall-favoring metric, edges fishash). But **precision--recall curves on simulations with
+  full ground truth tell the decisive story**: in hard, low-signal regimes only fishash reaches
+  high precision — its Simpson's-paradox correction lifts a precision ceiling that the plain
+  test cannot pass. In easy regimes the methods are indistinguishable.
+- We characterized **10 diverse 2024--2026 datasets** to derive realistic parameter ranges and
+  built a **comprehensive simulation** spanning them, which the field's existing (Replogle-only)
+  simulations did not cover.
+
+# Introduction
+
+A pooled CRISPR screen (Perturb-seq) reads out, per cell, a vector of gRNA UMI counts. Most of
+these counts are *ambient* contamination; a cell truly received only its own guide(s). Guide
+assignment is the preprocessing step that separates true signal from ambient. The difficulty is
+governed by how separated the two count *modes* are — the low-count ambient background and the
+high-count perturbed signal — which varies enormously across assays.
+
+This report develops and benchmarks methods spanning a complexity gradient, grounds the
+simulations in real data, and gives a fair, same-cohort comparison to the published
+contingency-table methods geomux [Teyssier 2024] and fishash [Kamm et al. 2026].
+
+# Methods
+
+## Simple per-guide thresholds
+
+For a single guide $g$ with integer counts $y_{g,\cdot}$ across cells, work on $z=\log(1+y)$.
+
+- **Otsu** chooses the integer threshold maximizing between-class variance of $z$ (Otsu's image
+  thresholding), assigning cells with $y \ge t$.
+- **Smoothed valley** builds a kernel-smoothed PMF of $z$, finds the two dominant modes, and cuts
+  at the integer of minimum density between them; it *abstains* when no clean second mode exists.
+
+Both are unsupervised, per guide, and use no cross-cell information.
+
+## Ambient-proportion test (principled)
+
+Treat the count matrix as a contingency table. Under the pure-ambient null, the count of guide
+$g$ in cell $c$ is expected to be $\lambda_{g,c} = n_c\,\pi_g$, where $n_c$ is the cell's total
+guide UMIs and $\pi_g$ is guide $g$'s share of all guide UMIs. We test the observed count against
+the upper tail (hypergeometric / its Poisson approximation) and assign pairs at
+Benjamini--Hochberg FDR $q$. The cutoff thus **adapts per cell and per guide**; the single knob
+$q$ is an interpretable, label-free ambient false-discovery rate.
+
+This is implemented as `ambient_test_assign()` in
+`guide-assignment-pipeline/bin/script/lib/threshold_methods.R`.
+
+## Relationship to geomux and fishash
+
+The ambient test *is* geomux's core: geomux's p-value
+$1-F_\text{hyper}(N_{g,c}-1;\,n_\text{umi}, N_{g,\cdot}, N_{\cdot,c})$ with BH-FDR is our test.
+geomux additionally applies a log-odds-ratio threshold (default 10) and a min-UMI cell filter.
+**fishash** adds (i) an iterative Simpson's-paradox correction (it re-estimates the *noise*
+counts by rank-1 Poisson matrix completion and conditions the "other-cells" background on noise)
+and (ii) a block-dependent (Guo–Sarkar) FDR correction. We benchmark against the real `fishash`
+package throughout. We have reproduced the Simpson's-paradox *phenomenon* it corrects (see
+@sec-simpson): the plain Fisher test — our ambient core — inflates FDR exactly when the ambient
+noise composition is uncorrelated with the signal, and fishash's correction restores control.
+
+# Datasets
+
+- **Barnyard (real ground truth).** Liu et al. (2025) species-mixing data (human HEK293T + mouse
+  NIH3T3, each transduced with a species-specific non-targeting gRNA library, then pooled). A
+  gRNA from the *wrong* species detected in a cell is guaranteed ambient — a real specificity
+  ground truth. Four samples (CROP-seq and direct-capture chemistries $\times$ 0h/72h).
+- **10 diverse 2024--2026 datasets** (`~/data/external/perturbseq-survey/`): DC-TAP K562 (MOI 1
+  and 14), EndoC-$\beta$H1 T2D, erythroid multiome, CD4 genome-scale CRISPRi, A549 lung CRISPRi,
+  CD8 Perturb-CITE, gastric organoid CROP-seq, in-vivo cortex, iPSC genome-wide CRISPRi.
+- **Simulations** (sum-process simulator on real library sizes): the existing Replogle-calibrated
+  sims, a new Gasperini-calibrated sim, and a new **comprehensive** sim spanning the realistic
+  range (below).
+
+# Experiments and results
+
+## Real data spans the full separability range; existing sims do not {#sec-sep}
+
+Per guide we measure the mode gap on the $\log(1+y)$ scale (signal mode minus background mode).
+Real datasets span from heavily overlapping (gap $\approx 0.7$: CD4 genome-scale, iPSC) to
+cleanly bimodal (gap $\approx 5$: Replogle, EndoC). Crucially, **MOI does not determine
+separability** — low-MOI CD4 is as hard as high-MOI Gasperini. The existing benchmark sims are
+all Replogle-calibrated and occupy only the well-separated end; we added a Gasperini-calibrated
+sim to fill the gap.
+
+![Mode separation: real datasets vs simulations.](results/Realism_ModeSeparation_withGaspSim.png){width=95%}
+
+![The 10 recent datasets placed on the same separation axis.](results/Survey_SeparationAxis.png){width=80%}
+
+## Realistic parameter ranges from 10 datasets {#sec-params}
+
+Using the ambient test to split each guide's cells into perturbed vs background, we estimated the
+sum-process simulator's parameters per guide and dataset.
+
+```{r param-table}
+d <- csv("grna_param_summary.csv")
+d <- d[, c("dataset","moi","lib_nnz","prob_pert","mu_pert","theta_pert","sep_gap")]
+kt(d, digits = 3, caption = "Per-dataset median gRNA parameters. mu_pert = library-normalized perturbed signal; theta_pert = NB dispersion; sep_gap = mode separation on log1p scale.")
+```
+
+Realistic ranges (10th--90th percentile across all guides): $\mu_\text{pert}\in[11,600]$,
+$\theta_\text{pert}\in[0.06,1.6]$, prob\_pert $\in[0.0004,0.019]$, MOI $\in[1,39]$, sep\_gap
+$\in[0.7,5.3]$. Two real extremes anchor the hard end: CD8 at $\mu_\text{pert}\approx5$ and the
+iPSC genome-wide screen at $\theta_\text{pert}\approx0.07$.
+
+![Distributions of per-guide parameters across datasets.](results/RealData_gRNA_Parameters_9datasets.png){width=95%}
+
+## A comprehensive simulation {#sec-comprehensive}
+
+We built `sims_comprehensive` (1800 guides, 50k cells, **30 parameter groups** = 5
+$\mu_\text{pert}\in\{5,15,50,150,500\}$ $\times$ 3 $\theta_\text{pert}\in\{0.15,0.5,1.5\}$
+$\times$ 2 MOI regimes using real Replogle- and Gasperini-derived library sizes). Its mode-gap
+spans 0.7--6.9, covering the full real range, with the hardest groups matching the hardest real
+datasets.
+
+## Barnyard: exact reproduction and same-cohort comparison {#sec-barnyard}
+
+We verified this rigorously: we cloned the authors' analysis repository
+(`jackkamm/fishash_analysis`) and **exactly reproduced their Table 2** — all eight published
+geomux and fishash values to four decimals — then scored our ambient test, Otsu, and valley on
+the *identical* QC'd cohort with the *identical* accuracy metric.
+
+```{r barnyard-table}
+kt(csv("barnyard_exact_corrected.csv"), digits = 4,
+   caption = "Barnyard Table-2 accuracy. geomux/fishash are the exactly-reproduced published values; ours/Otsu/valley scored on the identical cohort and metric.")
+```
+
+A key reproducibility lesson surfaced here: geomux's accuracy depends critically on its
+**version**. The published collapse on direct capture (0.75 / 0.53) is produced by geomux
+$\ge$0.4's *adaptive* log-odds-ratio threshold (its default), which on high-UMI direct-capture
+data sets a very high cutoff and prunes most assignments. An older geomux (0.2.10, fixed
+threshold) does not collapse; our initial independent run used it and therefore overestimated
+geomux. With the authors' geomux version and exact scoring, all values match.
+
+On this clean cell-line benchmark the simple ambient test is the most accurate overall
+(mean 0.951): it **wins on direct capture** (where geomux collapses and ours edges fishash) and
+ties on CROP-seq. This does **not** contradict the precision/recall analysis
+(\autoref{sec-pr}): the barnyard is a high-signal regime and this metric rewards making the
+correct call. In the hard, low-signal regimes of \autoref{sec-pr}, fishash's
+Simpson's-paradox correction wins on precision.
+
+![Barnyard accuracy across the Table-2 methods plus ours/Otsu/valley.](results/Final_Barnyard_AllMethods.png){width=95%}
+
+## Full method panel across the comprehensive grid {#sec-panel}
+
+```{r panel-table}
+kt(csv("comprehensive_panel_overall.csv"), digits = 3,
+   caption = "Mean per-guide metrics across the comprehensive sim grid (full ground truth).")
+```
+
+At a fixed FDR, the plain BH-hypergeometric (ours $\approx$ geomux-no-lor) has the highest mean
+Jaccard because it stays sensitive in hard regimes, while fishash and geomux-default are
+high-precision/low-recall. All methods converge in easy regimes.
+
+![Per-guide Jaccard across the comprehensive grid; rows = MOI regime, columns = dispersion.](results/Comprehensive_Panel_30groups.png){width=95%}
+
+## Precision--recall curves: the decisive comparison {#sec-pr}
+
+Fixed-FDR metrics conflate the operating point with the method. Sweeping the FDR knob and
+splitting by difficulty regime gives the full picture.
+
+![Precision--recall by difficulty regime (comprehensive sim, full ground truth). Curves = FDR-knob sweep; stars = Otsu/valley.](results/PR_curves.png){width=95%}
+
+```{r pr-table}
+d <- csv("pr_curves_all.csv")
+d <- d[d$method %in% c("ours (ambient)","fishash","geomux") & !is.na(d$precision) & d$precision >= 0.90, ]
+agg <- aggregate(recall ~ method + regime, d, max)
+w <- reshape(agg, idvar="regime", timevar="method", direction="wide"); names(w) <- sub("recall.","",names(w))
+kt(w, digits = 3, caption = "Max recall achievable at precision >= 0.90 (blank = method never reaches 0.90 in that regime).")
+```
+
+The curves are decisive:
+
+- **Easy regime ($\mu_\text{pert}\ge150$):** ours, geomux, and fishash are indistinguishable
+  (precision $\approx$ recall $\approx 0.9$).
+- **Hard regime ($\mu_\text{pert}\le15$):** only **fishash** reaches precision $\ge0.90$ (recall
+  $\approx0.28$). Ours and geomux *overlap each other* on a strictly lower-precision frontier
+  (ceiling $\approx0.66$) — confirming ours $=$ geomux-core and showing fishash's
+  Simpson's-paradox correction genuinely lifts the precision ceiling that the plain test cannot
+  pass.
+- Otsu over-assigns (low precision/high recall); the smoothed valley sits on the ours/geomux
+  frontier.
+
+This corrects a naive reading of the fixed-FDR tables: ours does *not* dominate fishash. They
+occupy different parts of PR space — fishash for high precision on hard data, the plain test for
+high recall or on easy data.
+
+## Reproducing the Simpson's-paradox phenomenon {#sec-simpson}
+
+Why does the plain ambient/Fisher test lose precision on hard data? fishash attributes it to
+**Simpson's paradox**. Treating each UMI as *signal* (truly from cell $c$) or *noise* (ambient),
+the one-sided Fisher test on the full signal+noise margins can call $(g,c)$ significant even when
+$g$ is truly absent from $c$ and $g,c$ are independent within the noise: collapsing over the
+signal/noise stratum flips the $2\times2$ odds ratio above 1. fishash corrects this by testing
+$g$ against its **noise-only** background in $c$ (an adjusted odds ratio), estimating the latent
+noise counts by rank-1 Poisson matrix completion of the assigned-masked matrix and iterating.
+Proposition 1 of their paper predicts the paradox is strongest when the ambient noise guide
+composition is *uncorrelated* with the signal composition, and vanishes when they coincide.
+
+We reproduce this directly using the authors' own simulator (`simulate_guidebender2`) and the
+real package, with the uncorrected test = `fishash(refit=0)` (the plain Fisher test, i.e. our
+ambient core) and the corrected test = `fishash(refit=10)`. Sweeping the signal--noise
+composition correlation (the `endo_shape_flat` knob; 20 guides, 4000 cells, SNR 4, MOI 0.3,
+10 replicates per regime) recovers the reported behavior:
+
+| signal--noise correlation | uncorrected FDR | reps > 5% | corrected FDR | reps > 5% |
+|---|---|---|---|---|
+| **low** (noise $\perp$ signal) | **0.197** | **10/10** | 0.003 | 0/10 |
+| medium | 0.090 | 9/10 | 0.003 | 0/10 |
+| high (noise $\propto$ signal) | 0.059 | 5/10 | 0.003 | 0/10 |
+
+![Reproducing fishash's Simpson's-paradox phenomenon (cf. their Fig. 7). Uncorrected = plain Fisher (= our ambient core); corrected = fishash's noise correction. Dashed line = nominal 5% FDR. Recall is essentially unchanged, so the correction removes false positives without costing power.](results/simpson_paradox_repro.png){width=95%}
+
+The plain test (our ambient core) inflates FDR exactly in the low-correlation regime and the
+correction restores control with no loss of recall — the same mechanism that lifts fishash's
+precision ceiling on the hard sims of @sec-pr. This is now an understood and reproduced
+phenomenon, not a black box; the remaining flagship task is to give our ambient test a
+*transparent* analogue of the noise correction.
+
+# Discussion
+
+**What is simple and good enough.** A clean BH-hypergeometric ambient test — one interpretable
+knob, $\sim$10 lines of code — is principled, recovers geomux's core (with better default
+behavior than geomux's conservative threshold), and is competitive-to-best whenever modes are
+reasonably separated, which is most assays. It is the method we would recommend as a simple,
+robust default.
+
+**Where sophistication pays.** When the perturbed signal genuinely overlaps ambient (low
+$\mu_\text{pert}$ or high overdispersion — real regimes for genome-scale and primary-cell
+screens), fishash's Simpson's-paradox correction is a real advantage: it is the only method that
+attains high precision there. We have reproduced the underlying phenomenon (@sec-simpson) and
+understand the correction (noise-conditioned odds ratio via rank-1 Poisson completion + a
+block-dependent FDR correction), but have not yet folded a transparent analogue into our own
+test. If precision on hard data matters today, use fishash.
+
+**Caveats.** (i) The barnyard comparison now uses the authors' *exact* cohort and metric (we
+reproduced their Table 2 to four decimals), so it is no longer cohort-confounded; the residual
+limitation is that the barnyard is high-signal cell-line data and does not probe the hard
+regimes. (ii) We reproduced fishash's Simpson's-paradox *phenomenon* (@sec-simpson) and
+understand its correction, but our own ambient test does not yet implement a transparent
+analogue, so fishash's precision advantage in hard regimes (\autoref{sec-pr}) is real and ours
+does not capture it. (iii) The
+comprehensive-sim PR analysis uses a 12k-cell, 1200-guide benchmark subset for tractability of
+the external tools. (iv) geomux results are version-sensitive (adaptive vs fixed log-odds
+threshold); we report the authors' version.
+
+# Reproducibility
+
+All code and intermediate results live in
+`benchmarking/guide-assignment/nonparametric-thresholds/`. Key scripts: `characterize_grna.R`
+(parameter ranges), `build_comprehensive_sim.R` (simulation), `final_same_cohort.R` (barnyard),
+`score_comprehensive_panel.R` (panel), `pr_curves.R` + `combine_pr.R` (PR curves). The real
+geomux (Python venv `.venv_geomux/`) and fishash (R package) were run via `run_geomux*.py` and
+in-script `fishash()` calls.

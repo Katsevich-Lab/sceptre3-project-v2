@@ -1,0 +1,13 @@
+"dataset","n_guides","n_cells","moi","lib_nnz","prob_pert","mu_pert","theta_pert","bg_rate","sep_gap","n_guides_used"
+"a549_crispri_perturbseq_GSE236304",253,25220,3,5,0.018,101.86,1.03,NA,4.23,253
+"cd8_tcell_perturbcite_GSE279498",44,2426,1,1,0.012,5.01,0.67,NA,1.39,39
+"dctap_k562_highmoi_GSE303901",110,10932,9,60,0.086,166.65,1.34,NA,3.36,97
+"dctap_k562_lowmoi_GSE303901",110,5397,1,28,0.0089,394.38,0.98,NA,4.68,97
+"endoc_t2d_perturbseq_GSE273677",225,8329,2,9,0.012,198.24,1.33,NA,4.87,223
+"gastric_organoid_cropseq_GSE280506",96,40000,1,1,0.0082,76.26,1.72,0,4.2,96
+"invivo_cortex_perturbseq_GSE249416",17,11688,1,5,0.073,227.06,1.56,0.26,4.24,16
+"ipsc_crispri_hipsci_figshare27989294",6824,40000,8,59,0.0016,113.23,0.07,NA,0.69,588
+"perturb_multiome_erythroid_GSE274113",63,14525,1,10,0.02,19.09,2.07,NA,2.3,63
+"tcell_cd4_perturbseq_GSE314342",27272,40000,3,3,0.00018,15.96,0.41,NA,0.69,203
+"gasperini (ref)",13077,40000,39,53,0.0031,14.52,1.16,0.00084,2.53,600
+"replogle-med (ref)",2500,40000,2,8,8e-04,479.87,0.43,NA,4.39,593

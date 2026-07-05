@@ -1,0 +1,4 @@
+"dataset","cell_set","n_cells","p_other_strong","p_other_mod","p_focal_max","med_other_max"
+"barnyard_mch2_0hr","count-2 (tested)",2,0,1,0,13
+"barnyard_mch2_0hr","count-1",46,0.826,0.109,0.065,1089
+"barnyard_mch2_0hr","signal-mode (real integ.)",25,0.96,0,0.32,705
