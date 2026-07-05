@@ -1,0 +1,6 @@
+"cell","top_mouse_guide","top_wrong_species_count","n_mouse_guides_carried","n_mouse_guides_ge5","frac_homo_GEX","mouse_mRNA_UMIs","human_mRNA_UMIs","total_gRNA"
+"mix0hr_DirectCapture_1529","nt_176",58,4,3,0.9937,33,5185,121
+"mix0hr_DirectCapture_7779","nt_131",41,7,6,0.9913,134,15292,147
+"mix0hr_DirectCapture_9806","nt_143",27,7,4,0.9928,63,8633,2581
+"mix0hr_DirectCapture_2907","nt_101",15,4,3,0.9919,104,12794,48
+"mix0hr_DirectCapture_2228","nt_106",12,3,1,0.9924,64,8331,143
