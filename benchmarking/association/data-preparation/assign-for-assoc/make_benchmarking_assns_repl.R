@@ -3,9 +3,11 @@
 
 ## it uses maximum assignment
 ## The Replogle authors use a Pois-Gauss mixture on the log counts, so that's different
-## We will have an issue they do not: we will assign lowly expressed cells to their argmax
-## while a mixture would always put those in the NP component.
-## These assignments need to be paired with explicit removal of these junk cells. 
+## We will have an issue they do not: get_grna_assignments() forces EVERY cell to its
+## argmax guide, even garbage cells. sceptre separately flags the cells it would drop in
+## run_qc() (zero-or-2+ grnas under the method) in scep@cells_w_zero_or_twoplus_grnas; we
+## save those exact positional idx as the cells to remove everywhere, so the direct-method
+## datasets drop the same cells the sceptre-pipeline drops in its own run_qc (apples-to-apples).
 
 rm(list=ls())
 library(sceptre)
@@ -14,7 +16,7 @@ source("~/.Rprofile")
 dataset <- "replogle-rd7"
 
 # shared normalizer for the cell-universe fingerprint (see fingerprint contract);
-# MUST match the definition in remove_low_umi_cells_replogle.R and the data-prep loader.
+# MUST match the definition in the data-prep loader (lib/io.R load_assignment()).
 stopifnot(requireNamespace("digest", quietly = TRUE))
 fingerprint_cells <- function(x) digest::digest(as.integer(x))
 
@@ -91,7 +93,25 @@ saveRDS(assn_mat, file.path(path_to_outputs, "grna_assignment_matrix.rds"))
 saveRDS(
   list(method="maximum", n_cells=ncol(assn_mat),
        # order-sensitive hash to confirm that we haven't shuffled cells when we don't have cell names
-       cell_fingerprint = fingerprint_cells(scep@covariate_data_frame$grna_n_umis),  
+       cell_fingerprint = fingerprint_cells(scep@covariate_data_frame$grna_n_umis),
        date = Sys.time()),
   file.path(path_to_outputs, "assignment_metadata.rds")
+)
+
+## cells to remove: sceptre's own run_qc removals ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+## get_grna_assignments() forces every cell to one guide, but @cells_w_zero_or_twoplus_grnas
+## holds the positional idx sceptre would drop in run_qc() (verified to align with grna_matrix).
+## Saving them here (same excluded_cells.rds contract load_assignment() reads) replaces the old
+## max-UMI<5 heuristic in remove_low_umi_cells_replogle.R (now obsolete).
+excluded_idx <- as.integer(scep@cells_w_zero_or_twoplus_grnas)
+stopifnot(all(excluded_idx >= 1L), all(excluded_idx <= ncol(assn_mat)), !any(duplicated(excluded_idx)))
+cat("Excluding", length(excluded_idx), "cells (sceptre zero-or-2+ grnas / run_qc removals).\n")
+saveRDS(
+  list(excluded_idx     = excluded_idx,
+       n_excluded       = length(excluded_idx),
+       n_cells          = ncol(assn_mat),
+       source           = "scep@cells_w_zero_or_twoplus_grnas (what run_qc removes)",
+       cell_fingerprint = fingerprint_cells(scep@covariate_data_frame$grna_n_umis),
+       date             = Sys.time()),
+  file.path(path_to_outputs, "excluded_cells.rds")
 )

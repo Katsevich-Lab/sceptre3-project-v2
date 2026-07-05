@@ -37,7 +37,6 @@ odm_to_sparse_matrix <- function(odm, genes, cell_idx, set_rownames = TRUE) {
   return(result)
 }
 
-
 # Function 2: Enforce single guide per cell (low MOI) -------------------
 #' Enforce single guide per cell by random selection
 #'
