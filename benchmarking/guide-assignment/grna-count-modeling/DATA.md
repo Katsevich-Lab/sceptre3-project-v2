@@ -28,7 +28,7 @@ per the [lab wiki](https://github.com/Katsevich-Lab/lab-resources/wiki/Synchroni
 | a549 | Sakellaropoulos 2024 | GSE236304 | `filtered_feature_bc_matrix.h5` | `read_10x_h5` | full (raw h5 local) | see note ↓ (import-Sakellaropoulos-2024 exists, SRA path) |
 | dctap ×2 | Ray 2025 (ENCODE DC-TAP) | GSE303901 | mtx triplet / tar.gz | `read_10x_mtx` | full (raw local) | see note ↓ (`ray-2025` on HPCC, different processing) |
 | cd8_tcell | Chung 2024 | GSE279498 | mtx triplet (GEO suppl) | `read_10x_mtx` | **full** (raw triplet local) | **import-chung-2024** (new) |
-| endoc_t2d | Cao 2024 | GSE273677 | `GSE273677_RAW.tar` (GEO) | `read_10x_mtx` (untar + rbind reps) | **full** (raw tar local) | **import-cao-2024** (new) |
+| endoc_t2d | Cao 2024 | GSE273677 | `GSM8434996` GWAS-rep1 triplet (GEO) | `read_10x_mtx` (single rep) | **full** (raw local) | **import-cao-2024** ✅ |
 | erythroid_multiome | Caulier 2025 | GSE274113 | `..._filtered_feature_bc_matrix_1.h5` | `read_10x_h5` | **full** (raw h5 local) | **import-caulier-2025** (new) |
 | gastric_organoid | Chen 2025 | GSE280506 | `cell_identities.csv.gz` + guide xlsx | `build_grna_matrix.R` | partial (gRNA only; GEX = GEO RAW.tar) | **import-chen-2025** (new) |
 | invivo_cortex | Zheng 2023 | GSE249416 | `Perturb_sg.qs.gz` (Seurat) | `build_grna_matrix.R` | partial (legacy `.qs`; R 4.4 + qs v1) | **import-zheng-2023** (new) |
@@ -72,9 +72,9 @@ Config var per repo: `LOCAL_<AUTHOR>_<YEAR>_DATA_DIR=$LOCAL_EXTERNAL_DATA_DIR"<a
 | [import-chung-2024](https://github.com/Katsevich-Lab/import-chung-2024) (cd8_tcell, HKC045) | ✅ live, public | byte-identical (44 × 2,426) |
 | [import-chen-2025](https://github.com/Katsevich-Lab/import-chen-2025) (gastric) | ✅ live, public | byte-identical (96 × 42,324) |
 | [import-feng-2025](https://github.com/Katsevich-Lab/import-feng-2025) (ipsc) | ✅ live, public | byte-identical (6,824 × 322,746) |
-| import-cao-2024 (endoc_t2d) | ⏳ blocked | GSE273677_RAW.tar → 7 GWAS reps (GSM8434996–GSM8435002). The exact combine (rep order / dedup — the committed matrix has plain, un-prefixed barcodes) is not in a versioned script; recover it before a byte-identical repo. |
+| [import-cao-2024](https://github.com/Katsevich-Lab/import-cao-2024) (endoc_t2d) | ✅ live, public | byte-identical (225 × 8,329) |
 | import-zheng-2023 (invivo_cortex) | ⏳ blocked | GSE249416 legacy Seurat `.qs` (`build_grna_matrix_invivo_cortex.R` versioned) — needs R 4.4 + `qs` v1 to load; not verifiable in the current env. |
-| import-liu-2025 (barnyard ×4) | ⏳ blocked | GSE272457 (URLs in `external/fishash_analysis/data/barnyard_data_urls.txt`). The registry matrices are sceptre-pipeline outputs (`build_inputs.py` → CellRanger-style → sceptre-pipeline), not a single parse — reproduce the whole pipeline. |
+| import-liu-2025 (barnyard ×4) | ⏳ blocked | The registry matrices live under `input_data/barnyard_*/sceptre/` (internal, alongside gasperini/replogle) and are the raw GEO matrix (GSE272457; 200 NT guides) **GEX-QC-filtered** (e.g. 8,265 → 7,453 cells) by a sceptre-import/QC step — the same `make_*`-style build gasperini/replogle use, but the barnyard build script is **not versioned** (unlike `make_gasperini.R`/`make_replogle-rd7.R`). Recover that QC/import recipe to reproduce byte-identically. |
 
 Per-dataset parse code lives in `../data-preprocessing/survey-import/`; each repo ports the relevant one.
 Partial datasets (gastric/invivo/ipsc) fetch GEX **count** matrices from GEO/figshare where available (not SRA);
