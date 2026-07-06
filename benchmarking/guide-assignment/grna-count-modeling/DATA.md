@@ -70,11 +70,11 @@ Config var per repo: `LOCAL_<AUTHOR>_<YEAR>_DATA_DIR=$LOCAL_EXTERNAL_DATA_DIR"<a
 | [import-caulier-2025](https://github.com/Katsevich-Lab/import-caulier-2025) (erythroid) | ✅ live, public | byte-identical (63 × 14,525) |
 | [import-zhu-2025](https://github.com/Katsevich-Lab/import-zhu-2025) (cd4_tcell) | ✅ live, private (unpublished) | byte-identical (27,272 × 137,716) |
 | [import-chung-2024](https://github.com/Katsevich-Lab/import-chung-2024) (cd8_tcell, HKC045) | ✅ live, public | byte-identical (44 × 2,426) |
-| import-cao-2024 (endoc_t2d) | pending | GSE273677_RAW.tar → 7 GWAS reps (GSM8434996–GSM8435002), barcode-prefixed + combined; needs the exact combine to re-verify |
-| import-chen-2025 (gastric) | pending | GSE280506 cell-identities + guide xlsx; builder in `survey-import/build_grna_matrix_gastric_organoid.R` |
-| import-zheng-2023 (invivo_cortex) | pending | GSE249416 legacy Seurat `.qs` (R 4.4 + qs v1); builder versioned |
-| import-\<hipsci\> (ipsc) | pending | figshare 27989294 dense UMI CSV; builder versioned |
-| import-liu-2025 (barnyard ×4) | pending | GSE272457 (URLs in `external/fishash_analysis/data/barnyard_data_urls.txt`); 4 samples via `build_inputs.py` + sceptre-pipeline |
+| [import-chen-2025](https://github.com/Katsevich-Lab/import-chen-2025) (gastric) | ✅ live, public | byte-identical (96 × 42,324) |
+| [import-feng-2025](https://github.com/Katsevich-Lab/import-feng-2025) (ipsc) | ✅ live, public | byte-identical (6,824 × 322,746) |
+| import-cao-2024 (endoc_t2d) | ⏳ blocked | GSE273677_RAW.tar → 7 GWAS reps (GSM8434996–GSM8435002). The exact combine (rep order / dedup — the committed matrix has plain, un-prefixed barcodes) is not in a versioned script; recover it before a byte-identical repo. |
+| import-zheng-2023 (invivo_cortex) | ⏳ blocked | GSE249416 legacy Seurat `.qs` (`build_grna_matrix_invivo_cortex.R` versioned) — needs R 4.4 + `qs` v1 to load; not verifiable in the current env. |
+| import-liu-2025 (barnyard ×4) | ⏳ blocked | GSE272457 (URLs in `external/fishash_analysis/data/barnyard_data_urls.txt`). The registry matrices are sceptre-pipeline outputs (`build_inputs.py` → CellRanger-style → sceptre-pipeline), not a single parse — reproduce the whole pipeline. |
 
 Per-dataset parse code lives in `../data-preprocessing/survey-import/`; each repo ports the relevant one.
 Partial datasets (gastric/invivo/ipsc) fetch GEX **count** matrices from GEO/figshare where available (not SRA);
