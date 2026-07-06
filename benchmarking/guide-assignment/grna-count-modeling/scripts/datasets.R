@@ -42,6 +42,9 @@ dctap_sceptre_dir <- function(which = c("highmoi", "lowmoi")) {
 
 # Load a guide x cell count matrix by dataset NAME (from dataset_paths()) or by explicit path,
 # returned as a numeric CsparseMatrix (the form every downstream script expects).
+# NOTE: several matrices are stored on disk as dgRMatrix (row-compressed), so the
+# as(...,"CsparseMatrix") is a load-bearing class conversion, not cosmetic -- a bare readRDS()
+# would return the wrong class. (storage.mode(@x)<-"double" IS a no-op; @x is already double.)
 load_grna_matrix <- function(ds_or_path) {
   reg <- dataset_paths()
   p <- if (ds_or_path %in% names(reg)) reg[[ds_or_path]] else ds_or_path
