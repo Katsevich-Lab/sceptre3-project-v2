@@ -9,9 +9,9 @@
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats)})
 source("scripts/contingency_method.R")
-DATA <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
+source("scripts/datasets.R")   # load_grna_matrix()
 OUT  <- "results/replogle_ambient_poisson"; dir.create(OUT, recursive=TRUE, showWarnings=FALSE)
-mc <- as(readRDS(DATA), "CsparseMatrix"); G <- nrow(mc); C <- ncol(mc)
+mc <- load_grna_matrix("replogle-rd7"); G <- nrow(mc); C <- ncol(mc)
 RAMAC <- which(grepl("RAMAC", rownames(mc)))[1]; v <- as.numeric(mc[RAMAC,])
 
 ## --- rank-1 denoised fit (for the plug-in mask + a_g) ---

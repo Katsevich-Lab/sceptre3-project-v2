@@ -7,11 +7,12 @@
 ## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix); library(ondisc); library(sceptre)})
+source("scripts/datasets.R")   # replogle_rd7_pipeline_dir()
 OUT <- "results/global_ambient_poisson"
 STRONG<-30; WEAKLO<-2; WEAKHI<-7; MIN_STRONG<-5; MIN_WEAK<-5
 
 ## ---- replogle, generic thresholds, via the odm pipeline ---------------------
-Dr <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline")
+Dr <- replogle_rd7_pipeline_dir()
 grna <- initialize_odm_from_backing_file(file.path(Dr,"grna.odm"))
 resp <- initialize_odm_from_backing_file(file.path(Dr,"response.odm"))
 so   <- readRDS(file.path(Dr,"sceptre_object.rds"))

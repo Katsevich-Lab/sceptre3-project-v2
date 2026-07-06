@@ -2,9 +2,9 @@
 ## per-guide count histograms (across cells) for the extremes, with the
 ## depth-mixed ambient Poisson (mean_c Pois(k; a_g d_c)) overlaid.
 suppressMessages({library(Matrix); library(sparseMatrixStats)})
-DATA <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
+source("scripts/datasets.R")   # load_grna_matrix()
 OUT  <- "results/replogle_ambient_poisson"; dir.create(OUT, recursive=TRUE, showWarnings=FALSE)
-mc <- as(readRDS(DATA), "CsparseMatrix"); G <- nrow(mc); C <- ncol(mc)
+mc <- load_grna_matrix("replogle-rd7"); G <- nrow(mc); C <- ncol(mc)
 
 ## --- rank-1 denoised fit (same as replogle_ambient_analysis.R) ---
 adf <- file.path(OUT, "replogle_rank1_ad.rds")

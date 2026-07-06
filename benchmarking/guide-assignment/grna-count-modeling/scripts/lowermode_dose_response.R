@@ -13,11 +13,10 @@
 ## Run from grna-count-modeling/.  (cross-dataset tcell step is slow, ~7 min.)
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats); library(ondisc); library(sceptre)})
+source("scripts/datasets.R")   # load_replogle_rd7_de()
 OUT<-"results/global_ambient_poisson"
-Dm<-path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
-Dp<-path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline")
-mc<-as(readRDS(Dm),"CsparseMatrix"); totgrna<-as.numeric(colSums(mc))
-resp<-initialize_odm_from_backing_file(file.path(Dp,"response.odm")); so<-readRDS(file.path(Dp,"sceptre_object.rds"))
+rd<-load_replogle_rd7_de(); mc<-rd$mc; totgrna<-as.numeric(colSums(mc))
+resp<-rd$resp; so<-rd$so
 lib<-exp(so@covariate_matrix[,"log(response_n_umis)"]); tdf<-so@grna_target_data_frame; gids<-rownames(resp)
 cdf<-so@covariate_data_frame; umi<-cdf$response_n_umis
 ntg<-tdf$grna_id[tdf$grna_target=="non-targeting"]; ntmask<-rep(FALSE,ncol(mc)); for(g in ntg) ntmask<-ntmask|(as.numeric(mc[g,])>=30)

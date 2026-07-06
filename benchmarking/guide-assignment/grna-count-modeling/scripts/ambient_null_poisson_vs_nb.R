@@ -16,9 +16,9 @@
 ## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats)})
+source("scripts/datasets.R")   # load_grna_matrix()
 OUT<-"results/global_ambient_poisson"
-D<-path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
-mc<-as(readRDS(D),"CsparseMatrix"); G<-nrow(mc); C<-ncol(mc)
+mc<-load_grna_matrix("replogle-rd7"); G<-nrow(mc); C<-ncol(mc)
 gv<-mc@i+1L; cv<-rep.int(seq_len(C),diff(mc@p)); xv<-mc@x
 rowN<-as.numeric(rowSums(mc)); colN<-as.numeric(colSums(mc))
 fs<-function(val,idx,n){o<-numeric(n);s<-rowsum(val,idx);o[as.integer(rownames(s))]<-s[,1];o}

@@ -28,13 +28,13 @@
 ## ============================================================================
 ## Run from the grna-count-modeling/ folder (repo convention).
 suppressMessages({library(Matrix); library(sparseMatrixStats)})
+source("scripts/datasets.R")   # load_grna_matrix()
 
-DATA <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
 OUT  <- "results/replogle_ambient_poisson"
 dir.create(OUT, recursive=TRUE, showWarnings=FALSE)
 
 ## ---- load + depth proxies --------------------------------------------------
-m  <- as(readRDS(DATA), "CsparseMatrix")            # guides x cells (dgCMatrix)
+m  <- load_grna_matrix("replogle-rd7")              # guides x cells (dgCMatrix)
 L  <- colSums(m); mx <- colMaxs(m); d <- L - mx     # soup-depth proxy
 rs <- rowSums(m)
 

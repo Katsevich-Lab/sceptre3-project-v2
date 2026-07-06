@@ -3,13 +3,10 @@
 ## populated low mode (cells across counts 2,3,4,5+ so per-count bins aren't tiny), (c) clear
 ## knockdown at the integration mode (a real hit). Prints a ranked candidate table.
 suppressMessages({library(Matrix); library(ondisc); library(sceptre)})
+source("scripts/datasets.R")   # load_replogle_rd7_de()
 OUT_SRC <- "results/global_ambient_poisson"
-Dm <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
-Dp <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline")
 
-mc   <- as(readRDS(Dm), "CsparseMatrix")
-resp <- initialize_odm_from_backing_file(file.path(Dp, "response.odm"))
-so   <- readRDS(file.path(Dp, "sceptre_object.rds"))
+rd <- load_replogle_rd7_de(); mc <- rd$mc; resp <- rd$resp; so <- rd$so
 lib  <- exp(so@covariate_matrix[, "log(response_n_umis)"]); gids <- rownames(resp)
 tdf  <- so@grna_target_data_frame
 

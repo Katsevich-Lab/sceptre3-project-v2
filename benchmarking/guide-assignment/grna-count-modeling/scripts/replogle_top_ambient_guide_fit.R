@@ -11,12 +11,12 @@
 suppressPackageStartupMessages({ library(Matrix); library(fishash); library(extraDistr)
   library(sparseMatrixStats); library(ggplot2); library(tidyr) })
 source("scripts/contingency_method.R")
+source("scripts/datasets.R")   # load_grna_matrix()
 
 OUT <- "results/ambient_ceiling"; dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 GUIDE <- "8832_TFAM_P1P2_ENSG00000108064"
 
-counts <- readRDS("/Users/ekatsevi/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
-counts <- as(counts, "CsparseMatrix"); storage.mode(counts@x) <- "double"
+counts <- load_grna_matrix("replogle-rd7")   # as(CsparseMatrix) + storage.mode double
 cat(sprintf("replogle-rd7: %d guides x %d cells\n", nrow(counts), ncol(counts)))
 
 ## ---- run fishash+ (depth_fix) and extract the denoised rank-1 ambient rate field ----

@@ -16,13 +16,11 @@
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats); library(ondisc); library(sceptre)})
 source("scripts/contingency_method.R")
+source("scripts/datasets.R")   # load_replogle_rd7_de()
 OUT <- "results/global_ambient_poisson"
-Dpipe <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline")
-Dmat  <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
 
-mc <- as(readRDS(Dmat),"CsparseMatrix")                 # guides x cells (aligned to response.odm)
-resp <- initialize_odm_from_backing_file(file.path(Dpipe,"response.odm"))
-so <- readRDS(file.path(Dpipe,"sceptre_object.rds"))
+rd <- load_replogle_rd7_de()                            # guides x cells (aligned to response.odm)
+mc <- rd$mc; resp <- rd$resp; so <- rd$so
 lib <- exp(so@covariate_matrix[,"log(response_n_umis)"]); tdf <- so@grna_target_data_frame
 gene_ids <- rownames(resp)
 

@@ -49,12 +49,17 @@ load_grna_matrix <- function(ds_or_path) {
   m <- as(readRDS(p), "CsparseMatrix"); storage.mode(m@x) <- "double"; m
 }
 
+# Directory holding the replogle-rd7 sceptre-pipeline DE artifacts (response.odm,
+# grna.odm, sceptre_object.rds).  Single source of truth for the several scripts
+# that read those files directly.
+replogle_rd7_pipeline_dir <- function() file.path(.GA_IN, "replogle-rd7", "sceptre-pipeline")
+
 # Replogle-rd7 with its downstream sceptre-DE artifacts: the gRNA count matrix, the
 # response ODM, and the fitted sceptre_object from the sceptre-pipeline run.  The
 # collaborator dose-response / ENO1 figures share this triple.  Requires ondisc +
 # sceptre to be attached by the caller (for initialize_odm_from_backing_file).
 load_replogle_rd7_de <- function() {
-  Dp <- file.path(.GA_IN, "replogle-rd7", "sceptre-pipeline")
+  Dp <- replogle_rd7_pipeline_dir()
   list(mc   = load_grna_matrix("replogle-rd7"),
        resp = initialize_odm_from_backing_file(file.path(Dp, "response.odm")),
        so   = readRDS(file.path(Dp, "sceptre_object.rds")))

@@ -18,6 +18,18 @@ Single source of truth for the suite (source it after `scripts/contingency_metho
 - `dctap_sceptre_dir("highmoi"|"lowmoi")` — the DC-TAP sceptre dir (aligned matrix + GEX + target df).
 - `load_cleanser_assignment(gm, ds)` — read `results/ambient_ceiling/cleanser_calls/<ds>.csv` into an
   assignment matrix aligned to `gm`.
+- `replogle_rd7_pipeline_dir()` / `load_replogle_rd7_de()` — the replogle-rd7 sceptre-pipeline dir, and
+  the `(mc, resp, so)` triple (count matrix + response ODM + fitted `sceptre_object`) its DE-backed
+  figures share. Requires `ondisc` + `sceptre` attached by the caller.
+
+## Other shared helper libraries
+
+- `scripts/ambient_lib.R` — `fit_rank1_denoised()` (rank-1 Poisson denoised ambient field, masked EM) and
+  `detect_gap()` (clean ambient/signal gap detector). Sourced by the ambient-Poisson ladder scripts
+  (`ambient_validation.R`, `global_ambient_gap.R`, `weak_integration_prevalence.R`).
+- `scripts/barnyard_io.R` — canonical Liu-2025 barnyard loaders: `load_barnyard()` (purity-gated cohort +
+  ambient mask), `load_barnyard_basic()` (GEX-QC-only, caller thresholds purity), `.barnyard_qc()`.
+  Sourced by the §1 barnyard figure scripts.
 
 ## Writeup pipeline (run order → feeds `method_comparison.qmd`)
 
@@ -41,13 +53,15 @@ histograms; compute superseded by `ambient_fit_cache.R`), `init_sensitivity.R`, 
 `replogle_top_ambient_guide_fit.R`. `depth_mix_panel.R` is a hand-sourced tool
 (`source(); depth_mix_panel(ds, guide)`).
 
-## Known remaining tech debt (not yet consolidated)
+## Consolidation status
 
-Duplicated helpers *outside* this suite still await extraction (deferred to avoid silent numeric drift
-in the committed writeups they feed — refactor one, re-run, diff before the next):
-- **barnyard QC loader**: `barnyard_io.R` is the intended source of truth but `load_basic()`/`barnyard_qc()`
-  are re-transcribed inline in `barnyard_ambient_figures.R`, `barnyard_five_cells.R`,
-  `barnyard_marginal_fit.R`, `barnyard_benchmark_fishashplus.R`.
-- **`fit_rank1_denoised()`**: ~4 near-verbatim copies (`ambient_validation.R` is the cleanest).
-- **Replogle Dm/Dp loader**: shared by `collab_dose_response_aggregate.R`, `collab_eno1_violin.R`,
-  `collab_eno1_gapfit.R`, `method_comparison_lowermode.R`.
+The previously-duplicated helpers have been extracted to the shared libraries above (each refactor
+verified behavior-preserving by re-running and byte-diffing the committed outputs it feeds):
+- `fit_rank1_denoised()` / `detect_gap()` → `ambient_lib.R`.
+- barnyard `load_basic()` / `barnyard_qc()` → `barnyard_io.R` (`load_barnyard_basic()` / `.barnyard_qc()`).
+- the replogle-rd7 `Dm`/`Dp` load boilerplate → `datasets.R` (`load_grna_matrix("replogle-rd7")`,
+  `load_replogle_rd7_de()`, `replogle_rd7_pipeline_dir()`); adopted across the collab/ENO1/RAMAC scripts.
+
+Documented exception: `profile_datasets.R` keeps its own `repl` directory literal — it is a
+landscape profiler that scans `~/data/external/perturbseq-survey` with directory-based file discovery,
+and `repl` is used structurally (as a dir), so the registry does not cleanly apply.

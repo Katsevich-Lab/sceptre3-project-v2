@@ -13,7 +13,8 @@
 ## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix); library(ondisc); library(sceptre)})
-D <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline")
+source("scripts/datasets.R")   # replogle_rd7_pipeline_dir()
+D <- replogle_rd7_pipeline_dir()
 OUT <- "results/global_ambient_poisson"
 
 grna <- initialize_odm_from_backing_file(file.path(D,"grna.odm"))

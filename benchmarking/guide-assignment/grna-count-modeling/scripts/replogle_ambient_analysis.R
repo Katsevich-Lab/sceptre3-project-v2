@@ -17,11 +17,11 @@
 ## Run from the grna-count-modeling/ folder.
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats)})
+source("scripts/datasets.R")   # load_grna_matrix()
 
-DATA <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
 OUT  <- "results/replogle_ambient_poisson"; dir.create(OUT, recursive=TRUE, showWarnings=FALSE)
 
-mc <- as(readRDS(DATA), "CsparseMatrix")            # guides x cells
+mc <- load_grna_matrix("replogle-rd7")              # guides x cells
 G <- nrow(mc); C <- ncol(mc)
 RAMAC <- which(grepl("RAMAC", rownames(mc)))[1]     # the clean-gap case-study guide
 cat(sprintf("Replogle: %d guides x %d cells, %d nonzeros. RAMAC = row %d (%s)\n",
