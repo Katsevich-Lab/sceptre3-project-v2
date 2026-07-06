@@ -39,6 +39,6 @@ results/ambient_ceiling/writeup/assign/
 results/ambient_ceiling/cleanser_calls/
 results/ambient_ceiling/cleanser_batch/
 results/ambient_ceiling/*.log
-results/ambient_ceiling/_progress.rds
+results/ambient_ceiling/**/_progress.rds
 results/ambient_ceiling/_init_progress.rds
 .posit/
