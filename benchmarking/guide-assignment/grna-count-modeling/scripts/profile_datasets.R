@@ -1,8 +1,8 @@
 ## Profile all available Perturb-seq datasets: dimensions, MOI, library structure,
 ## gene-expression availability, negative-control guides. Anti-overfitting landscape.
 suppressMessages(library(Matrix))
-base <- path.expand("~/data/external/perturbseq-survey")
-repl <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre")
+base <- paste0(.get_config_path("LOCAL_EXTERNAL_DATA_DIR"), "perturbseq-survey")
+repl <- paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/replogle-rd7/sceptre")
 OUT  <- "results/method_decision"; dir.create(OUT, recursive=TRUE, showWarnings=FALSE)
 
 find_grna <- function(dd){

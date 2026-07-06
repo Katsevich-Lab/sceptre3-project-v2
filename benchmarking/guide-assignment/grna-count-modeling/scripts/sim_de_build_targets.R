@@ -22,7 +22,7 @@
 # =============================================================================
 suppressPackageStartupMessages({library(Matrix); library(rhdf5)})
 
-SURV <- path.expand("~/data/external/perturbseq-survey")
+SURV <- paste0(.get_config_path("LOCAL_EXTERNAL_DATA_DIR"), "perturbseq-survey")
 NT <- "non-targeting"
 
 # Build a SYMBOL -> ENSG mapping for a dataset using its raw 10x features list.

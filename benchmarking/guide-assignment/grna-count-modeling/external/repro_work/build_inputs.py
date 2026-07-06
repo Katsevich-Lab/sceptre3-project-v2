@@ -17,7 +17,13 @@ import scipy.io
 import scipy.sparse as sp
 import anndata as ad
 
-BARN = os.path.expanduser("~/data/external/liu-2025-cleanser/GSE272457")
+def _config_path(var):
+    # mirror ~/.Rprofile's .get_config_path: resolve a ~/.research_config variable
+    import subprocess
+    return subprocess.run(["sh", "-c", f"source ~/.research_config; echo ${var}"],
+                          capture_output=True, text=True).stdout.strip()
+
+BARN = os.path.join(_config_path("LOCAL_EXTERNAL_DATA_DIR"), "liu-2025-cleanser/GSE272457")
 OUT = os.path.dirname(os.path.abspath(__file__))
 
 SAMPLES = {

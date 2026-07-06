@@ -40,7 +40,7 @@ for (mf in c("manifest_modelA.csv", "manifest_modelB.csv")) {
 }
 
 # ---- lab's OLD comprehensive sim (the cautionary baseline) ------------------
-csim <- file.path(path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data"),
+csim <- file.path(paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data"),
                   "sims_comprehensive")
 if (file.exists(file.path(csim, "sceptre", "grna_matrix.rds"))) {
   gm <- readRDS(file.path(csim, "sceptre", "grna_matrix.rds"))

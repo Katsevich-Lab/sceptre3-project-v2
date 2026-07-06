@@ -47,8 +47,8 @@ suppressPackageStartupMessages({
 }
 HERE <- .here()
 GA   <- normalizePath(file.path(HERE, ".."))
-LAB_DATA  <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data")
-LAB_ASSOC <- path.expand("~/data/projects/sceptre3/benchmarking/association")
+LAB_DATA  <- paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data")
+LAB_ASSOC <- paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"), "association")
 DE_OUT    <- file.path(HERE, "results", "sim_framework", "de")
 dir.create(DE_OUT, recursive = TRUE, showWarnings = FALSE)
 
@@ -66,7 +66,7 @@ if (file.exists(file.path(.lab_prep, "utils_data_prep.R"))) {
 #    grna_matrix_aligned.rds, produced by sim_de_extract_survey.R from the raw
 #    perturbseq-survey/ files (smaller in-memory-friendly datasets).
 # See DATASETS_STATUS.md for the per-dataset audit.
-SURV_BASE <- path.expand("~/data/external/perturbseq-survey")
+SURV_BASE <- paste0(.get_config_path("LOCAL_EXTERNAL_DATA_DIR"), "perturbseq-survey")
 REAL_DATASETS <- list(
   gasperini = list(mode = "ondisc", moi = "high",
     dir = file.path(LAB_DATA, "gasperini", "sceptre-pipeline")),

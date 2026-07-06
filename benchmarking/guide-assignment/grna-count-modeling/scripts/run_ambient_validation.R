@@ -3,8 +3,8 @@ suppressMessages({library(Matrix); library(sparseMatrixStats)})
 source(file.path(getwd(),"scripts","ambient_validation.R"))
 OUT <- "results/method_decision"; dir.create(OUT, showWarnings=FALSE, recursive=TRUE)
 
-SURV <- path.expand("~/data/external/perturbseq-survey")
-REPL <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
+SURV <- paste0(.get_config_path("LOCAL_EXTERNAL_DATA_DIR"), "perturbseq-survey")
+REPL <- paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
 grna_path <- function(dd){
   for(p in c(file.path(dd,"sceptre","grna_matrix_aligned.rds"), file.path(dd,"grna_matrix.rds")))
     if(file.exists(p)) return(p); NA

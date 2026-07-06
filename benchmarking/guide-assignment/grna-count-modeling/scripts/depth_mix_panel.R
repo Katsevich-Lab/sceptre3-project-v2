@@ -9,15 +9,15 @@
 suppressPackageStartupMessages({ library(Matrix); library(ggplot2); library(tidyr) })
 
 .DS_PATHS <- local({
-  IN  <- "/Users/ekatsevi/data/projects/sceptre3/benchmarking/guide_assignment/input_data"
-  SUR <- "/Users/ekatsevi/data/external/perturbseq-survey"
+  IN  <- paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data")
+  SUR <- paste0(.get_config_path("LOCAL_EXTERNAL_DATA_DIR"), "perturbseq-survey")
   list(barnyard_lrb100_0hr=file.path(IN,"barnyard_lrb100_0hr/sceptre/grna_matrix.rds"),
        barnyard_lrb100_72hr=file.path(IN,"barnyard_lrb100_72hr/sceptre/grna_matrix.rds"),
        barnyard_mch2_0hr=file.path(IN,"barnyard_mch2_0hr/sceptre/grna_matrix.rds"),
        barnyard_mch2_72hr=file.path(IN,"barnyard_mch2_72hr/sceptre/grna_matrix.rds"),
        gasperini=file.path(IN,"gasperini/sceptre/grna_matrix.rds"),
        `replogle-rd7`=file.path(IN,"replogle-rd7/sceptre/grna_matrix.rds"),
-       mccutcheon="/Users/ekatsevi/data/external/mccutcheon-2023-GSE218988/grna_matrix.rds",
+       mccutcheon=paste0(.get_config_path("LOCAL_EXTERNAL_DATA_DIR"), "mccutcheon-2023-GSE218988/grna_matrix.rds"),
        a549=file.path(SUR,"a549_crispri_perturbseq_GSE236304/grna_matrix.rds"),
        cd8_tcell=file.path(SUR,"cd8_tcell_perturbcite_GSE279498/grna_matrix.rds"),
        dctap_k562_highmoi=file.path(SUR,"dctap_k562_highmoi_GSE303901/grna_matrix.rds"),

@@ -11,7 +11,7 @@
 # ============================================================================
 suppressPackageStartupMessages({ library(Matrix); library(ggplot2); library(tidyr) })
 OUT <- "results/ambient_ceiling"; CACHE <- file.path(OUT, "fit_cache")
-SUR <- "/Users/ekatsevi/data/external/perturbseq-survey"
+SUR <- paste0(.get_config_path("LOCAL_EXTERNAL_DATA_DIR"), "perturbseq-survey")
 paths <- list(
   dctap_k562_highmoi = file.path(SUR,"dctap_k562_highmoi_GSE303901/grna_matrix.rds"),
   dctap_k562_lowmoi  = file.path(SUR,"dctap_k562_lowmoi_GSE303901/grna_matrix.rds"))

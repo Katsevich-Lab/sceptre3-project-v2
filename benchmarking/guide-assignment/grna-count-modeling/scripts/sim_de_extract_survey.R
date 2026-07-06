@@ -17,7 +17,7 @@
 # =============================================================================
 suppressPackageStartupMessages({library(rhdf5); library(Matrix)})
 
-SURV <- path.expand("~/data/external/perturbseq-survey")
+SURV <- paste0(.get_config_path("LOCAL_EXTERNAL_DATA_DIR"), "perturbseq-survey")
 
 # ---- helpers ----------------------------------------------------------------
 # Read a CellRanger v3 .h5 into a list with full matrix, feature_type, barcodes.

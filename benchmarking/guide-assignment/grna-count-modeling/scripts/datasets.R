@@ -7,10 +7,15 @@
 # Source it AFTER scripts/contingency_method.R if you use the fishash*_assign() wrappers, e.g.
 #     source("scripts/contingency_method.R"); source("scripts/datasets.R")
 # Kept dependency-light: only Matrix is needed for the loaders / kappa_leq2().
+#
+# Data locations resolve through the lab config (~/.research_config via .get_config_path in ~/.Rprofile),
+# NOT hardcoded ~/data paths -- matches the rest of the repo (e.g. association/data-preparation/lib/io.R).
+# The config vars end in "/", so concatenate with paste0 (file.path would insert a double slash).
 # ============================================================================
 
-.GA_IN  <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data")
-.GA_SUR <- path.expand("~/data/external/perturbseq-survey")
+.GA_EXT <- .get_config_path("LOCAL_EXTERNAL_DATA_DIR")                       # ~/data/external/
+.GA_IN  <- paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data")
+.GA_SUR <- paste0(.GA_EXT, "perturbseq-survey")
 
 # The 17 real gRNA-count datasets (guides x cells). Named list of grna_matrix.rds paths.
 dataset_paths <- function() list(
@@ -20,7 +25,7 @@ dataset_paths <- function() list(
   barnyard_mch2_72hr   = file.path(.GA_IN, "barnyard_mch2_72hr/sceptre/grna_matrix.rds"),
   gasperini            = file.path(.GA_IN, "gasperini/sceptre/grna_matrix.rds"),
   `replogle-rd7`       = file.path(.GA_IN, "replogle-rd7/sceptre/grna_matrix.rds"),
-  mccutcheon           = path.expand("~/data/external/mccutcheon-2023-GSE218988/grna_matrix.rds"),
+  mccutcheon           = paste0(.GA_EXT, "mccutcheon-2023-GSE218988/grna_matrix.rds"),
   a549                 = file.path(.GA_SUR, "a549_crispri_perturbseq_GSE236304/grna_matrix.rds"),
   cd8_tcell            = file.path(.GA_SUR, "cd8_tcell_perturbcite_GSE279498/grna_matrix.rds"),
   dctap_k562_highmoi   = file.path(.GA_SUR, "dctap_k562_highmoi_GSE303901/grna_matrix.rds"),

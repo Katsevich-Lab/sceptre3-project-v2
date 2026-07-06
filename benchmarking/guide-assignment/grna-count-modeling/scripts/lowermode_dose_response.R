@@ -75,7 +75,7 @@ dose_survey<-function(dir,has_nt){
   cc<-c();rr<-c();sg<-c(); for(z in cand){v<-integer(ncol(g));v[cvv[z$p]]<-z$vv;st<-which(v>=30);cp<-as.numeric(Est[,z$tg])/libx*1e4;base<-mean(cp[nm&v==0]);if(!is.finite(base)||base<0.5||mean(cp[st])/base>0.7)next;bg<-which(v>=1&v<30);cc<-c(cc,v[bg]);rr<-c(rr,cp[bg]/base);sg<-c(sg,cp[st]/base)}
   b<-list(`1`=1,`2`=2,`3`=3,`4-5`=4:5,`6-9`=6:9,`10-19`=10:19,`20-29`=20:29);ox<-c();oy<-c();for(nm2 in names(b)){s<-cc%in%b[[nm2]];if(sum(s)<20)next;ox<-c(ox,mean(cc[s]));oy<-c(oy,mean(rr[s]))}
   list(xs=ox,ys=oy,sig=mean(sg)) }
-SV<-path.expand("~/data/external/perturbseq-survey")
+SV<-paste0(.get_config_path("LOCAL_EXTERNAL_DATA_DIR"), "perturbseq-survey")
 en<-dose_survey(file.path(SV,"endoc_t2d_perturbseq_GSE273677/sceptre"),TRUE)
 tc<-dose_survey(file.path(SV,"tcell_cd4_perturbseq_GSE314342/sceptre"),FALSE)   # slow (~7min)
 rp<-list(xs=xs,ys=ys,sig=mean(sigr)); saveRDS(list(replogle=rp,endoc=en,tcell=tc),file.path(OUT,"dose_response_xdataset.rds"))

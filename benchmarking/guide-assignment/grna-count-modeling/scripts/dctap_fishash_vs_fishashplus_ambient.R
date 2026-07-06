@@ -31,7 +31,7 @@ source(file.path(HERE, "contingency_method.R"))
 OUT_DIR <- normalizePath(file.path(HERE, "..", "results", "ambient_ceiling"), mustWork = FALSE)
 dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
 
-DATA <- "/Users/ekatsevi/data/external/perturbseq-survey/dctap_k562_highmoi_GSE303901/sceptre/grna_matrix_aligned.rds"
+DATA <- paste0(.get_config_path("LOCAL_EXTERNAL_DATA_DIR"), "perturbseq-survey/dctap_k562_highmoi_GSE303901/sceptre/grna_matrix_aligned.rds")
 KMAX <- 60L
 
 # ---- positive-control guides (12) ----------------------------------------

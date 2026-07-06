@@ -26,8 +26,8 @@
 suppressPackageStartupMessages({library(Matrix); library(ggplot2); library(dplyr); library(tidyr)})
 source(file.path(getwd(), "scripts", "sim_lib.R"))
 source(file.path(getwd(), "scripts", "barnyard_io.R"))
-SURV <- path.expand("~/data/external/perturbseq-survey")
-DATA <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data")
+SURV <- paste0(.get_config_path("LOCAL_EXTERNAL_DATA_DIR"), "perturbseq-survey")
+DATA <- paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data")
 REPRO<- file.path(HERE, "external", "repro_work")
 OUT  <- SIMFW()
 
