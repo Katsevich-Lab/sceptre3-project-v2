@@ -9,8 +9,8 @@
 ## ambient soup? This measures how prevalent weak integration is, and should
 ## track soup density (dense soup -> few guides affected; thin soup -> many).
 ##
-## Machinery COPIED from scripts/global_ambient_gap.R (do NOT source that file --
-## it runs top-level CLI code): fit_rank1_denoised(mc) and detect_gap(vg).
+## fit_rank1_denoised() and detect_gap() now come from the shared scripts/ambient_lib.R
+## (do NOT source global_ambient_gap.R -- it runs top-level CLI code).
 ##
 ## Read-only. Writes ONLY new files under results/collaborator_writeup/.
 ##   Run from grna-count-modeling/.
@@ -20,41 +20,8 @@ suppressMessages({library(Matrix)})
 OUT <- "results/collaborator_writeup"
 dir.create(OUT, recursive=TRUE, showWarnings=FALSE)
 
-## ---- COPIED from global_ambient_gap.R: rank-1 Poisson denoised ambient depth ----
-fit_rank1_denoised <- function(mc, outer=6, inner=12, mask_p=1e-6){
-  G <- nrow(mc); C <- ncol(mc)
-  gv <- mc@i + 1L; cv <- rep.int(seq_len(C), diff(mc@p)); xv <- mc@x
-  rowN <- as.numeric(Matrix::rowSums(mc)); colN <- as.numeric(Matrix::colSums(mc))
-  fastsum <- function(val, idx, n){ o<-numeric(n); s<-rowsum(val, idx); o[as.integer(rownames(s))]<-s[,1]; o }
-  d <- colN; d[d==0] <- 1e-6; a <- rowN/sum(rowN); mask <- logical(length(xv))
-  for (o in seq_len(outer)){
-    for (it in seq_len(inner)){
-      if(any(mask)){ mrN<-fastsum(xv[mask],gv[mask],G); mrD<-fastsum(d[cv[mask]],gv[mask],G) } else { mrN<-numeric(G); mrD<-numeric(G) }
-      a <- (rowN-mrN)/(sum(d)-mrD); a[!is.finite(a)|a<0]<-0; a<-a/sum(a)
-      if(any(mask)){ mcN<-fastsum(xv[mask],cv[mask],C); mcA<-fastsum(a[gv[mask]],cv[mask],C) } else { mcN<-numeric(C); mcA<-numeric(C) }
-      d <- (colN-mcN)/(1-mcA); d[!is.finite(d)|d<0]<-0
-    }
-    mu <- a[gv]*d[cv]; mask <- ppois(xv-1, mu, lower.tail=FALSE) < mask_p
-  }
-  list(a=a, d=d, gv=gv, cv=cv, xv=xv, colN=colN)
-}
-
-## ---- COPIED from global_ambient_gap.R: clean-gap detector ----
-GAP_RATIO <- 3; GAP_ABS <- 3; MIN_AMB <- 50; MIN_SIG <- 10; MAX_LO <- 40
-detect_gap <- function(vg){                 # vg = the guide's positive counts
-  if(length(vg) < MIN_AMB + MIN_SIG) return(NULL)
-  occ <- sort(unique(vg))
-  if(length(occ) < 2) return(NULL)
-  for(i in seq_len(length(occ)-1)){
-    lo <- occ[i]; hi <- occ[i+1]
-    if(lo > MAX_LO) return(NULL)            # ambient mode must be a low mode
-    if(hi/lo >= GAP_RATIO && hi-lo >= GAP_ABS){
-      n_amb <- sum(vg <= lo); n_sig <- sum(vg >= hi)
-      if(n_amb >= MIN_AMB && n_sig >= MIN_SIG) return(list(lo=lo, hi=hi))
-    }
-  }
-  NULL
-}
+## ---- rank-1 Poisson denoised ambient depth + clean-gap detector (shared lib) ----
+source("scripts/ambient_lib.R")   # fit_rank1_denoised(), detect_gap()  (defaults match the old globals)
 
 ## ============================================================================
 ## Per-dataset analysis: clean-gap detection + weak-integration excess test.
