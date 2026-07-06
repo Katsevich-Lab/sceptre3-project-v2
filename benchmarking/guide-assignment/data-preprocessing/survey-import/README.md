@@ -1,20 +1,20 @@
-# survey-import — parse code for the perturbseq-survey datasets
+# survey-import — shared 10x gRNA-extraction utilities
 
-Version-controlled copies of the gRNA-extraction code that produced the survey `grna_matrix.rds`
-files, moved **out of the data directory** (`~/data/external/perturbseq-survey/`) per the lab
-convention that data dirs hold no code. Full provenance:
+Shared, argument-driven parsers for the standard-10x survey datasets (no hardcoded paths). They are the
+parse step that each dataset's `import-<firstauthor>-<year>` repo self-contains a port of, and they double
+as the tool for the full-registry reproducibility audit in
 [`../../grna-count-modeling/DATA.md`](../../grna-count-modeling/DATA.md).
 
 - `parse_10x_h5_guides.R <input.h5> <out_dir> [regex]` — extract the CRISPR Guide Capture modality from a
-  CellRanger `.h5` → `grna_matrix.rds` + `guide_features.csv`. Used for: **a549** (GSE236304),
+  CellRanger `.h5` → `grna_matrix.rds` + `guide_features.csv`. Verifies: **a549** (GSE236304),
   **erythroid_multiome** (GSE274113), **cd4_tcell** (GSE314342).
-- `parse_10x_mtx_guides.R <mtx_dir> <out_dir> [regex]` — same, from a 10x mtx triplet. Used for:
-  **cd8_tcell** (GSE279498, sample HKC045), **dctap** (GSE303901), **endoc_t2d** (GSE273677, single rep GSM8434996).
-- `build_grna_matrix_{gastric_organoid,invivo_cortex,ipsc}.R` — per-dataset custom builders (non-10x
-  formats: cell-identities CSV, legacy Seurat `.qs`, HipSci figshare UMI-count CSV).
+- `parse_10x_mtx_guides.R <mtx_dir> <out_dir> [regex]` — same, from a 10x mtx triplet. Verifies:
+  **cd8_tcell** (GSE279498, HKC045), **dctap** (GSE303901), **endoc_t2d** (GSE273677, GSM8434996),
+  **mccutcheon** (GSE218988, GSM6761464).
 
-Verified faithful: re-running the relevant parser on the local raw reproduces the committed
-`grna_matrix.rds` **byte-identically** (checked for cd8_tcell; the others share the identical code path).
+Re-running the relevant parser on the local raw reproduces the committed `grna_matrix.rds` **byte-identically**.
 
-These scripts are the parse step of the per-study `import-<firstauthor>-<year>` repos (see DATA.md);
-each import repo pairs a `download_raw` step (GEO/figshare) with the matching parser here.
+The **non-10x** datasets (gastric = cell-identities CSV, invivo = legacy Seurat `.qs`, ipsc = HipSci figshare
+CSV) have their bespoke builders in their own import repos — `import-chen-2025`, `import-zheng-2023`,
+`import-feng-2025` — not here (those were dataset-specific + path-hardcoded; the config-based repo versions
+supersede them).

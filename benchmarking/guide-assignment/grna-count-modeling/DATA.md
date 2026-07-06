@@ -57,8 +57,9 @@ Recommendation: keep my GEO-derived versions (preserves results) and document th
 
 The survey parse scripts that previously lived in `~/data/external/perturbseq-survey/` (`parse_10x_h5_guides.R`,
 `parse_10x_mtx_guides.R`, per-dataset `build_grna_matrix.R`) violated the convention that data dirs hold no
-code. They have been **moved** into `../data-preprocessing/survey-import/` (versioned) and ported into the
-per-study `import-<author>-<year>` repos (below); the data-dir originals were deleted.
+code — all deleted from the data dir. The shared 10x parsers now live (versioned, arg-driven, no hardcoded
+paths) in `../data-preprocessing/survey-import/`; the dataset-specific builders (gastric/invivo/ipsc) live in
+their own `import-<author>-<year>` repos (config-based, path-clean) rather than as hardcoded copies.
 
 ## Import-repo status
 
