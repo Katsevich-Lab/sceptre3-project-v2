@@ -31,8 +31,8 @@ per the [lab wiki](https://github.com/Katsevich-Lab/lab-resources/wiki/Synchroni
 | endoc_t2d | Cao 2024 | GSE273677 | `GSM8434996` GWAS-rep1 triplet (GEO) | `read_10x_mtx` (single rep) | **full** (raw local) | **import-cao-2024** ✅ |
 | erythroid_multiome | Caulier 2025 | GSE274113 | `..._filtered_feature_bc_matrix_1.h5` | `read_10x_h5` | **full** (raw h5 local) | **import-caulier-2025** (new) |
 | gastric_organoid | Chen 2025 | GSE280506 | `cell_identities.csv.gz` + guide xlsx | `build_grna_matrix.R` | partial (gRNA only; GEX = GEO RAW.tar) | **import-chen-2025** (new) |
-| invivo_cortex | Zheng 2023 | GSE249416 | `Perturb_sg.qs.gz` (Seurat) | `build_grna_matrix.R` | partial (legacy `.qs`; R 4.4 + qs v1) | **import-zheng-2023** (new) |
-| ipsc | HipSci CRISPRi | figshare 27989294 | `Guide-UMI-Counts.csv.gz` + metadata | `build_grna_matrix.R` | partial (gRNA only; GEX on ENA/SRA ~30 GB) | **import-<hipsci>** (new) |
+| invivo_cortex | Zheng 2023 | GSE249416 | `Perturb_sg.qs.gz` (Seurat) | `build_grna_matrix.R` (R 4.4 + qs) | full (legacy `.qs`) | **import-zheng-2023** ✅ |
+| ipsc | Feng 2025 (HipSci) | figshare 27989294 | `Guide-UMI-Counts.csv.gz` + metadata | `build_grna_matrix.R` | gRNA only (GEX on ENA/SRA) | **import-feng-2025** ✅ |
 | cd4_tcell | Zhu (unpublished) | GSE314342 | `GSM9393828..._filtered_feature_bc_matrix.h5` | `read_10x_h5` | partial (1 of ~10 GEX reps; unpublished) | **import-zhu-2025** (private) |
 | mccutcheon | McCutcheon 2023 | GSE218988 | `GSM6761464_CRISPRi_D1.tar.gz` | (parse to version) | partial (raw tar local) | **import-mccutcheon-2023** (new) |
 
@@ -73,8 +73,8 @@ Config var per repo: `LOCAL_<AUTHOR>_<YEAR>_DATA_DIR=$LOCAL_EXTERNAL_DATA_DIR"<a
 | [import-chen-2025](https://github.com/Katsevich-Lab/import-chen-2025) (gastric) | ✅ live, public | byte-identical (96 × 42,324) |
 | [import-feng-2025](https://github.com/Katsevich-Lab/import-feng-2025) (ipsc) | ✅ live, public | byte-identical (6,824 × 322,746) |
 | [import-cao-2024](https://github.com/Katsevich-Lab/import-cao-2024) (endoc_t2d) | ✅ live, public | byte-identical (225 × 8,329) |
-| import-zheng-2023 (invivo_cortex) | ⏳ blocked | GSE249416 legacy Seurat `.qs` (`build_grna_matrix_invivo_cortex.R` versioned) — needs R 4.4 + `qs` v1 to load; not verifiable in the current env. |
-| import-liu-2025 (barnyard ×4) | ⏳ blocked | The registry matrices live under `input_data/barnyard_*/sceptre/` (internal, alongside gasperini/replogle) and are the raw GEO matrix (GSE272457; 200 NT guides) **GEX-QC-filtered** (e.g. 8,265 → 7,453 cells) by a sceptre-import/QC step — the same `make_*`-style build gasperini/replogle use, but the barnyard build script is **not versioned** (unlike `make_gasperini.R`/`make_replogle-rd7.R`). Recover that QC/import recipe to reproduce byte-identically. |
+| [import-zheng-2023](https://github.com/Katsevich-Lab/import-zheng-2023) (invivo_cortex) | ✅ live, public | byte-identical (17 × 11,688) — requires R 4.4 + `qs` |
+| import-liu-2025 (barnyard ×4) | ⏳ blocked | The registry matrices under `input_data/barnyard_*/sceptre/` are the raw GEO matrix (GSE272457; 200 NT guides) filtered to a specific QC subset (e.g. 8,265 → **7,453** cells) by an **unversioned** sceptre-import/QC step. The barnyard GEX QC in `barnyard_io.R` yields 6,466 (≠ 7,453), and there is no `make_barnyard.R`, so the exact recipe is not recoverable from the repo. (The §1 barnyard *figures* use a separate, reproducible path: `external/repro_work/build_inputs.py` + `external/fishash_analysis/data/barnyard_data_urls.txt`, both versioned.) |
 
 Per-dataset parse code lives in `../data-preprocessing/survey-import/`; each repo ports the relevant one.
 Partial datasets (gastric/invivo/ipsc) fetch GEX **count** matrices from GEO/figshare where available (not SRA);
