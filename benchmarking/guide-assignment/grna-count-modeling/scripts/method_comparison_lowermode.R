@@ -9,10 +9,9 @@
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats); library(fishash); library(SummarizedExperiment); library(ondisc); library(sceptre)})
 source("scripts/contingency_method.R")
+source("scripts/datasets.R")   # load_replogle_rd7_de()
 OUT<-"results/global_ambient_poisson"
-Dm<-path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
-Dp<-path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline")
-mc<-as(readRDS(Dm),"CsparseMatrix")
+rd<-load_replogle_rd7_de(); mc<-rd$mc
 
 cat("running REAL fishash...\n"); res<-fishash(mc,refit=10,padj_cutoff=0.05,exclude_empty=TRUE)
 Afh<-as(assay(res,"assigned"),"CsparseMatrix"); if(is.null(rownames(Afh))) rownames(Afh)<-rownames(mc)
@@ -23,7 +22,7 @@ pg<-read.csv(file.path(OUT,"perguide_replogle_rd7.csv"),stringsAsFactors=FALSE);
 lowfrac<-function(A){ nl<-nt<-0; for(i in seq_len(nrow(pg))){ r<-ridx[i]; v<-as.numeric(mc[r,]); a<-as.logical(A[r,]); nl<-nl+sum(a&v>=2&v<=pg$gap_lo[i]); nt<-nt+sum(a) }; nl/nt }
 cat(sprintf("pooled lower-mode fraction on clean-gap guides: fishash=%.1f%%  depth_fix=%.1f%%\n\n",100*lowfrac(Afh),100*lowfrac(Adf)))
 
-resp<-initialize_odm_from_backing_file(file.path(Dp,"response.odm")); so<-readRDS(file.path(Dp,"sceptre_object.rds"))
+resp<-rd$resp; so<-rd$so
 lib<-exp(so@covariate_matrix[,"log(response_n_umis)"]); tdf<-so@grna_target_data_frame
 ntg<-tdf$grna_id[tdf$grna_target=="non-targeting"]; ntmask<-rep(FALSE,ncol(mc)); for(g in ntg) ntmask<-ntmask|(as.numeric(mc[g,])>=30)
 picks<-c("1290_CCDC6_P1P2_ENSG00000108091","7424_RPAP3_P1P2_ENSG00000005175","968_C12orf60_P1P2_ENSG00000182993","9676_USP8_P1P2_ENSG00000138592","9175_TOP2A_P1P2_ENSG00000131747")

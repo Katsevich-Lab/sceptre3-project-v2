@@ -5,14 +5,11 @@
 ## Bins: 0, 1, 2, 3, 4, 5-10, 50+ (ENO1's gap is 18-62, so 5-10 is mid-low-mode and 50+ is the
 ## integration mode). Same Replogle data + normalization as collab_dose_response_fig.R.
 suppressMessages({library(Matrix); library(ondisc); library(sceptre); library(ggplot2)})
+source("scripts/datasets.R")   # load_replogle_rd7_de()
 OUT <- "results/collaborator_writeup"; dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
-Dm <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")
-Dp <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline")
 
 GUIDE <- "2640_ENO1_P1P2_ENSG00000074800"; GENE <- "ENO1"
-mc   <- as(readRDS(Dm), "CsparseMatrix")
-resp <- initialize_odm_from_backing_file(file.path(Dp, "response.odm"))
-so   <- readRDS(file.path(Dp, "sceptre_object.rds"))
+rd <- load_replogle_rd7_de(); mc <- rd$mc; resp <- rd$resp; so <- rd$so
 lib  <- exp(so@covariate_matrix[, "log(response_n_umis)"])
 tdf  <- so@grna_target_data_frame
 target <- tdf$grna_target[match(GUIDE, tdf$grna_id)]

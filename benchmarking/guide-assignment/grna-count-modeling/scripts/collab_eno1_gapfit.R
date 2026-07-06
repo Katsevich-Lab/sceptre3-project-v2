@@ -1,8 +1,9 @@
 ## ENO1 versions of the two RAMAC figures (gap histogram + ambient-mode depth-mixed-Poisson fit), so we
 ## can compare RAMAC vs ENO1 as the §3 worked example. Uses the cached denoised rank-1 field (a_g d_c).
 suppressMessages({library(Matrix); library(ggplot2)})
+source("scripts/datasets.R")   # load_grna_matrix()
 OUT<-"results/collaborator_writeup"
-mc<-as(readRDS(path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")),"CsparseMatrix")
+mc<-load_grna_matrix("replogle-rd7")
 ad<-readRDS("results/replogle_ambient_poisson/replogle_rank1_ad.rds")
 G<-"2640_ENO1_P1P2_ENSG00000074800"; idx<-match(G,rownames(mc)); LO<-17L; HI<-63L
 v<-as.numeric(mc[idx,]); lam<-ad$a[idx]*ad$d          # per-cell denoised ambient rate a_ENO1 * d_c
