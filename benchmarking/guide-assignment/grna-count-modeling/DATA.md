@@ -59,6 +59,27 @@ The survey parse scripts currently living in `~/data/external/perturbseq-survey/
 code. The standard `read_10x_h5`/`read_10x_mtx` logic is already versioned in `scripts/sim_de_extract_survey.R`;
 the per-dataset builders are being moved into their respective `import-<author>-<year>` repos (below).
 
+## Import-repo status
+
+Each survey dataset's `import-<author>-<year>` repo downloads the exact GEO/figshare source I used and
+runs the versioned parse to reproduce **byte-identically** the `grna_matrix.rds` the benchmarking consumes.
+Config var per repo: `LOCAL_<AUTHOR>_<YEAR>_DATA_DIR=$LOCAL_EXTERNAL_DATA_DIR"<author>-<year>/"`.
+
+| repo | status | verified |
+|---|---|---|
+| [import-caulier-2025](https://github.com/Katsevich-Lab/import-caulier-2025) (erythroid) | ✅ live, public | byte-identical (63 × 14,525) |
+| [import-zhu-2025](https://github.com/Katsevich-Lab/import-zhu-2025) (cd4_tcell) | ✅ live, private (unpublished) | byte-identical (27,272 × 137,716) |
+| [import-chung-2024](https://github.com/Katsevich-Lab/import-chung-2024) (cd8_tcell, HKC045) | ✅ live, public | byte-identical (44 × 2,426) |
+| import-cao-2024 (endoc_t2d) | pending | GSE273677_RAW.tar → 7 GWAS reps (GSM8434996–GSM8435002), barcode-prefixed + combined; needs the exact combine to re-verify |
+| import-chen-2025 (gastric) | pending | GSE280506 cell-identities + guide xlsx; builder in `survey-import/build_grna_matrix_gastric_organoid.R` |
+| import-zheng-2023 (invivo_cortex) | pending | GSE249416 legacy Seurat `.qs` (R 4.4 + qs v1); builder versioned |
+| import-\<hipsci\> (ipsc) | pending | figshare 27989294 dense UMI CSV; builder versioned |
+| import-liu-2025 (barnyard ×4) | pending | GSE272457 (URLs in `external/fishash_analysis/data/barnyard_data_urls.txt`); 4 samples via `build_inputs.py` + sceptre-pipeline |
+
+Per-dataset parse code lives in `../data-preprocessing/survey-import/`; each repo ports the relevant one.
+Partial datasets (gastric/invivo/ipsc) fetch GEX **count** matrices from GEO/figshare where available (not SRA);
+GEX is skipped only where no count matrix is published.
+
 ## Obtaining the data (collaborator quick-start)
 
 ```sh
