@@ -1,11 +1,11 @@
 #!/usr/bin/env Rscript
 # ============================================================================
-# Per-guide, per gRNA-count bin: the FRACTION of cells at that count each method leaves AMBIENT
-# (unassigned). Purely empirical -- no model, no depth. Grey bars show the count distribution
-# (scaled) for context; the three lines are the ambient fraction for fishash / fishash+ / CLEANSER.
-# At low counts everything is ambient (fraction ~1); as counts rise each method starts assigning
-# (fraction falls). A line that stays high = the method keeps calling that count ambient.
-# Usage: Rscript scripts/frac_ambient_perguide.R <highmoi|lowmoi>
+# Per-guide, per gRNA-count bin: the NUMBER of cells at that count each method leaves AMBIENT
+# (unassigned). Purely empirical -- no model, no depth. Grey bars = observed count distribution;
+# the three lines = number of those cells called ambient by fishash / fishash+ / CLEANSER.
+# Where a line tracks the bars the method calls that count ambient; where it drops below it assigns
+# as signal. Produces num_ambient_dctap_{highmoi,lowmoi}.png embedded in method_comparison.qmd.
+# Usage: Rscript scripts/num_ambient_perguide.R <highmoi|lowmoi>
 # ============================================================================
 suppressPackageStartupMessages({ library(Matrix); library(fishash); library(extraDistr)
   library(sparseMatrixStats); library(ggplot2); library(dplyr); library(tidyr) })

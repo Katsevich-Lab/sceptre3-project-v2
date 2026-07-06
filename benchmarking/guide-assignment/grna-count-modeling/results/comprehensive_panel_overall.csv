@@ -1,7 +1,0 @@
-"method","jaccard","precision","recall"
-"geomux_nolor",0.634,0.771,0.755
-"ours",0.624,0.723,0.801
-"fishash",0.574,0.908,0.599
-"otsu",0.564,0.646,0.881
-"geomux",0.547,0.927,0.556
-"valley",0.498,0.763,0.605

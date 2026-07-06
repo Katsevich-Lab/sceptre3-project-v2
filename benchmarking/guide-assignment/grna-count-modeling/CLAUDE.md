@@ -4,10 +4,15 @@ This folder investigates **simple, principled methods for gRNA guide assignment*
 CRISPR screens, benchmarked against the published state of the art.
 
 **Bottom line:** adopt fishash's contingency core + **decontaminate the cell margin** (use the
-ambient depth, not raw library size). Method = **`scripts/contingency_method.R`** ("depth_fix");
-with `cell_margin="observed"` it reproduces fishash exactly, with `cell_margin="ambient"` it is our
-method. See memory `grna-assignment-recommendation`. Persistent notes: `grna-assignment-investigation`,
+ambient depth, not raw library size). Method = **`scripts/contingency_method.R`** ("depth_fix", also
+called **"fishash+"** in the newer docs — same thing); with `cell_margin="observed"` it reproduces
+fishash exactly, with `cell_margin="ambient"` it is our method. See memory
+`grna-assignment-recommendation`. Persistent notes: `grna-assignment-investigation`,
 `grna-assignment-sim-framework`, `grna-assignment-data-locations`, `cleanser-scoring-artifact`.
+
+> **Folder note:** this folder was renamed from `nonparametric-thresholds/` → `grna-count-modeling/`
+> (commit `b84574f`). Scripts run from the folder root and use relative `source("scripts/...")`.
+> The shared dataset registry + loaders are in **`scripts/datasets.R`** (see `scripts/README_ambient_ceiling.md`).
 
 ## Documents (read in this order)
 
@@ -16,6 +21,8 @@ method. See memory `grna-assignment-recommendation`. Persistent notes: `grna-ass
 | **`literature_review.qmd` → `.html`** | **Conceptual synthesis / statistical story.** The methods landscape and the unifying account: assignment = a per-entry test whose null (rank-1 ambient rate) is contaminated by its own signal; the 2×2 table has three background cells, and each method cleans a different subset (fishash cleans the guide side, CLEANSER the cell side, depth_fix both). NEWEST + sharpest framing. |
 | **`sceptre3_assignment_report.qmd` → `.html`** | **Our method + real-data evidence + recommendation + spec.** Barnyard ground truth, CLEANSER scoring-bug fix, FDR-control experiments, the depth_fix recommendation, what we rejected. (Its conceptual "framework / failure-modes" sections are an older, rougher version of `literature_review`'s; its "comprehensive-sim" section is superseded by the sim framework below.) |
 | **`simulation_framework_report.qmd` → `.html`** | **Simulation apparatus + sim benchmark evidence.** Model A (semi-synthetic) + Model B (mechanistic regimes), realism gate, 11-method panel. Companion working doc: `SIMULATION_FRAMEWORK.md` (design + DE-pushthrough foundation + PENDING re-run steps). |
+| **`method_comparison.qmd` → `.html`** | **NEWEST flagship (collaborator-facing).** fishash vs fishash+ vs CLEANSER across all real datasets: per-cell ambient depth *used* (raw library / rank-1 / ≤2), per-guide "number of cells called ambient", assignment agreement (Jaccard), recall. Built by the **ambient-ceiling suite** (`scripts/README_ambient_ceiling.md`, shared lib `scripts/datasets.R`). |
+| **ambient-Poisson ladder** (`replogle_ambient_poisson` → `global_ambient_poisson` → `doublet_overdispersion` → `canonical_model` → `grna-count-modeling.qmd`), each `.qmd`→`.html` | The "is the ambient noise Poisson?" evidence chain: single-dataset (RAMAC) → ~760-guide/6-dataset generalization → direct-capture overdispersion is doublet-driven → the parametric generative model (Poisson ambient + gated NB signal) + EM → collaborator roll-up. All live, cross-linked. |
 | **`DE_DATASETS_STATUS.md`** | Live inventory for the downstream SCEPTRE-DE pushthrough (the decisive test). 9 DE-ready datasets. |
 
 Older writeups (`report.qmd/pdf`, `methods_review.qmd/html`, `SUMMARY.md`) and the old
@@ -68,8 +75,9 @@ published state of the art. The contingency/ambient-table direction is that meth
 2. **Two scoring metrics in play.** Barnyard uses the Fishash Table-2 metric (per cell: ≥1
    correct-species & 0 wrong-species guide). Sims use per-guide precision/recall/Jaccard vs the
    integrated-AND-observed truth.
-3. **Scripts use relative paths** from their own location (`HERE`, `GA = HERE/..` = `guide-assignment/`).
-   Keep canonical scripts at this folder's top level or fix the path logic if you move them.
+3. **Two path conventions.** Older figure scripts use a `HERE`/`GA = HERE/..` relative-to-own-location
+   idiom; the **ambient-ceiling suite runs from the folder root** and uses `source("scripts/...")` +
+   `scripts/datasets.R` (`dataset_paths()`) for all data paths. Run those from `grna-count-modeling/`.
 4. **Finalized ambient config: `model="hypergeometric", n_iter=1`** (iteration didn't help the bare
    test; depth_fix does iterate the fishash mask schedule — that's separate).
 
@@ -81,16 +89,23 @@ grna-count-modeling/
 ├── literature_review.{qmd,html}       # conceptual synthesis (READ FIRST)
 ├── sceptre3_assignment_report.{qmd,html}   # our method + real-data evidence + recommendation
 ├── simulation_framework_report.{qmd,html}  # sim apparatus + sim evidence
+├── method_comparison.{qmd,html}       # NEWEST: fishash vs fishash+ vs CLEANSER (ambient-ceiling suite)
+├── {replogle_ambient_poisson,global_ambient_poisson,doublet_overdispersion,canonical_model,grna-count-modeling}.{qmd,html}  # ambient-Poisson ladder
 ├── SIMULATION_FRAMEWORK.md            # sim framework design + DE foundation + PENDING re-run steps
 ├── DE_DATASETS_STATUS.md              # DE-pushthrough dataset inventory
-├── scripts/                           # LIVE scripts: sim_*.R (framework), sim_de_*.R (DE),
-│                                      #   contingency_method.R (the method), figure scripts for
-│                                      #   the assignment report, simpson_paradox_*.R
+├── scripts/                           # LIVE scripts. contingency_method.R (the method);
+│                                      #   datasets.R (shared registry+loaders); sim_*.R (framework);
+│                                      #   ambient_*/dctap_*/depth_*/model_vs_calls/num_ambient_* (ambient-
+│                                      #   ceiling suite — see scripts/README_ambient_ceiling.md);
+│                                      #   barnyard_*/collab_*/replogle_* figure scripts; simpson_paradox_*
 ├── results/                           # figures + CSVs the reports read
+│   ├── ambient_ceiling/               # method_comparison outputs (fit_cache/, cleanser_{calls,batch}/,
+│   │                                  #   writeup/assign/ all gitignored+regenerable)
 │   ├── sim_framework/                 # sim-framework outputs (datasets/ + de/ gitignored)
 │   ├── benchmark_update/              # depth_fix / build-vs-adopt figures for the assignment report
+│   ├── {ambient_intuition,global_ambient_poisson,replogle_ambient_poisson,collaborator_writeup,method_decision}/  # per-writeup outputs
 │   ├── barnyard_cohort_export/        # our QC'd barnyard cohort export (gitignored)
-│   └── _archive/                      # superseded outputs (gitignored)
+│   └── _archive/                      # superseded outputs incl. comprehensive_sim_legacy/ (gitignored)
 ├── external/repro_work/               # EXACT barnyard Table-2 reproduction (canonical barnyard)
 ├── literature/                        # method PDFs (cleanser, crispat, fishash, geomux, sceptre)
 ├── sceptre3-context/                  # #sceptre3 Slack + the lab's report files
@@ -113,6 +128,14 @@ grna-count-modeling/
 `simpson_paradox_{repro,plot}.R`. Barnyard EXACT reproduction lives in `external/repro_work/`
 (`build_inputs.py`, `run_fishash_local.R`, geomux via `.venv_geomux_v5`, `score_table2.R` +
 `score_ours_table2.R` → `results/barnyard_exact_corrected.csv`).
+
+**Method-comparison / ambient-ceiling suite (current):** feeds `method_comparison.qmd`. Run order
+(all from the folder root; full detail in `scripts/README_ambient_ceiling.md`):
+`ambient_fit_cache.R` (→ gitignored `results/ambient_ceiling/fit_cache/`) → `writeup_compute.R` →
+`depth_used.R` (⚠️ **after** writeup_compute — it overwrites `depths_sampled/depth_summary.csv` with the
+depth each method *uses*) → `writeup_cleanser_export.R` → `run_cleanser_batch.sh` (CLEANSER via
+`.venv_cleanser` → `cleanser_calls/`) → `num_ambient_perguide.R {highmoi,lowmoi}` → render
+`method_comparison.qmd`. Shared dataset registry/loaders: `scripts/datasets.R`.
 
 **Old comprehensive-sim pipeline (ARCHIVED):** the pre-framework apparatus
 (`characterize_grna.R`, `build_comprehensive_sim.R`, `comprehensive_sim_eval.R`,
