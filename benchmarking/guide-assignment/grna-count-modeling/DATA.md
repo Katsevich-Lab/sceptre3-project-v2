@@ -34,7 +34,7 @@ per the [lab wiki](https://github.com/Katsevich-Lab/lab-resources/wiki/Synchroni
 | invivo_cortex | Zheng 2023 | GSE249416 | `Perturb_sg.qs.gz` (Seurat) | `build_grna_matrix.R` (R 4.4 + qs) | full (legacy `.qs`) | **import-zheng-2023** ✅ |
 | ipsc | Feng 2025 (HipSci) | figshare 27989294 | `Guide-UMI-Counts.csv.gz` + metadata | `build_grna_matrix.R` | gRNA only (GEX on ENA/SRA) | **import-feng-2025** ✅ |
 | cd4_tcell | Zhu (unpublished) | GSE314342 | `GSM9393828..._filtered_feature_bc_matrix.h5` | `read_10x_h5` | partial (1 of ~10 GEX reps; unpublished) | **import-zhu-2025** (private) |
-| mccutcheon | McCutcheon 2023 | GSE218988 | `GSM6761464_CRISPRi_D1.tar.gz` | not versioned | partial (raw tar local) | **none yet** — one-off local object, no import repo |
+| mccutcheon | McCutcheon 2023 | GSE218988 | `GSM6761464_CRISPRi_D1.tar.gz` (GSM6761464) | import raw (all cells) → `make_mccutcheon.R` guide-bearing-cell QC | full | **import-mccutcheon-2023** ✅ |
 
 GEO supplementary URLs follow `https://ftp.ncbi.nlm.nih.gov/geo/series/GSE<XXX>nnn/GSE<XXXXX>/suppl/<file>`
 (e.g. `GSE273nnn/GSE273677/suppl/GSE273677_RAW.tar`).
@@ -82,6 +82,20 @@ cell-identities table and so drops unassigned cells — structural to that data 
 | [import-cao-2024](https://github.com/Katsevich-Lab/import-cao-2024) (endoc_t2d) | ✅ live, public | byte-identical (225 × 8,329) |
 | [import-zheng-2023](https://github.com/Katsevich-Lab/import-zheng-2023) (invivo_cortex) | ✅ live, public | byte-identical (17 × 11,688) — requires R 4.4 + `qs` |
 | [import-liu-2025](https://github.com/Katsevich-Lab/import-liu-2025) (barnyard ×4) | ✅ live, public | raw matrices (all cells; no QC). The species-purity QC (`frac_homo > 0.9 \| < 0.1`, recovered from the 2026-06-25 ingest session) lives in `../data-preprocessing/make_barnyard.R` and reproduces `input_data/barnyard_*/sceptre/grna_matrix.rds` byte-identically (8,265→7,453 / 8,959→8,793 / 11,512→8,902 / 8,207→8,057). |
+| [import-mccutcheon-2023](https://github.com/Katsevich-Lab/import-mccutcheon-2023) (mccutcheon) | ✅ live, public | raw matrix (40 × all cells; no QC). The guide-bearing-cell QC (`colSums > 0`) lives in `../data-preprocessing/make_mccutcheon.R` and reproduces the registry matrix byte-identically (24,244 → 22,100). |
+
+### Full registry reproducibility audit
+
+Every `dataset_paths()` entry's committed `grna_matrix.rds` reproduces from raw byte-identically (checked
+each — not just the ones with a dedicated repo, which was the gap that let mccutcheon's hidden filter slip
+the first pass):
+- **9 import repos** (7 survey + barnyard + mccutcheon) — reproduce byte-identically (above).
+- **a549, dctap ×2** — reproduce byte-identically from raw via `survey-import/parse_10x_{h5,mtx}_guides.R`
+  (all cells, **no** hidden filter); documented (no dedicated repo — see the a549/dctap note above).
+- **gasperini, replogle-rd7** — lab-native, built by `../data-preprocessing/make_{gasperini,replogle-rd7}.R`
+  from `import-gasperini-2019-v3` / `import-replogle-2022`.
+- Two registry matrices carry a downstream cell filter, both now versioned as `make_*.R`: **barnyard**
+  (species-purity) and **mccutcheon** (guide-bearing-cell). No other entry has an unversioned filter.
 
 Per-dataset parse code lives in `../data-preprocessing/survey-import/`; each repo ports the relevant one.
 Partial datasets (gastric/invivo/ipsc) fetch GEX **count** matrices from GEO/figshare where available (not SRA);
