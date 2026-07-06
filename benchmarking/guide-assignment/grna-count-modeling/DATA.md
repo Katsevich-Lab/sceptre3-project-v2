@@ -24,7 +24,7 @@ per the [lab wiki](https://github.com/Katsevich-Lab/lab-resources/wiki/Synchroni
 |---|---|---|---|---|---|---|
 | gasperini | Gasperini 2019 | GSE120861 | lab ODM | `make_gasperini.R` | lab-native | import-gasperini-2019-v3 |
 | replogle-rd7 | Replogle 2022 | figshare (Weissman) | lab ODM | `make_replogle-rd7.R` | lab-native | import-replogle-2022 |
-| barnyard ×4 | Liu 2025 (CLEANSER) | GSE272457 | mtx triplets (GEO suppl) | `external/repro_work/build_inputs.py` | **full** (URLs in `external/fishash_analysis/data/barnyard_data_urls.txt`) | **import-liu-2025** (new) |
+| barnyard ×4 | Liu 2025 (CLEANSER) | GSE272457 | mtx triplets (GEO suppl) | import raw guides (all cells) → `make_barnyard.R` species-purity QC | full | **import-liu-2025** ✅ |
 | a549 | Sakellaropoulos 2024 | GSE236304 | `filtered_feature_bc_matrix.h5` | `read_10x_h5` | full (raw h5 local) | see note ↓ (import-Sakellaropoulos-2024 exists, SRA path) |
 | dctap ×2 | Ray 2025 (ENCODE DC-TAP) | GSE303901 | mtx triplet / tar.gz | `read_10x_mtx` | full (raw local) | see note ↓ (`ray-2025` on HPCC, different processing) |
 | cd8_tcell | Chung 2024 | GSE279498 | mtx triplet (GEO suppl) | `read_10x_mtx` | **full** (raw triplet local) | **import-chung-2024** (new) |
@@ -62,8 +62,14 @@ the per-dataset builders are being moved into their respective `import-<author>-
 ## Import-repo status
 
 Each survey dataset's `import-<author>-<year>` repo downloads the exact GEO/figshare source I used and
-runs the versioned parse to reproduce **byte-identically** the `grna_matrix.rds` the benchmarking consumes.
+runs the versioned parse to reproduce the `grna_matrix.rds` the benchmarking consumes.
 Config var per repo: `LOCAL_<AUTHOR>_<YEAR>_DATA_DIR=$LOCAL_EXTERNAL_DATA_DIR"<author>-<year>/"`.
+
+**Import = raw, no QC.** Import repos only *reformat* the published data (select the CRISPR-Guide-Capture
+modality / extract counts) and keep **all cells** — cell QC belongs downstream in this project. barnyard is
+the worked example: `import-liu-2025` outputs raw all-cell matrices, and `../data-preprocessing/make_barnyard.R`
+applies the species-purity gate. (One borderline case: `import-chen-2025` builds from the authors'
+cell-identities table and so drops unassigned cells — structural to that data form, not a quality gate.)
 
 | repo | status | verified |
 |---|---|---|
@@ -74,7 +80,7 @@ Config var per repo: `LOCAL_<AUTHOR>_<YEAR>_DATA_DIR=$LOCAL_EXTERNAL_DATA_DIR"<a
 | [import-feng-2025](https://github.com/Katsevich-Lab/import-feng-2025) (ipsc) | ✅ live, public | byte-identical (6,824 × 322,746) |
 | [import-cao-2024](https://github.com/Katsevich-Lab/import-cao-2024) (endoc_t2d) | ✅ live, public | byte-identical (225 × 8,329) |
 | [import-zheng-2023](https://github.com/Katsevich-Lab/import-zheng-2023) (invivo_cortex) | ✅ live, public | byte-identical (17 × 11,688) — requires R 4.4 + `qs` |
-| import-liu-2025 (barnyard ×4) | ⏳ blocked | The registry matrices under `input_data/barnyard_*/sceptre/` are the raw GEO matrix (GSE272457; 200 NT guides) filtered to a specific QC subset (e.g. 8,265 → **7,453** cells) by an **unversioned** sceptre-import/QC step. The barnyard GEX QC in `barnyard_io.R` yields 6,466 (≠ 7,453), and there is no `make_barnyard.R`, so the exact recipe is not recoverable from the repo. (The §1 barnyard *figures* use a separate, reproducible path: `external/repro_work/build_inputs.py` + `external/fishash_analysis/data/barnyard_data_urls.txt`, both versioned.) |
+| [import-liu-2025](https://github.com/Katsevich-Lab/import-liu-2025) (barnyard ×4) | ✅ live, public | raw matrices (all cells; no QC). The species-purity QC (`frac_homo > 0.9 \| < 0.1`, recovered from the 2026-06-25 ingest session) lives in `../data-preprocessing/make_barnyard.R` and reproduces `input_data/barnyard_*/sceptre/grna_matrix.rds` byte-identically (8,265→7,453 / 8,959→8,793 / 11,512→8,902 / 8,207→8,057). |
 
 Per-dataset parse code lives in `../data-preprocessing/survey-import/`; each repo ports the relevant one.
 Partial datasets (gastric/invivo/ipsc) fetch GEX **count** matrices from GEO/figshare where available (not SRA);
