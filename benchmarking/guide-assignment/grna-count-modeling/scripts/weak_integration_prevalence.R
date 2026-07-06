@@ -22,6 +22,7 @@ dir.create(OUT, recursive=TRUE, showWarnings=FALSE)
 
 ## ---- rank-1 Poisson denoised ambient depth + clean-gap detector (shared lib) ----
 source("scripts/ambient_lib.R")   # fit_rank1_denoised(), detect_gap()  (defaults match the old globals)
+source("scripts/datasets.R")      # dataset_paths()
 
 ## ============================================================================
 ## Per-dataset analysis: clean-gap detection + weak-integration excess test.
@@ -111,11 +112,12 @@ analyze_dataset <- function(NAME, PATH){
   res
 }
 
-## ---- run all three datasets ----
+## ---- run all three datasets (paths from the shared registry; local display names kept) ----
+.reg <- dataset_paths()
 DATASETS <- list(
-  c("replogle_rd7", "~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds"),
-  c("endoc_t2d",    "~/data/external/perturbseq-survey/endoc_t2d_perturbseq_GSE273677/grna_matrix.rds"),
-  c("tcell_cd4",    "~/data/external/perturbseq-survey/tcell_cd4_perturbseq_GSE314342/grna_matrix.rds")
+  c("replogle_rd7", .reg[["replogle-rd7"]]),
+  c("endoc_t2d",    .reg[["endoc_t2d"]]),
+  c("tcell_cd4",    .reg[["cd4_tcell"]])
 )
 
 all_res <- list()

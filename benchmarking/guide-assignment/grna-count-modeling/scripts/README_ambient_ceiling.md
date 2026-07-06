@@ -62,6 +62,10 @@ verified behavior-preserving by re-running and byte-diffing the committed output
 - the replogle-rd7 `Dm`/`Dp` load boilerplate → `datasets.R` (`load_grna_matrix("replogle-rd7")`,
   `load_replogle_rd7_de()`, `replogle_rd7_pipeline_dir()`); adopted across the collab/ENO1/RAMAC scripts.
 
-Documented exception: `profile_datasets.R` keeps its own `repl` directory literal — it is a
-landscape profiler that scans `~/data/external/perturbseq-survey` with directory-based file discovery,
-and `repl` is used structurally (as a dir), so the registry does not cleanly apply.
+Documented exceptions — filesystem-scanning drivers that build their own dataset list by walking
+`~/data/external/perturbseq-survey` (so a fixed registry does not cleanly apply); they keep a single
+literal for the one non-survey path (replogle-rd7):
+- `profile_datasets.R` — landscape profiler; `repl` is used structurally as a directory.
+- `run_ambient_validation.R` — scans the survey dir, then appends replogle-rd7 (`REPL`).
+Scripts with a *fixed* dataset list whose members are all in the registry (e.g.
+`weak_integration_prevalence.R`) do source their paths from `dataset_paths()`.
