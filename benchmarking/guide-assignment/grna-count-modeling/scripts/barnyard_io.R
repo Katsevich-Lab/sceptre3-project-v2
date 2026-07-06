@@ -59,3 +59,29 @@ load_barnyard <- function(sample, purity = 0.9, repro_dir = NULL) {
        ambient_mask = amb_mask, chemistry = if (grepl("Cropseq", sample)) "CROP-seq" else "direct-capture",
        sample = sample)
 }
+
+# GEX-QC-only loader (mito/features/depth caps, NO species-purity gate).  Callers
+# apply the purity cut per-analysis via `fh` (e.g. host = fh > 0.90), and often
+# need BOTH species, so this is deliberately looser than load_barnyard().  Used by
+# the wrong-species VMR / marginal-fit collaborator figures.  Returns:
+#   counts     guides x GEX-QC-cells sparse matrix (rownames = guides, colnames sample_<idx>)
+#   guide_homo logical, TRUE for human (homo) guides
+#   fh         frac_homo of the kept cells
+#   meta       the kept cells' metadata rows
+load_barnyard_basic <- function(sample, repro_dir = NULL) {
+  if (is.null(repro_dir)) {
+    h <- if (file.exists(file.path(getwd(), "external", "repro_work"))) getwd()
+         else file.path(Sys.getenv("SIM_HERE", getwd()))
+    repro_dir <- file.path(h, "external", "repro_work")
+  }
+  gm     <- as(readMM(file.path(repro_dir, paste0(sample, "_grna_counts.mtx"))), "CsparseMatrix")
+  meta   <- read.csv(file.path(repro_dir, paste0(sample, "_meta.csv")))
+  guides <- read.csv(file.path(repro_dir, paste0(sample, "_guides.csv")))
+  sg <- meta$homo_sum_gex + meta$mus_sum_gex; fh <- meta$homo_sum_gex / sg
+  qc <- (meta$mito_sum/sg < .15) & (meta$features_gex <= 6000) & (sg <= 20000) &
+        (meta$features_gex >= 1500) & (sg >= 3500); qc[is.na(qc)] <- FALSE
+  counts <- gm[, qc, drop = FALSE]; rownames(counts) <- guides$guide
+  colnames(counts) <- paste0(sample, "_", which(qc))
+  list(counts = counts, guide_homo = guides$guide_type == "homo_guide",
+       fh = fh[qc], meta = meta[qc, ])
+}

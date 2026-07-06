@@ -11,18 +11,10 @@ suppressPackageStartupMessages({ library(Matrix); library(ggplot2) })
 REPRO <- "external/repro_work"; OUT <- "results/collaborator_writeup"
 dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 
-# load a sample with BASIC QC only (mito/features/depth), keeping frac_homo so we can threshold later
-load_basic <- function(sample) {
-  gm     <- as(readMM(file.path(REPRO, paste0(sample, "_grna_counts.mtx"))), "CsparseMatrix")
-  meta   <- read.csv(file.path(REPRO, paste0(sample, "_meta.csv")))
-  guides <- read.csv(file.path(REPRO, paste0(sample, "_guides.csv")))
-  sg <- meta$homo_sum_gex + meta$mus_sum_gex; fh <- meta$homo_sum_gex / sg
-  qc <- (meta$mito_sum/sg < .15) & (meta$features_gex <= 6000) & (sg <= 20000) &
-        (meta$features_gex >= 1500) & (sg >= 3500); qc[is.na(qc)] <- FALSE
-  counts <- gm[, qc, drop = FALSE]; rownames(counts) <- guides$guide
-  list(counts = counts, guide_homo = guides$guide_type == "homo_guide",
-       fh = fh[qc], meta = meta[qc, ])
-}
+# GEX-QC-only barnyard loader (mito/features/depth, no purity gate); keeps frac_homo
+# so we can threshold species purity later.  Shared with barnyard_five_cells.R.
+source("scripts/barnyard_io.R")   # load_barnyard_basic()
+load_basic <- function(sample) load_barnyard_basic(sample, REPRO)
 # per wrong-species (mouse) guide: mean & var of UMIs across the given host cells (incl. zeros)
 perguide_vmr <- function(o, host) {
   sub <- o$counts[!o$guide_homo, host, drop = FALSE]; nC <- ncol(sub)

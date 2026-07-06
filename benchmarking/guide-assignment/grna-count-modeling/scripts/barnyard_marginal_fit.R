@@ -14,22 +14,17 @@
 # lambda_{gc} = R_g C_c / T from fishash's rank-1 completion of the signal-masked matrix.
 suppressPackageStartupMessages({ library(Matrix); library(ggplot2); library(fishash) })
 source("scripts/contingency_method.R")
+source("scripts/barnyard_io.R")   # .barnyard_qc() — species-purity-gated GEX QC
 
 REPRO <- "external/repro_work"; OUT <- "results/collaborator_writeup"
 dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 set.seed(1)
 
 ## ---- load de-doubleted, GEX-pure barnyard direct-capture -----------------------
-barnyard_qc <- function(meta, purity = 0.9) {
-  sg <- meta$homo_sum_gex + meta$mus_sum_gex; fh <- meta$homo_sum_gex / sg
-  qc <- (meta$mito_sum/sg < .15) & (meta$features_gex <= 6000) & (sg <= 20000) &
-        (meta$features_gex >= 1500) & (sg >= 3500) & (fh < (1-purity) | fh > purity)
-  qc[is.na(qc)] <- FALSE; list(qc = qc, frac_homo = fh)
-}
 gm     <- as(readMM(file.path(REPRO, "mix0hr_DirectCapture_grna_counts.mtx")), "CsparseMatrix")
 meta   <- read.csv(file.path(REPRO, "mix0hr_DirectCapture_meta.csv"))
 guides <- read.csv(file.path(REPRO, "mix0hr_DirectCapture_guides.csv"))
-q  <- barnyard_qc(meta, 0.99)   # tightened GEX purity gate (0.99, not 0.90)
+q  <- .barnyard_qc(meta, 0.99)   # tightened GEX purity gate (0.99, not 0.90)
 counts <- gm[, q$qc, drop = FALSE]; rownames(counts) <- guides$guide
 colnames(counts) <- paste0("cell", seq_len(ncol(counts)))
 guide_homo <- guides$guide_type == "homo_guide"

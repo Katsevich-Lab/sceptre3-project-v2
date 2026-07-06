@@ -26,19 +26,9 @@ REPRO <- "external/repro_work"; OUT <- "results/collaborator_writeup"
 dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 PAL <- c(blue = "#0072B2", orange = "#D55E00", gold = "#E69F00")
 
-# --- loader: same basic-QC pattern as barnyard_ambient_figures.R::load_basic ---
-load_basic <- function(sample) {
-  gm     <- as(readMM(file.path(REPRO, paste0(sample, "_grna_counts.mtx"))), "CsparseMatrix")
-  meta   <- read.csv(file.path(REPRO, paste0(sample, "_meta.csv")))
-  guides <- read.csv(file.path(REPRO, paste0(sample, "_guides.csv")))
-  sg <- meta$homo_sum_gex + meta$mus_sum_gex; fh <- meta$homo_sum_gex / sg
-  qc <- (meta$mito_sum/sg < .15) & (meta$features_gex <= 6000) & (sg <= 20000) &
-        (meta$features_gex >= 1500) & (sg >= 3500); qc[is.na(qc)] <- FALSE
-  counts <- gm[, qc, drop = FALSE]; rownames(counts) <- guides$guide
-  colnames(counts) <- paste0(sample, "_", which(qc))
-  list(counts = counts, guide_homo = guides$guide_type == "homo_guide",
-       fh = fh[qc], meta = meta[qc, ])
-}
+# --- loader: shared GEX-QC-only barnyard loader (same basic-QC cohort as the §1 figures) ---
+source("scripts/barnyard_io.R")   # load_barnyard_basic()
+load_basic <- function(sample) load_barnyard_basic(sample, REPRO)
 
 # per wrong-species (mouse) guide: mean/var/vmr of UMIs across a given host-cell
 # set (incl. zeros); SAME estimator as perguide_vmr / pg_vmr.
