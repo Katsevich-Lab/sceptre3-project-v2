@@ -1,7 +1,7 @@
 # Guide-assignment simulation framework
 
 A barnyard-anchored, triangulated simulation framework for benchmarking gRNA
-guide-assignment methods. Built on top of the `nonparametric-thresholds/`
+guide-assignment methods. Built on top of the `grna-count-modeling/`
 investigation. **Canonical writeup: `simulation_framework_report.qmd` → `.html`.**
 
 ## The two data-generating models
@@ -198,4 +198,4 @@ the pipeline + the cross-method ranking are real.
 - Barnyard repro inputs: `external/repro_work/*_grna_counts.mtx` (+ `_meta.csv`, `_guides.csv`).
 - Survey/Gasperini/Replogle: `~/data/external/perturbseq-survey/`, `~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/`.
 - Methods: `.venv_geomux_v5` (geomux 0.5.5, correct), `.venv_crispat` (crispat from jdeu1023 fork per `modules/crispat/environment.yml`), R `fishash` 0.99.0, `sceptre` 0.99.0.
-- See `CLAUDE.md` for the older nonparametric-thresholds investigation; memory `grna-assignment-sim-framework`.
+- See `CLAUDE.md` for the older grna-count-modeling investigation; memory `grna-assignment-sim-framework`.

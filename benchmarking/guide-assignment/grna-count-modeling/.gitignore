@@ -32,3 +32,13 @@ results/sim_framework/de/
 results/method_decision/de_native/
 results/replogle_ambient_poisson/replogle_rank1_ad.rds
 results/replogle_ambient_poisson/ramac_depthfix_res.rds
+# cached fishash+ ambient-fit parameters + assignment matrices (large; regenerable via ambient_fit_cache.R)
+results/ambient_ceiling/fit_cache/
+# method-comparison writeup intermediates (large; regenerable)
+results/ambient_ceiling/writeup/assign/
+results/ambient_ceiling/cleanser_calls/
+results/ambient_ceiling/cleanser_batch/
+results/ambient_ceiling/*.log
+results/ambient_ceiling/_progress.rds
+results/ambient_ceiling/_init_progress.rds
+.posit/

@@ -12,7 +12,7 @@
 ## Usage: Rscript scripts/knockdown_by_integration_survey.R <name> <sceptre_dir>
 ##   where <sceptre_dir> holds grna_matrix_aligned.rds, response_matrix.rds,
 ##   grna_target_data_frame.csv.
-## Run from nonparametric-thresholds/.
+## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix)})
 args <- commandArgs(trailingOnly=TRUE); NAME <- args[1]; DIR <- path.expand(args[2])

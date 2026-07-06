@@ -10,7 +10,7 @@
 ##  (D) cross-dataset: the dose-response holds on Replogle, EndoC, CD4 T-cell.
 ## Together with the barnyard Poisson result (ambient_null_poisson_vs_nb.R), this
 ## says the count-2 "excess" is weak-integration SIGNAL, not overdispersed soup.
-## Run from nonparametric-thresholds/.  (cross-dataset tcell step is slow, ~7 min.)
+## Run from grna-count-modeling/.  (cross-dataset tcell step is slow, ~7 min.)
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats); library(ondisc); library(sceptre)})
 OUT<-"results/global_ambient_poisson"

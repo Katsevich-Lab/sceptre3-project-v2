@@ -3,7 +3,7 @@
 ## Reads results/global_ambient_poisson/perguide_*.csv (from global_ambient_gap.R),
 ## joins the aggregate soup var/mean (ambient_validation.csv), and produces the
 ## cross-dataset figures + summary table backing global_ambient_poisson.qmd.
-## Run from nonparametric-thresholds/.
+## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix)})
 OUT <- "results/global_ambient_poisson"

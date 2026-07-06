@@ -4,7 +4,7 @@
 ## survey datasets for apples-to-apples, joins the survey CSVs, and makes the
 ## combined table + figure. Also reports, per dataset, the implied functional
 ## fraction of the weak band:  f = (1 - kd_weak) / (1 - kd_strong).
-## Run from nonparametric-thresholds/.
+## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix); library(ondisc); library(sceptre)})
 OUT <- "results/global_ambient_poisson"

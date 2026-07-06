@@ -5,7 +5,7 @@
 ##  (2) real depth_fix assignment (hyper + GS FDR)  -> ramac_depthfix_assignments.png
 ##  (3) cross-reference: do RAMAC's low-count calls land in cells that clearly
 ##      belong to ANOTHER guide (doublet/spillover)? -> ramac_crossref.txt
-## Run from the nonparametric-thresholds/ folder.
+## Run from the grna-count-modeling/ folder.
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats)})
 source("scripts/contingency_method.R")

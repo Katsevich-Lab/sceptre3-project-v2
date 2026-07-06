@@ -13,7 +13,7 @@
 ## it runs top-level CLI code): fit_rank1_denoised(mc) and detect_gap(vg).
 ##
 ## Read-only. Writes ONLY new files under results/collaborator_writeup/.
-##   Run from nonparametric-thresholds/.
+##   Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix)})
 

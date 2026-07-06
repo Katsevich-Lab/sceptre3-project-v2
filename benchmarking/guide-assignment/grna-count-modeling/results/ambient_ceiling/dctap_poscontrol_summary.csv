@@ -1,0 +1,4 @@
+"method","guides_scored","total_assigned_cells","median_log2fc","median_neglog10p","n_knockdown_detected"
+"fishash",12,14068,-0.879171388083412,69.3434963231923,12
+"fishash+",12,27510,-0.793740848465084,79.2787588579606,12
+"CLEANSER",12,25163,-0.868772923501332,79.6564785253725,12

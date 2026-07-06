@@ -13,7 +13,7 @@
 ##      Poisson at count-2 (obs/exp ~0.90 after de-doubleting), NOT 2.18. So the
 ##      Replogle excess is WEAK-INTEGRATION SIGNAL, not overdispersed soup, and the
 ##      NB would suppress real weak integrations. => KEEP POISSON.
-## Run from nonparametric-thresholds/.
+## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats)})
 OUT<-"results/global_ambient_poisson"

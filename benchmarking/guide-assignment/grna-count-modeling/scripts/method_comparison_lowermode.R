@@ -5,7 +5,7 @@
 ## threshold vs all of each method's calls. Both reach the count-2 floor; fishash
 ## (raw-library margin) dilutes less than depth_fix (denoised-depth margin), but
 ## both share the problem. -> results/global_ambient_poisson/method_compare_effectsize.png
-## Run from nonparametric-thresholds/.
+## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats); library(fishash); library(SummarizedExperiment); library(ondisc); library(sceptre)})
 source("scripts/contingency_method.R")

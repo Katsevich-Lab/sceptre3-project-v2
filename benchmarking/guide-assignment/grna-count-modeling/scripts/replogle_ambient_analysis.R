@@ -14,7 +14,7 @@
 ## excess is small and partly weak-integration. The crude depth proxy (library -
 ## max) FAKES a perfect Poisson fit via a contamination-inflated tail; only the
 ## fishash-style rank-1 DENOISED depth gives the honest answer.
-## Run from the nonparametric-thresholds/ folder.
+## Run from the grna-count-modeling/ folder.
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats)})
 

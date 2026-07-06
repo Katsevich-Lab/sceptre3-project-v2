@@ -1,0 +1,349 @@
+---
+title: "Is the rank-1 Poisson ambient null adequate? A hands-on walkthrough"
+subtitle: "Touch the barnyard counts and watch the 'overdispersion' turn into doublets"
+author: "sceptre3 gRNA-assignment investigation"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cosmo
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 9, fig.height = 5)
+suppressPackageStartupMessages({
+  library(Matrix)
+  library(ggplot2)
+})
+theme_set(theme_bw(base_size = 12))
+# Paths are RELATIVE to this .Rmd (keep it at the project top level).
+REPRO <- "external/repro_work"
+```
+
+# What we are trying to convince ourselves of
+
+`depth_fix` (and fishash / geomux before it) models the **background gRNA
+noise** — the count of a guide in a cell that never received it — as
+
+$$
+Y_{gc} \;\sim\; \mathrm{Poisson}(\lambda_{gc}), \qquad
+\lambda_{gc} \;=\; a_g \, d_c,
+$$
+
+a **Poisson with a rank-1 mean**: a per-guide soup-share $a_g$ times a per-cell
+ambient exposure $d_c$. This whole edifice rests on that one modeling choice
+being *adequate*. This document lets you put your hands on the data and decide
+for yourself.
+
+There are three independent lines of evidence, in decreasing order of how
+hands-on they are. **We work the first one in full below** because it is local,
+small, and mechanistic; the other two are summarized at the end (full versions
+live in `doublet_overdispersion.qmd` and `results/method_decision/`).
+
+1. **The barnyard "overdispersion" is doublets, not soup** (this document). The
+   one dataset where the ambient looks strongly non-Poisson (CLEANSER's Fig 3B,
+   direct-capture) turns out to be Poisson once a handful of co-encapsulated
+   cells are removed — and you can see the doublets by eye.
+2. **The Replogle decisive test** (300k cells): aggregate soup var/mean sits at
+   ~1.0 across five orders of magnitude of fitted rate. Scale gives power; the
+   answer is flat Poisson.
+3. **Cross-dataset generality** (11 modern datasets): the soup var/mean at
+   moderate rates is 1.03–1.51 everywhere — near-Poisson, not an artifact of one
+   friendly dataset.
+
+The honest caveat up front: "adequate" is not "exactly Poisson." A formal
+bootstrap test (end of this doc) rules out negative-binomial dispersion
+$\alpha \gtrsim 1$ and is consistent with $\alpha \approx 0$, but cannot exclude
+a *mild* $\alpha \lesssim 0.25$ at these tiny rates. The claim is that the rank-1
+Poisson mean captures the structure to the resolution the data allow.
+
+# The setup: barnyard ground-truth ambient
+
+We use the 0hr barnyard experiment from Liu et al. 2025 (GSE272457). Two cell
+species (human 293T, mouse NIH-3T3) are mixed; each guide belongs to one
+species' library. A **wrong-species guide in a host-species cell** (e.g. a
+mouse-library guide inside a human cell) was *never integrated* into that cell,
+so any UMIs there are provably ambient. This is the cleanest ground-truth
+ambient that exists, and it is what both papers model.
+
+```{r loaders}
+# Authors' GEX quality control (verbatim); purity p is the only free knob.
+barnyard_qc <- function(meta, purity = 0.9) {
+  sum_gex   <- meta$homo_sum_gex + meta$mus_sum_gex
+  frac_homo <- meta$homo_sum_gex / sum_gex
+  qc <- (meta$mito_sum / sum_gex < .15) & (meta$features_gex <= 6000) &
+        (sum_gex <= 20000) & (meta$features_gex >= 1500) & (sum_gex >= 3500) &
+        (frac_homo < (1 - purity) | frac_homo > purity)
+  qc[is.na(qc)] <- FALSE
+  list(qc = qc, frac_homo = frac_homo)
+}
+
+load_sample <- function(sample, purity = 0.9) {
+  gm     <- as(readMM(file.path(REPRO, paste0(sample, "_grna_counts.mtx"))), "CsparseMatrix")
+  meta   <- read.csv(file.path(REPRO, paste0(sample, "_meta.csv")))
+  guides <- read.csv(file.path(REPRO, paste0(sample, "_guides.csv")))
+  stopifnot(nrow(meta) == ncol(gm), nrow(guides) == nrow(gm))
+  q <- barnyard_qc(meta, purity = purity)
+  counts <- gm[, q$qc, drop = FALSE]
+  rownames(counts) <- guides$guide
+  guide_homo <- guides$guide_type == "homo_guide"   # TRUE = human-library guide
+  cell_homo  <- q$frac_homo[q$qc] > purity           # TRUE = confidently human cell
+  list(counts = counts, guide_homo = guide_homo, cell_homo = cell_homo,
+       frac_homo = q$frac_homo[q$qc], purity = purity,
+       chemistry = if (grepl("Cropseq", sample)) "CROP-seq" else "direct-capture")
+}
+
+# Wrong-species (ambient) mask: guide species != cell species.
+amb_mask_of <- function(obj) {
+  m <- outer(obj$guide_homo, obj$cell_homo, function(g, c) g != c)
+  as(Matrix(m, sparse = TRUE), "lgCMatrix")
+}
+```
+
+```{r load}
+dc <- load_sample("mix0hr_DirectCapture", 0.90)  # direct-capture (the "problem" chemistry)
+cs <- load_sample("mix0hr_Cropseq",       0.90)  # CROP-seq (the Poisson-looking one)
+
+data.frame(
+  chemistry   = c(dc$chemistry, cs$chemistry),
+  QC_cells    = c(ncol(dc$counts), ncol(cs$counts)),
+  human_cells = c(sum(dc$cell_homo), sum(cs$cell_homo)),
+  mouse_cells = c(sum(!dc$cell_homo), sum(!cs$cell_homo))
+)
+```
+
+> **Touch it:** `dc$counts` is a 200-guide x N-cell sparse matrix. Try
+> `dc$counts[1:5, 1:8]`, or `dim(dc$counts)`. `dc$guide_homo` /
+> `dc$cell_homo` are the species labels the ambient mask is built from.
+
+# Step 1 — Reproduce the apparent overdispersion (CLEANSER Fig 3B)
+
+For each wrong-species guide, take the mean and variance of its counts across
+all host-species cells, **including the zeros**. The line `var = mean` is the
+Poisson expectation.
+
+```{r fig3b-fn}
+# Per wrong-species guide: (mean, var, var/mean) across host cells, incl. zeros.
+cleanser_perguide <- function(obj, focus = c("mus_in_homo", "homo_in_mus"),
+                              cell_subset = NULL) {
+  focus   <- match.arg(focus)
+  cnt     <- obj$counts
+  cellsel <- if (is.null(cell_subset)) rep(TRUE, ncol(cnt)) else cell_subset
+  if (focus == "mus_in_homo") {          # mouse-library guides across human cells
+    gsel <- !obj$guide_homo; csel <- obj$cell_homo & cellsel
+  } else {                                # human-library guides across mouse cells
+    gsel <- obj$guide_homo;  csel <- (!obj$cell_homo) & cellsel
+  }
+  sub <- cnt[gsel, csel, drop = FALSE]
+  nC  <- ncol(sub)
+  s1  <- Matrix::rowSums(sub)
+  s2  <- Matrix::rowSums(sub * sub)
+  mu  <- s1 / nC
+  v   <- (s2 - nC * mu^2) / (nC - 1)      # sample variance, incl. the zeros
+  data.frame(guide = rownames(sub), mean = mu, var = v,
+             vmr = ifelse(mu > 0, v / mu, NA_real_))
+}
+```
+
+```{r fig3b-numbers}
+pg_dc <- cleanser_perguide(dc, "mus_in_homo")   # mouse guides in human cells
+pg_cs <- cleanser_perguide(cs, "mus_in_homo")
+
+data.frame(
+  chemistry      = c("direct-capture", "CROP-seq"),
+  median_vmr     = c(median(pg_dc$vmr, na.rm = TRUE), median(pg_cs$vmr, na.rm = TRUE)),
+  pct_above_line = c(100 * mean(pg_dc$var > pg_dc$mean, na.rm = TRUE),
+                     100 * mean(pg_cs$var > pg_cs$mean, na.rm = TRUE))
+)
+```
+
+Direct-capture shows a per-guide median var/mean around **10** with nearly every
+guide above the Poisson line; CROP-seq sits at **~1**. This is exactly the
+apparent contradiction: one chemistry looks strongly Negative-Binomial.
+
+```{r fig3b-plot}
+pgA <- rbind(
+  transform(cleanser_perguide(dc, "mus_in_homo"), chem = "direct-capture"),
+  transform(cleanser_perguide(cs, "mus_in_homo"), chem = "CROP-seq"))
+pgA <- pgA[is.finite(pgA$mean) & pgA$mean > 0, ]
+
+ggplot(pgA, aes(mean, var, colour = chem)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey40") +
+  geom_point(alpha = 0.7, size = 2) +
+  scale_x_log10() + scale_y_log10() +
+  scale_colour_manual(values = c("direct-capture" = "#D55E00", "CROP-seq" = "#0072B2")) +
+  labs(x = "per-guide mean ambient UMIs (across host cells, incl. zeros)",
+       y = "per-guide variance", colour = "chemistry",
+       title = "Direct-capture floats above the Poisson line; CROP-seq hugs it")
+```
+
+# Step 2 — Look at where the variance actually lives
+
+If this were genuine "soup," the excess variance would be spread smoothly across
+cells. Instead, look at the per-cell wrong-species gRNA load.
+
+```{r percell-load}
+mask       <- amb_mask_of(dc)
+cnt        <- dc$counts
+amb_load   <- Matrix::colSums(cnt * mask)          # wrong-species UMIs per cell
+tot_grna   <- Matrix::colSums(cnt)
+wrong_frac <- amb_load / pmax(tot_grna, 1)         # gRNA-channel "doublet score"
+
+round(quantile(amb_load, c(.5, .9, .95, .99, .999, 1)))
+```
+
+The bulk of cells carry essentially zero wrong-species gRNA (median and q90 are
+tiny), but a right tail runs into the hundreds or thousands of UMIs — only
+possible if a whole second, wrong-species cell landed in the droplet.
+
+```{r percell-plot, fig.height=4.2}
+ggplot(data.frame(amb_load = amb_load[amb_load > 0]), aes(amb_load)) +
+  geom_histogram(bins = 60, fill = "steelblue", colour = "white") +
+  scale_x_log10() +
+  geom_vline(xintercept = c(5, 50), linetype = c("dotted", "dashed"), colour = "red") +
+  labs(x = "wrong-species gRNA UMIs per cell (log; zeros excluded)", y = "number of cells",
+       title = "A heavy right tail of doublet cells")
+```
+
+## See the doublets by name
+
+Cells whose gRNA pool is *dominated* by a wrong-library guide are, in effect,
+wrong-species cells that GEX QC happened to accept.
+
+```{r example-doublets}
+ord <- order(-wrong_frac); ord <- ord[tot_grna[ord] >= 5][1:6]
+dominant <- vapply(ord, function(j) rownames(cnt)[which.max(cnt[, j])], character(1))
+guides   <- read.csv(file.path(REPRO, "mix0hr_DirectCapture_guides.csv"))
+data.frame(
+  species_call     = ifelse(dc$cell_homo[ord], "human", "mouse"),
+  frac_homo_GEX    = round(dc$frac_homo[ord], 3),
+  total_grna_UMI   = tot_grna[ord],
+  wrong_species_UMI = amb_load[ord],
+  wrong_frac       = round(wrong_frac[ord], 3),
+  dominant_guide   = dominant,
+  dominant_library = ifelse(guides$guide_type[match(dominant, guides$guide)] == "homo_guide",
+                            "human", "mouse")
+)
+```
+
+Each row: GEX calls one species, but the gRNA channel is dominated by a guide
+from the *other* library — the signature of a co-encapsulated doublet.
+
+## The top 1% of cells own the overdispersion
+
+```{r variance-decomp}
+mask_T <- as(mask, "TsparseMatrix"); jcell <- mask_T@j + 1L
+vals_full <- (cnt * mask)[mask]
+mu_all    <- mean(vals_full)
+ss_total  <- sum((vals_full - mu_all)^2)
+
+top1_cell  <- amb_load > quantile(amb_load, 0.99)
+ss_top1    <- sum((vals_full[top1_cell[jcell]] - mu_all)^2)
+
+data.frame(
+  metric = c("cells in top 1% by wrong load",
+             "% of pooled ambient sum-of-squares from those cells",
+             "% of all ambient UMIs carried by those cells"),
+  value  = c(sum(top1_cell),
+             round(100 * ss_top1 / ss_total, 1),
+             round(100 * sum(amb_load[top1_cell]) / sum(amb_load), 1))
+)
+```
+
+A tiny fraction of cells account for the overwhelming majority of the excess
+variance. The "overdispersion" is not a property of the soup — it lives in a
+handful of doublets.
+
+# Step 3 — Remove the doublets and watch it collapse to Poisson
+
+The transparent fix is a **gRNA-channel purity cut**: drop cells whose
+wrong-species fraction of total gRNA exceeds a cutoff. This is independent of the
+GEX QC and directly targets co-encapsulation. Watch the var/mean melt.
+
+```{r pooled-vmr-fn}
+pooled_vmr <- function(obj, cell_subset = NULL) {
+  m <- amb_mask_of(obj); cn <- obj$counts
+  if (!is.null(cell_subset)) { cn <- cn[, cell_subset, drop = FALSE]; m <- m[, cell_subset, drop = FALSE] }
+  vals <- (cn * m)[m]
+  list(vmr = var(vals) / mean(vals), max = max(vals))
+}
+```
+
+```{r purity-sweep}
+do.call(rbind, lapply(c(1.01, 0.50, 0.10, 0.05, 0.01), function(cut) {
+  keep <- wrong_frac <= cut
+  pg   <- cleanser_perguide(dc, "mus_in_homo", cell_subset = keep)
+  pv   <- pooled_vmr(dc, cell_subset = keep)
+  data.frame(
+    gRNA_purity_filter  = if (cut > 1) "keep ALL (GEX-pure only)" else sprintf("wrong_frac <= %.2f", cut),
+    cells_kept          = sum(keep),
+    perguide_median_vmr = round(median(pg$vmr, na.rm = TRUE), 2),
+    perguide_pct_above  = round(100 * mean(pg$var > pg$mean, na.rm = TRUE), 0),
+    pooled_vmr          = round(pv$vmr, 2),
+    pooled_max          = pv$max
+  )
+}))
+```
+
+As the cut tightens, the per-guide median var/mean walks from ~10 down toward
+**1**, only about half the guides stay above the line (a coin-flip, exactly what
+Poisson sampling noise gives), and the largest single ambient count collapses.
+
+```{r collapse-plot, fig.height=5.5}
+rowsB <- lapply(c(1.01, 0.10, 0.01), function(cut) {
+  keep <- wrong_frac <= cut
+  pg   <- cleanser_perguide(dc, "mus_in_homo", cell_subset = keep)
+  lab  <- if (cut > 1) sprintf("keep all (median vmr %.1f)", median(pg$vmr, na.rm = TRUE))
+          else sprintf("drop wrong_frac > %.2f (median vmr %.2f)", cut, median(pg$vmr, na.rm = TRUE))
+  transform(pg[is.finite(pg$mean) & pg$mean > 0, ], filter = lab)
+})
+pgB <- do.call(rbind, rowsB)
+pgB$filter <- factor(pgB$filter, levels = vapply(rowsB, function(d) as.character(d$filter[1]), ""))
+
+ggplot(pgB, aes(mean, var, colour = filter)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey40") +
+  geom_point(alpha = 0.75, size = 2.4) +
+  scale_x_log10() + scale_y_log10() +
+  scale_colour_manual(values = c("#D55E00", "#E69F00", "#0072B2")) +
+  labs(x = "per-guide mean ambient UMIs (incl. zeros)", y = "per-guide variance",
+       colour = "cell filter",
+       title = "The cloud pulls onto the Poisson line as doublets are removed")
+```
+
+# The other two lines of evidence (summarized)
+
+The barnyard story above is the mechanistic core. Two more results establish that
+this is general, not one lucky dataset:
+
+- **Replogle decisive test (300k cells).** Fitting the rank-1 mean
+  $\lambda_{gc} = a_g d_c$ to the full soup and binning by rate, the aggregate
+  var/mean stays within a few percent of **1.0 across five orders of magnitude**
+  of $\mu$. At that sample size there is enormous power to detect overdispersion,
+  and it simply is not there. See `results/replogle_ambient_poisson/`.
+- **Cross-dataset generality (11 modern datasets).** A from-scratch rank-1
+  denoised-ambient fit (`scripts/ambient_validation.R`) gives a soup var/mean at
+  moderate rates of **1.03–1.51** everywhere — near-Poisson, with the mild
+  excess concentrated in the sparse high-rate tail (residual doublets), exactly
+  as here. See `results/method_decision/ambient_validation.csv` and
+  `ambient_dispersion_all.png`.
+
+And the honest bound: a bootstrap-calibrated goodness-of-fit test on the
+de-doubleted barnyard ambient (full version in `doublet_overdispersion.qmd`,
+§Part 4) finds Pearson $\phi = 0.993$ *inside* the Poisson null band
+$[0.956, 1.018]$ ($p \approx 0.25$). It rules out NB dispersion
+$\alpha \gtrsim 1$, is consistent with $\alpha \approx 0$, and leaves only a mild
+$\alpha \lesssim 0.25$ below its resolution.
+
+# Bottom line
+
+The one dataset where the ambient looked strongly non-Poisson is Poisson once you
+remove a handful of doublets you can see by eye; the largest available dataset is
+flat-Poisson across five orders of magnitude; and eleven modern datasets are all
+near-Poisson. Modeling the background gRNA noise as
+$\mathrm{Poisson}(a_g d_c)$ is adequate to the resolution the data allow — and
+the small residual excess is doublets, which is a data-cleaning problem, not a
+reason to complicate the null.

@@ -1,0 +1,13 @@
+"dataset","guide","gene","method","n_ambient","L1_frac"
+"dctap_highmoi","GATA1-TSS-2","GATA1","fishash",10183,1.03927250345507
+"dctap_highmoi","GATA1-TSS-2","GATA1","fishash+",7957,0.0335136015370613
+"dctap_highmoi","GATA1-TSS-2","GATA1","CLEANSER",9620,1.53563819982016
+"dctap_highmoi","e-HDAC6-1","HDAC6","fishash",9489,0.136234948199367
+"dctap_highmoi","e-HDAC6-1","HDAC6","fishash+",9356,0.0125204883057223
+"dctap_highmoi","e-HDAC6-1","HDAC6","CLEANSER",9285,0.408133014141653
+"dctap_highmoi","HDAC6-TSS-1","HDAC6","fishash",10265,1.0201622428005
+"dctap_highmoi","HDAC6-TSS-1","HDAC6","fishash+",8825,0.0227229785336681
+"dctap_highmoi","HDAC6-TSS-1","HDAC6","CLEANSER",8676,0.262799818553881
+"dctap_highmoi","MYC-e2-1","MYC","fishash",9343,0.853653623694724
+"dctap_highmoi","MYC-e2-1","MYC","fishash+",8358,0.049452652146796
+"dctap_highmoi","MYC-e2-1","MYC","CLEANSER",8899,1.57368302867843

@@ -26,7 +26,7 @@
 ## Data: replogle-rd7 sceptre grna_matrix.rds  (2666 guides x 616,184 cells)
 ## Output: results/replogle_ambient_poisson/{png,csv}
 ## ============================================================================
-## Run from the nonparametric-thresholds/ folder (repo convention).
+## Run from the grna-count-modeling/ folder (repo convention).
 suppressMessages({library(Matrix); library(sparseMatrixStats)})
 
 DATA <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre/grna_matrix.rds")

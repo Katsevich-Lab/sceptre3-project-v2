@@ -19,7 +19,7 @@
 #   barnyard_top3_marginals.png   (step 3: marginal count histograms of top-3 guides)
 #   barnyard_five_cells.csv       (step 4: the shared offender cells documented)
 #   barnyard_vmr_five_cells.png   (step 5: var-vs-mean with offenders removed GLOBALLY)
-# Run from nonparametric-thresholds/.
+# Run from grna-count-modeling/.
 # =============================================================================
 suppressPackageStartupMessages({ library(Matrix); library(ggplot2) })
 REPRO <- "external/repro_work"; OUT <- "results/collaborator_writeup"

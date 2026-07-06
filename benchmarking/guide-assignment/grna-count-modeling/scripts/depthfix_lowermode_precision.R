@@ -10,7 +10,7 @@
 ##      baseline) estimated two ways: gap-based (signal mode only) vs ALL depth_fix
 ##      calls. Including the lower-mode calls dilutes the effect in proportion to
 ##      the lower-mode fraction (catastrophically for TOP2A: 0.05 -> 0.82).
-## Run from nonparametric-thresholds/.
+## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats); library(ondisc); library(sceptre)})
 source("scripts/contingency_method.R")

@@ -6,7 +6,7 @@
 #                                     and its doublet shoulder), with the 0.90 and 0.99 gates
 #   3. barnyard_vmr_threshold.png   — per-guide variance vs mean at the 0.90 vs 0.99 gate
 #   4. barnyard_offenders.csv       — the residual doublet/chimera cells that survive the 0.99 gate
-# Data: external/repro_work/mix0hr_{DirectCapture,Cropseq}_*. Run from nonparametric-thresholds/.
+# Data: external/repro_work/mix0hr_{DirectCapture,Cropseq}_*. Run from grna-count-modeling/.
 suppressPackageStartupMessages({ library(Matrix); library(ggplot2) })
 REPRO <- "external/repro_work"; OUT <- "results/collaborator_writeup"
 dir.create(OUT, showWarnings = FALSE, recursive = TRUE)

@@ -10,7 +10,7 @@
 ## If strong knocks down but weak does NOT, the weak cells are background/soup,
 ## not functional integrations. Aggregated across guides for power (each guide's
 ## target is lowly expressed, so one guide is underpowered -- e.g. RAMAC).
-## Run from nonparametric-thresholds/.
+## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix); library(ondisc); library(sceptre)})
 D <- path.expand("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline")

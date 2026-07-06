@@ -10,7 +10,7 @@
 ## integration), or by nothing (unresolved background)?
 ##
 ## Usage:  Rscript scripts/global_ambient_gap_crossref.R <name> <matrix_rds>
-## Run from nonparametric-thresholds/.
+## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats)})
 

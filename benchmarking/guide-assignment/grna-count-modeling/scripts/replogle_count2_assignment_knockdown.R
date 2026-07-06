@@ -12,7 +12,7 @@
 ## Groups per clean-gap targeting guide:
 ##   count-2 ASSIGNED   (depth_fix calls it) | count-2 REJECTED (depth_fix does not)
 ##   strong (>=gap_hi, reference)            | NT-control baseline
-## Run from nonparametric-thresholds/.
+## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix); library(sparseMatrixStats); library(ondisc); library(sceptre)})
 source("scripts/contingency_method.R")

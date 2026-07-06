@@ -1,0 +1,13 @@
+"guide","gene","ceil_fishash","ceil_fishashplus","ceil_cleanser"
+"e-GATA1-1","GATA1",821,26,16
+"e-GATA1-2","GATA1",476,12,7
+"e-HDAC6-1","HDAC6",99,18,9
+"e-HDAC6-2","HDAC6",671,39,27
+"GATA1-TSS-1","GATA1",293,20,13
+"GATA1-TSS-2","GATA1",1984,58,427
+"HDAC6-TSS-1","HDAC6",281,15,6
+"HDAC6-TSS-2","HDAC6",905,39,37
+"MYC-e2-1","MYC",1246,85,213
+"MYC-e2-2","MYC",817,34,14
+"MYC-TSS-1","MYC",202,57,143
+"MYC-TSS-2","MYC",93,21,17

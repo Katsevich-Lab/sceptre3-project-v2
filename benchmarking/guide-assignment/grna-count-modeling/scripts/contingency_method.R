@@ -17,7 +17,12 @@ suppressPackageStartupMessages({library(fishash); library(Matrix); library(extra
 contingency_assign <- function(counts, q = 0.05, refit = 10, min_count = 2,
                                cell_margin = c("ambient","observed"),
                                tail = c("hyper","nb"), fdr = c("GS","BH"),
-                               rho_fixed = NULL) {
+                               rho_fixed = NULL, init_assigned = NULL) {
+  # init_assigned: optional logical/0-1 sparse matrix (same dims as counts) seeding the assigned
+  # set A for the FIRST background estimate. Default NULL = "no integrations" (background_1 = raw
+  # counts, so the initial depth d_c is the raw library size). Passing e.g. (counts > 2) seeds the
+  # first depth with the CLEANSER-style <=2 ambient estimate. Only affects iteration 1's rate field;
+  # the schedule then takes over. Used to probe initialization sensitivity of the fixed point.
   # rho_fixed: if supplied, use this GLOBAL negative-binomial dispersion for tail="nb"
   # instead of the per-entry Pearson-residual estimate (which is signal-contaminated).
   # The clean way to set it is from the aggregate ambient count-2 excess over Poisson
@@ -29,9 +34,11 @@ contingency_assign <- function(counts, q = 0.05, refit = 10, min_count = 2,
   n_rows <- sum(Matrix::rowSums(counts) > 0); n_cols <- sum(obs_col > 0)
   n_entries <- as.numeric(n_rows) * as.numeric(n_cols)
   ct <- as(counts, "TsparseMatrix"); i <- ct@i + 1L; j <- ct@j + 1L; y <- as.numeric(ct@x)
-  mask <- NULL; prev <- NULL; assigned <- NULL; rho <- 0
+  if (!is.null(init_assigned)) init_assigned <- as(init_assigned, "CsparseMatrix")
+  mask <- init_assigned; prev <- NULL; assigned <- NULL; rho <- 0
   for (it in seq_len(refit + 1)) {
-    background <- if (it == 1) counts else fishash::impute_masked_counts(counts, mask)
+    background <- if (it == 1 && is.null(init_assigned)) counts
+                  else fishash::impute_masked_counts(counts, mask)
     nr <- Matrix::rowSums(background); nc <- Matrix::colSums(background); Tn <- sum(background)
     bgc <- background[cbind(i, j)]                      # noise estimate at each nonzero (g,c)
     K <- nr[i] - bgc + y                                # row (guide) margin: decontaminated (fishash)

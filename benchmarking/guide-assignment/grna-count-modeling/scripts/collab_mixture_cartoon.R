@@ -16,7 +16,7 @@
 ## the three) = what actually gets measured.
 ##
 ## Everything below is constructed BY HAND — no dataset is read. Run from
-## nonparametric-thresholds/.  Packages: ggplot2 (+ scales).
+## grna-count-modeling/.  Packages: ggplot2 (+ scales).
 ## ============================================================================
 suppressPackageStartupMessages({library(ggplot2); library(scales)})
 OUT <- "results/collaborator_writeup"; dir.create(OUT, showWarnings = FALSE, recursive = TRUE)

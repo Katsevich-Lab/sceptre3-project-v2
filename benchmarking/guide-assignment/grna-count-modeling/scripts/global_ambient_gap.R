@@ -10,7 +10,7 @@
 ##
 ## Usage:  Rscript scripts/global_ambient_gap.R <dataset_name> <matrix_rds_path>
 ## Writes: results/global_ambient_poisson/perguide_<dataset_name>.csv
-## Run from nonparametric-thresholds/.
+## Run from grna-count-modeling/.
 ## ============================================================================
 suppressMessages({library(Matrix)})
 
