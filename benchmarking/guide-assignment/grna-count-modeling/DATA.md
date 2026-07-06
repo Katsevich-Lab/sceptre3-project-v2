@@ -27,14 +27,14 @@ per the [lab wiki](https://github.com/Katsevich-Lab/lab-resources/wiki/Synchroni
 | barnyard ×4 | Liu 2025 (CLEANSER) | GSE272457 | mtx triplets (GEO suppl) | import raw guides (all cells) → `make_barnyard.R` species-purity QC | full | **import-liu-2025** ✅ |
 | a549 | Sakellaropoulos 2024 | GSE236304 | `filtered_feature_bc_matrix.h5` | `read_10x_h5` | full (raw h5 local) | see note ↓ (import-Sakellaropoulos-2024 exists, SRA path) |
 | dctap ×2 | Ray 2025 (ENCODE DC-TAP) | GSE303901 | mtx triplet / tar.gz | `read_10x_mtx` | full (raw local) | see note ↓ (`ray-2025` on HPCC, different processing) |
-| cd8_tcell | Chung 2024 | GSE279498 | mtx triplet (GEO suppl) | `read_10x_mtx` | **full** (raw triplet local) | **import-chung-2024** (new) |
+| cd8_tcell | Chung 2024 | GSE279498 | mtx triplet (GEO suppl) | `read_10x_mtx` | **full** (raw triplet local) | **import-chung-2024** ✅ |
 | endoc_t2d | Cao 2024 | GSE273677 | `GSM8434996` GWAS-rep1 triplet (GEO) | `read_10x_mtx` (single rep) | **full** (raw local) | **import-cao-2024** ✅ |
-| erythroid_multiome | Caulier 2025 | GSE274113 | `..._filtered_feature_bc_matrix_1.h5` | `read_10x_h5` | **full** (raw h5 local) | **import-caulier-2025** (new) |
-| gastric_organoid | Chen 2025 | GSE280506 | `cell_identities.csv.gz` + guide xlsx | `build_grna_matrix.R` | partial (gRNA only; GEX = GEO RAW.tar) | **import-chen-2025** (new) |
+| erythroid_multiome | Caulier 2025 | GSE274113 | `..._filtered_feature_bc_matrix_1.h5` | `read_10x_h5` | **full** (raw h5 local) | **import-caulier-2025** ✅ |
+| gastric_organoid | Chen 2025 | GSE280506 | `cell_identities.csv.gz` | `build_grna_matrix.R` | partial (gRNA only; GEX = GEO RAW.tar) | **import-chen-2025** ✅ |
 | invivo_cortex | Zheng 2023 | GSE249416 | `Perturb_sg.qs.gz` (Seurat) | `build_grna_matrix.R` (R 4.4 + qs) | full (legacy `.qs`) | **import-zheng-2023** ✅ |
 | ipsc | Feng 2025 (HipSci) | figshare 27989294 | `Guide-UMI-Counts.csv.gz` + metadata | `build_grna_matrix.R` | gRNA only (GEX on ENA/SRA) | **import-feng-2025** ✅ |
 | cd4_tcell | Zhu (unpublished) | GSE314342 | `GSM9393828..._filtered_feature_bc_matrix.h5` | `read_10x_h5` | partial (1 of ~10 GEX reps; unpublished) | **import-zhu-2025** (private) |
-| mccutcheon | McCutcheon 2023 | GSE218988 | `GSM6761464_CRISPRi_D1.tar.gz` | (parse to version) | partial (raw tar local) | **import-mccutcheon-2023** (new) |
+| mccutcheon | McCutcheon 2023 | GSE218988 | `GSM6761464_CRISPRi_D1.tar.gz` | not versioned | partial (raw tar local) | **none yet** — one-off local object, no import repo |
 
 GEO supplementary URLs follow `https://ftp.ncbi.nlm.nih.gov/geo/series/GSE<XXX>nnn/GSE<XXXXX>/suppl/<file>`
 (e.g. `GSE273nnn/GSE273677/suppl/GSE273677_RAW.tar`).
@@ -44,9 +44,10 @@ GEO supplementary URLs follow `https://ftp.ncbi.nlm.nih.gov/geo/series/GSE<XXX>n
 The lab has these two studies on HPCC, but as **different objects** from my guide-count matrices — do **not**
 swap (it would change the data under committed writeups):
 - **a549** — my matrix (253 guides × 25,220 cells, `Non_Targeting_Human_CRi_*`) is from GEO's authors-processed
-  `filtered_feature_bc_matrix.h5`. `~/data/external/sakellaropoulos-2024-sra/` (import-Sakellaropoulos-2024)
-  is a **from-SRA Cell Ranger** reprocessing (per-SRR outputs, no assembled guide-count matrix).
-- **dctap** — my matrix (110 guides × 10,932 cells, `safe_*`) is from GEO mtx. `~/data/external/ray-2025/`
+  `filtered_feature_bc_matrix.h5`. `sakellaropoulos-2024-sra/` (on HPCC; `hpcc pull`) — from
+  [import-Sakellaropoulos-2024](https://github.com/Katsevich-Lab/import-Sakellaropoulos-2024) — is a
+  **from-SRA Cell Ranger** reprocessing (per-SRR outputs, no assembled guide-count matrix).
+- **dctap** — my matrix (110 guides × 10,932 cells, `safe_*`) is from GEO mtx. `ray-2025/` (on HPCC)
   is a **Cell Ranger → sceptre** reprocessing whose guides are annotated differently
   (`K562_Random_Screen_Crop_*`) — a distinct curation, not a reformat of mine.
 
@@ -54,10 +55,10 @@ Recommendation: keep my GEO-derived versions (preserves results) and document th
 
 ## "No code under `data/`" (lab convention)
 
-The survey parse scripts currently living in `~/data/external/perturbseq-survey/` (`parse_10x_h5_guides.R`,
-`parse_10x_mtx_guides.R`, per-dataset `build_grna_matrix.R`) violate the convention that data dirs hold no
-code. The standard `read_10x_h5`/`read_10x_mtx` logic is already versioned in `scripts/sim_de_extract_survey.R`;
-the per-dataset builders are being moved into their respective `import-<author>-<year>` repos (below).
+The survey parse scripts that previously lived in `~/data/external/perturbseq-survey/` (`parse_10x_h5_guides.R`,
+`parse_10x_mtx_guides.R`, per-dataset `build_grna_matrix.R`) violated the convention that data dirs hold no
+code. They have been **moved** into `../data-preprocessing/survey-import/` (versioned) and ported into the
+per-study `import-<author>-<year>` repos (below); the data-dir originals were deleted.
 
 ## Import-repo status
 

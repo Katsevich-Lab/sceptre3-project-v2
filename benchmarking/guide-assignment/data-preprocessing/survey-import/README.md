@@ -9,9 +9,9 @@ convention that data dirs hold no code. Full provenance:
   CellRanger `.h5` → `grna_matrix.rds` + `guide_features.csv`. Used for: **a549** (GSE236304),
   **erythroid_multiome** (GSE274113), **cd4_tcell** (GSE314342).
 - `parse_10x_mtx_guides.R <mtx_dir> <out_dir> [regex]` — same, from a 10x mtx triplet. Used for:
-  **cd8_tcell** (GSE279498), **dctap** (GSE303901), **endoc_t2d** (GSE273677, per-rep untar + rbind).
+  **cd8_tcell** (GSE279498, sample HKC045), **dctap** (GSE303901), **endoc_t2d** (GSE273677, single rep GSM8434996).
 - `build_grna_matrix_{gastric_organoid,invivo_cortex,ipsc}.R` — per-dataset custom builders (non-10x
-  formats: cell-identities CSV + guide library, legacy Seurat `.qs`, HipSci figshare UMI-count CSV).
+  formats: cell-identities CSV, legacy Seurat `.qs`, HipSci figshare UMI-count CSV).
 
 Verified faithful: re-running the relevant parser on the local raw reproduces the committed
 `grna_matrix.rds` **byte-identically** (checked for cd8_tcell; the others share the identical code path).

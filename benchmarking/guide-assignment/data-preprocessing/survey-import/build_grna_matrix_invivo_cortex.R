@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # Build gRNA-by-cell dgCMatrix from GSE249416_Perturb_sg.qs.gz (in vivo cortex
-# Perturb-seq, Jin et al. Cell 2024). Legacy `qs` Seurat object; the "Crispr"
+# Perturb-seq, Zheng et al. 2023/Cell 2024, GSE249416). Legacy `qs` Seurat object; the "Crispr"
 # assay holds raw per-cell guide UMI counts. REQUIRES R 4.4 (legacy qs won't
 # compile on R>=4.6). Run with the 4.4 Rscript binary.
 suppressMessages({library(qs); library(Matrix); library(SeuratObject)})

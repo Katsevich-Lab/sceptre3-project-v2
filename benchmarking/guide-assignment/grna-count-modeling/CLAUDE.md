@@ -145,7 +145,8 @@ depth each method *uses*) → `writeup_cleanser_export.R` → `run_cleanser_batc
 ## Data locations
 - Benchmark inputs/outputs: `~/data/projects/sceptre3/benchmarking/guide_assignment/{input_data,outputs}/`
   (HPC pull: `hpcc pull SCEPTRE3 <subdir>`).
-- Barnyard raw (Liu 2025): `~/data/external/liu-2025-cleanser/GSE272457/`.
+- Barnyard raw (Liu 2025): `~/data/external/liu-2025-cleanser/GSE272457/` (build_inputs.py source). Canonical
+  import location is `LOCAL_LIU_2025_DATA_DIR` (`~/data/external/liu-2025/`) via `import-liu-2025`; see `DATA.md`.
 - Recent (2024-26) survey datasets: `~/data/external/perturbseq-survey/`.
 - Envs: `.venv_geomux_v5` (geomux 0.5.5), `.venv_crispat` (jdeu1023 fork), R `fishash` 0.99.0,
   `sceptre` 0.99.0.
