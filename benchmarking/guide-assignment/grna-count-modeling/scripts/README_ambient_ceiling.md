@@ -44,6 +44,29 @@ Single source of truth for the suite (source it after `scripts/contingency_metho
 4. `num_ambient_perguide.R {highmoi,lowmoi}` → the per-guide `num_ambient_dctap_*.png` embedded in the writeup.
 5. `quarto render method_comparison.qmd`.
 
+## method_comparison_2 figure provenance ⚠️ (generator = TODO)
+
+`method_comparison_2.qmd` is the **prose-narrative companion** to `method_comparison.qmd`. It has **no code
+chunks** — it `![]()`-references four static figures and inlines a couple of tables. Those figures were
+produced **ad-hoc in an interactive R session that was never committed**; there is no generating script yet.
+The figures and their **backing CSVs are committed** (small, tracked), so the numbers are frozen and
+reviewable, but re-rendering the figures currently requires reconstructing that session. Recovering a single
+consolidated generator (`scripts/method_comparison2_figures.R`) is a **TODO** — the inputs are mapped here:
+
+| figure (in the doc) | backing CSV (committed) | extra inputs a faithful generator needs |
+|---|---|---|
+| `dataset_landscape.png` | `dataset_landscape.csv` (self-contained: `med_depth_fishashplus`, `med_ceil_fplus`, `chem_conf`, …) | none — thin ggplot over the CSV; **fully reproducible** |
+| `dataset_variability_strips.png` | — | per-cell depth + per-guide ceiling distributions (`writeup/ceilings.csv`, committed; per-cell depth from `fit_cache/`, gitignored) |
+| `guide_hist_methods.png` | `method_ceilings_fig.csv` (the ceiling table) | per-guide **count** distributions → raw matrices via `dataset_paths()` + `fit_cache/` + CLEANSER calls |
+| `method_concordance.png` | `method_concordance_summary.csv` (per-dataset medians only) | **per-guide** Jaccard: blue = `writeup/jaccard_ff.csv` (committed); red = CLEANSER-vs-fishash+, needs `cleanser_calls*/` (gitignored) aligned to `fit_cache/` |
+
+Not committed (orphan exploratory outputs from the same session, not referenced by the doc):
+`a549_discordant_hist.png`, `cd8_discordant_hist.png`, `dataset_landscape_cross.png`, `guide_hist_barnyard_truth.png`.
+
+Content caveat (carried in the doc's own Notes): the CROP-seq CLEANSER numbers should be regenerated with the
+chemistry-correct `--cs` model — `run_cleanser_batch.sh` currently hardcodes `--dc`, and the `--cs` re-run so
+far covers only `a549` + `gastric_organoid` (`cleanser_calls_cs/`, gitignored).
+
 ## Exploratory / diagnostic (not embedded in the writeup)
 
 `dctap_poscontrol_compare.R` (the causal recall-vs-knockdown validation on GATA1/HDAC6/MYC positive

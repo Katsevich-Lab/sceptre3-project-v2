@@ -41,4 +41,14 @@ results/ambient_ceiling/cleanser_batch/
 results/ambient_ceiling/*.log
 results/ambient_ceiling/**/_progress.rds
 results/ambient_ceiling/_init_progress.rds
+# chemistry-correct CLEANSER re-run (--cs; large regenerable MCMC, cf. cleanser_calls/)
+results/ambient_ceiling/cleanser_calls_cs/
+# error-control DE pushthrough: heavy per-dataset fits (~65M of fit.rds), logs + run scaffolding
+# (regenerable via scripts/de_opgrid.R; the writeup only needs de/de_opgrid_*.{png,csv}, which are kept)
+results/error_control/de/*/
+results/error_control/de/*.log
+results/error_control/de/_*
+results/error_control/de/*.sh
+# global-ambient-poisson ML fit caches (large; regenerable via the global_ambient_poisson scripts)
+results/global_ambient_poisson/*.rds
 .posit/

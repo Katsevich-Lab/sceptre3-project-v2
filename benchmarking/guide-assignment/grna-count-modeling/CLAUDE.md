@@ -21,7 +21,9 @@ fishash exactly, with `cell_margin="ambient"` it is our method. See memory
 | **`literature_review.qmd` → `.html`** | **Conceptual synthesis / statistical story.** The methods landscape and the unifying account: assignment = a per-entry test whose null (rank-1 ambient rate) is contaminated by its own signal; the 2×2 table has three background cells, and each method cleans a different subset (fishash cleans the guide side, CLEANSER the cell side, depth_fix both). NEWEST + sharpest framing. |
 | **`sceptre3_assignment_report.qmd` → `.html`** | **Our method + real-data evidence + recommendation + spec.** Barnyard ground truth, CLEANSER scoring-bug fix, FDR-control experiments, the depth_fix recommendation, what we rejected. (Its conceptual "framework / failure-modes" sections are an older, rougher version of `literature_review`'s; its "comprehensive-sim" section is superseded by the sim framework below.) |
 | **`simulation_framework_report.qmd` → `.html`** | **Simulation apparatus + sim benchmark evidence.** Model A (semi-synthetic) + Model B (mechanistic regimes), realism gate, 11-method panel. Companion working doc: `SIMULATION_FRAMEWORK.md` (design + DE-pushthrough foundation + PENDING re-run steps). |
-| **`method_comparison.qmd` → `.html`** | **NEWEST flagship (collaborator-facing).** fishash vs fishash+ vs CLEANSER across all real datasets: per-cell ambient depth *used* (raw library / rank-1 / ≤2), per-guide "number of cells called ambient", assignment agreement (Jaccard), recall. Built by the **ambient-ceiling suite** (`scripts/README_ambient_ceiling.md`, shared lib `scripts/datasets.R`). |
+| **`method_comparison.qmd` → `.html`** | **NEWEST flagship (collaborator-facing), computational.** fishash vs fishash+ vs CLEANSER across all real datasets: per-cell ambient depth *used* (raw library / rank-1 / ≤2), per-guide "number of cells called ambient", assignment agreement (Jaccard), recall. Built by the **ambient-ceiling suite** (`scripts/README_ambient_ceiling.md`, shared lib `scripts/datasets.R`). |
+| **`method_comparison_2.qmd` → `.html`** | **Prose-narrative companion** to `method_comparison.qmd` (same three-method contrast, restructured as a landscape → method-contrast → synthesis story; no code chunks — static figures + inlined tables). ⚠️ Its figures (`results/ambient_ceiling/{dataset_landscape,dataset_variability_strips,guide_hist_methods,method_concordance}.png`) were generated ad-hoc; their **committed backing CSVs** are tracked but the consolidated generator is a **TODO** — see `scripts/README_ambient_ceiling.md` §"method_comparison_2 figure provenance". Content caveat carried in the doc's own notes: CROP-seq CLEANSER numbers still need a per-dataset `--cs` re-run (`run_cleanser_batch.sh` hardcodes `--dc`). |
+| **`error_control_grna_assignment.qmd` → `.html`** | **Design rationale: which error, at which level.** Argues error control for assignment is *stage-dependent* — assignment is a **power** lever (BH not FDR-inflated; GS's per-cell FWER over-conservative, forfeits knockdown-validated recall), the per-gRNA DE test **owns Type-I** (threshold-insensitive; confounding-driven), and only a hard **per-cell QC** makes per-cell error (GS's unit) apt (FP → recall loss ≈ FDR×collision). Includes the $(1-f)\sqrt r$ cost argument + per-guide-FDR. Evidence: **`scripts/error_control_experiments.R`** → `results/error_control/`. |
 | **ambient-Poisson ladder** (`replogle_ambient_poisson` → `global_ambient_poisson` → `doublet_overdispersion` → `canonical_model` → `grna-count-modeling.qmd`), each `.qmd`→`.html` | The "is the ambient noise Poisson?" evidence chain: single-dataset (RAMAC) → ~760-guide/6-dataset generalization → direct-capture overdispersion is doublet-driven → the parametric generative model (Poisson ambient + gated NB signal) + EM → collaborator roll-up. All live, cross-linked. |
 | **`DE_DATASETS_STATUS.md`** | Live inventory for the downstream SCEPTRE-DE pushthrough (the decisive test). 9 DE-ready datasets. |
 
@@ -89,7 +91,9 @@ grna-count-modeling/
 ├── literature_review.{qmd,html}       # conceptual synthesis (READ FIRST)
 ├── sceptre3_assignment_report.{qmd,html}   # our method + real-data evidence + recommendation
 ├── simulation_framework_report.{qmd,html}  # sim apparatus + sim evidence
-├── method_comparison.{qmd,html}       # NEWEST: fishash vs fishash+ vs CLEANSER (ambient-ceiling suite)
+├── method_comparison.{qmd,html}       # NEWEST: fishash vs fishash+ vs CLEANSER (ambient-ceiling suite, computational)
+├── method_comparison_2.{qmd,html}     # prose-narrative companion to method_comparison (static figs; generator = TODO)
+├── error_control_grna_assignment.{qmd,html}  # design rationale: stage-dependent error control (BH/GS/per-guide/QC)
 ├── {replogle_ambient_poisson,global_ambient_poisson,doublet_overdispersion,canonical_model,grna-count-modeling}.{qmd,html}  # ambient-Poisson ladder
 ├── SIMULATION_FRAMEWORK.md            # sim framework design + DE foundation + PENDING re-run steps
 ├── DE_DATASETS_STATUS.md              # DE-pushthrough dataset inventory
@@ -97,13 +101,15 @@ grna-count-modeling/
 │                                      #   datasets.R (shared registry+loaders); sim_*.R (framework);
 │                                      #   ambient_*/dctap_*/depth_*/model_vs_calls/num_ambient_* (ambient-
 │                                      #   ceiling suite — see scripts/README_ambient_ceiling.md);
-│                                      #   barnyard_*/collab_*/replogle_* figure scripts; simpson_paradox_*
+│                                      #   barnyard_*/collab_*/replogle_* figure scripts; simpson_paradox_*;
+│                                      #   error_control_experiments.R (backs error_control_grna_assignment.qmd)
 ├── results/                           # figures + CSVs the reports read
 │   ├── ambient_ceiling/               # method_comparison outputs (fit_cache/, cleanser_{calls,batch}/,
 │   │                                  #   writeup/assign/ all gitignored+regenerable)
 │   ├── sim_framework/                 # sim-framework outputs (datasets/ + de/ gitignored)
 │   ├── benchmark_update/              # depth_fix / build-vs-adopt figures for the assignment report
 │   ├── {ambient_intuition,global_ambient_poisson,replogle_ambient_poisson,collaborator_writeup,method_decision}/  # per-writeup outputs
+│   ├── error_control/                 # error_control_experiments.R outputs (BH/GS/per-guide FDR CSVs)
 │   ├── barnyard_cohort_export/        # our QC'd barnyard cohort export (gitignored)
 │   └── _archive/                      # superseded outputs incl. comprehensive_sim_legacy/ (gitignored)
 ├── external/repro_work/               # EXACT barnyard Table-2 reproduction (canonical barnyard)
