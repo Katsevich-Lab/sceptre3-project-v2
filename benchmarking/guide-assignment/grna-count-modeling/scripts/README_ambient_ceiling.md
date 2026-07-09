@@ -44,28 +44,31 @@ Single source of truth for the suite (source it after `scripts/contingency_metho
 4. `num_ambient_perguide.R {highmoi,lowmoi}` → the per-guide `num_ambient_dctap_*.png` embedded in the writeup.
 5. `quarto render method_comparison.qmd`.
 
-## method_comparison_2 figure provenance ⚠️ (generator = TODO)
+## method_comparison_2 figures (run order → feeds `method_comparison_2.qmd`)
 
-`method_comparison_2.qmd` is the **prose-narrative companion** to `method_comparison.qmd`. It has **no code
-chunks** — it `![]()`-references four static figures and inlines a couple of tables. Those figures were
-produced **ad-hoc in an interactive R session that was never committed**; there is no generating script yet.
-The figures and their **backing CSVs are committed** (small, tracked), so the numbers are frozen and
-reviewable, but re-rendering the figures currently requires reconstructing that session. Recovering a single
-consolidated generator (`scripts/method_comparison2_figures.R`) is a **TODO** — the inputs are mapped here:
+`method_comparison_2.qmd` is the prose-narrative companion to `method_comparison.qmd`; it has **no code
+chunks** — it `![]()`-references four static figures. The generators are the committed `scripts/mc2_*.R`
+below (run from the folder root, after the Writeup-pipeline prerequisites above are present: `fit_cache/`,
+`writeup/*.csv`, `writeup/assign/*.rds`, CLEANSER calls). All outputs land in `results/ambient_ceiling/`.
 
-| figure (in the doc) | backing CSV (committed) | extra inputs a faithful generator needs |
-|---|---|---|
-| `dataset_landscape.png` | `dataset_landscape.csv` (self-contained: `med_depth_fishashplus`, `med_ceil_fplus`, `chem_conf`, …) | none — thin ggplot over the CSV; **fully reproducible** |
-| `dataset_variability_strips.png` | — | per-cell depth + per-guide ceiling distributions (`writeup/ceilings.csv`, committed; per-cell depth from `fit_cache/`, gitignored) |
-| `guide_hist_methods.png` | `method_ceilings_fig.csv` (the ceiling table) | per-guide **count** distributions → raw matrices via `dataset_paths()` + `fit_cache/` + CLEANSER calls |
-| `method_concordance.png` | `method_concordance_summary.csv` (per-dataset medians only) | **per-guide** Jaccard: blue = `writeup/jaccard_ff.csv` (committed); red = CLEANSER-vs-fishash+, needs `cleanser_calls*/` (gitignored) aligned to `fit_cache/` |
+1. `mc2_cleanser_cs_calls.sh` — regenerate the **chemistry-correct** CLEANSER calls for the CROP-seq
+   datasets (`--cs`, Poisson) into `cleanser_calls_cs/` (gitignored). Needed for Figs 3–4 to match the
+   committed versions; currently covers `gastric_organoid` + `a549`. ⚠️ `run_cleanser_batch.sh` hardcodes
+   `--dc`; the mc2 scripts **prefer** `cleanser_calls_cs/` over `cleanser_calls/` per dataset, so with only
+   `--dc` calls present the CROP-seq CLEANSER ceilings come out inflated (the doc's Notes flag this).
+2. `mc2_dataset_landscape.R` → `dataset_landscape.csv` (per-dataset metrics + authoritative capture
+   modality — the **shared table** the other three read) + `dataset_landscape.png` (Fig 1) +
+   `dataset_landscape_cross.png`. Reads `writeup/{depth_summary,ceilings,assign_counts,jaccard_ff,depths_sampled}.csv`.
+3. `mc2_variability_strips.R` → `dataset_variability_strips.png` (Fig 2). Reads `dataset_landscape.csv`
+   (modality) + `writeup/{depths_sampled,ceilings}.csv`. Needs `patchwork`.
+4. `mc2_guide_hist.R` → `guide_hist_methods.png` (Fig 3) + `method_ceilings_fig.csv`. Reads the raw
+   matrices (`dataset_paths()`), the cached `writeup/assign/*.rds`, and the CLEANSER calls.
+5. `mc2_concordance.R` → `method_concordance.png` (Fig 4) + `method_concordance_summary.csv`. Same inputs.
+6. `quarto render method_comparison_2.qmd`.
 
-Not committed (orphan exploratory outputs from the same session, not referenced by the doc):
-`a549_discordant_hist.png`, `cd8_discordant_hist.png`, `dataset_landscape_cross.png`, `guide_hist_barnyard_truth.png`.
-
-Content caveat (carried in the doc's own Notes): the CROP-seq CLEANSER numbers should be regenerated with the
-chemistry-correct `--cs` model — `run_cleanser_batch.sh` currently hardcodes `--dc`, and the `--cs` re-run so
-far covers only `a549` + `gastric_organoid` (`cleanser_calls_cs/`, gitignored).
+Companion tool (not embedded in the doc): `mc2_guide_discord.R <dataset>` reproduces the per-guide
+discordant-vs-concordant case-study panels (`a549_discordant_hist.png`, `cd8_discordant_hist.png`, …) used
+in the CLEANSER-vs-fishash+ investigation. `dataset_landscape_cross.png` is a byproduct of step 2.
 
 ## Exploratory / diagnostic (not embedded in the writeup)
 
