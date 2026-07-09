@@ -1,6 +1,13 @@
 #!/bin/zsh
 # Re-run CLEANSER with the CORRECT chemistry (--cs, CROP-seq/Poisson) on the CROP-seq datasets that
 # are in / near the figure. Writes to a SEPARATE dir so the --dc calls are preserved for comparison.
+#
+# ⚠️ CAVEAT (see CLAUDE.md §Open threads): this covers ONLY a549 + gastric_organoid — the only CROP-seq
+# datasets in the current mc2 concordance/guide-hist figures. run_cleanser_batch.sh still hardcodes --dc,
+# and the mc2_ scripts prefer cleanser_calls_cs/ over cleanser_calls/. So any from-scratch regen, or
+# adding another CROP-seq dataset (gasperini, barnyard_lrb100 x2) to those figures, must extend the loop
+# below first — otherwise that dataset falls back to --dc and its CROP-seq CLEANSER ceilings inflate.
+# Proper fix: generalize run_cleanser_batch.sh to choose --cs/--dc per dataset from the registry modality.
 set -e
 cd /Users/ekatsevi/code/research/sceptre3-project-v2/benchmarking/guide-assignment/grna-count-modeling
 BATCH=results/ambient_ceiling/cleanser_batch

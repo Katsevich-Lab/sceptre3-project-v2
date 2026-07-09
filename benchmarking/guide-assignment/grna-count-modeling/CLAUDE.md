@@ -180,5 +180,13 @@ Full account in `literature_review`.
   for our contribution, since CLEANSER shares the cell-margin fix — not yet run directly (see
   `cleanser-scoring-artifact`).
 - **Per-guide-fit sim re-run** (SIMULATION_FRAMEWORK.md §PENDING) — scripts edited, not yet re-run.
+- **CLEANSER chemistry (`--cs`) coverage is partial.** `run_cleanser_batch.sh` hardcodes `--dc`
+  (direct-capture/NB); the mc2 figures prefer chemistry-correct `--cs` (CROP-seq/Poisson) calls from
+  `cleanser_calls_cs/`, but `mc2_cleanser_cs_calls.sh` only regenerates `a549` + `gastric_organoid`.
+  Those two are the *only* CROP-seq datasets in the current concordance/guide-hist figures, so the
+  committed figures are chemistry-correct — but any from-scratch regen of `cleanser_calls/`, or adding a
+  CROP-seq dataset (`gasperini`, `barnyard_lrb100 ×2`) to those figures, needs the `--cs` re-run
+  extended first, else CROP-seq CLEANSER ceilings come out inflated. Fix = generalize
+  `run_cleanser_batch.sh` to pick `--cs`/`--dc` per dataset from the registry's capture modality.
 - **Literature review — DONE.** `literature_review.qmd` reconciles cleanser/crispat/fishash/geomux/
   sceptre against our findings and places each on the map.
