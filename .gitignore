@@ -44,3 +44,7 @@ benchmarking/association/nf-logs
 # singularity images
 *.sif
 
+# macOS junk
+.DS_Store
+**/.DS_Store
+
