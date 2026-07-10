@@ -1,0 +1,97 @@
+"method","regime","ng","F1"
+"cleanser_cs","high_gRNA",20,0.84
+"cleanser_cs","high_gRNA",200,0.93
+"cleanser_cs","high_gRNA",2000,0.95
+"cleanser_cs","high_gRNA",20000,0.95
+"cleanser_dc","high_gRNA",20,0.68
+"cleanser_dc","high_gRNA",200,0.96
+"cleanser_dc","high_gRNA",2000,0.95
+"cleanser_dc","high_gRNA",20000,0.95
+"crispat_gauss","high_gRNA",20,0.72
+"crispat_gauss","high_gRNA",200,0.73
+"crispat_gauss","high_gRNA",2000,0.9
+"crispat_gauss","high_gRNA",20000,0.9
+"crispat_poisgauss","high_gRNA",20,0.68
+"crispat_poisgauss","high_gRNA",200,0.94
+"crispat_poisgauss","high_gRNA",2000,0.93
+"crispat_poisgauss","high_gRNA",20000,0.93
+"crispat_poisson","high_gRNA",20,0.91
+"crispat_poisson","high_gRNA",200,0.95
+"crispat_poisson","high_gRNA",2000,0.95
+"crispat_poisson","high_gRNA",20000,0.88
+"crispat_negbinom","high_gRNA",20,0.9
+"crispat_negbinom","high_gRNA",200,0.96
+"crispat_negbinom","high_gRNA",2000,0.96
+"crispat_negbinom","high_gRNA",20000,0.9
+"sceptre_mixture","high_gRNA",20,0.82
+"sceptre_mixture","high_gRNA",200,0.93
+"sceptre_mixture","high_gRNA",2000,0.93
+"sceptre_mixture","high_gRNA",20000,0.84
+"demuxem","high_gRNA",20,0.87
+"demuxem","high_gRNA",200,0.92
+"demuxem","high_gRNA",2000,0.93
+"demuxem","high_gRNA",20000,0.95
+"geomux","high_gRNA",20,0.92
+"geomux","high_gRNA",200,0.9
+"geomux","high_gRNA",2000,0.96
+"geomux","high_gRNA",20000,0.96
+"fishash (digitized)","high_gRNA",20,0.94
+"fishash (digitized)","high_gRNA",200,0.96
+"fishash (digitized)","high_gRNA",2000,0.97
+"fishash (digitized)","high_gRNA",20000,0.97
+"cleanser_cs","low_gRNA",20,0.68
+"cleanser_cs","low_gRNA",200,0.76
+"cleanser_cs","low_gRNA",2000,0.75
+"cleanser_cs","low_gRNA",20000,0.7
+"cleanser_dc","low_gRNA",20,0.64
+"cleanser_dc","low_gRNA",200,0.81
+"cleanser_dc","low_gRNA",2000,0.76
+"cleanser_dc","low_gRNA",20000,0.66
+"crispat_gauss","low_gRNA",20,0.57
+"crispat_gauss","low_gRNA",200,0.74
+"crispat_gauss","low_gRNA",2000,0.79
+"crispat_gauss","low_gRNA",20000,0.82
+"crispat_poisgauss","low_gRNA",20,0.62
+"crispat_poisgauss","low_gRNA",200,0.79
+"crispat_poisgauss","low_gRNA",2000,0.8
+"crispat_poisgauss","low_gRNA",20000,0.7
+"crispat_poisson","low_gRNA",20,0.8
+"crispat_poisson","low_gRNA",200,0.83
+"crispat_poisson","low_gRNA",2000,0.84
+"crispat_poisson","low_gRNA",20000,0.42
+"crispat_negbinom","low_gRNA",20,0.74
+"crispat_negbinom","low_gRNA",200,0.84
+"crispat_negbinom","low_gRNA",2000,0.68
+"crispat_negbinom","low_gRNA",20000,0.3
+"sceptre_mixture","low_gRNA",20,0.57
+"sceptre_mixture","low_gRNA",200,0.82
+"sceptre_mixture","low_gRNA",2000,0.83
+"sceptre_mixture","low_gRNA",20000,0.81
+"demuxem","low_gRNA",20,0.77
+"demuxem","low_gRNA",200,0.8
+"demuxem","low_gRNA",2000,0.83
+"demuxem","low_gRNA",20000,0.83
+"geomux","low_gRNA",20,0.75
+"geomux","low_gRNA",200,0.83
+"geomux","low_gRNA",2000,0.8
+"geomux","low_gRNA",20000,0.82
+"fishash (digitized)","low_gRNA",20,0.68
+"fishash (digitized)","low_gRNA",200,0.84
+"fishash (digitized)","low_gRNA",2000,0.87
+"fishash (digitized)","low_gRNA",20000,0.88
+"fishash+ Poisson (ours)","high_gRNA",20,0.941789871271942
+"fishash","high_gRNA",20,0.945900117260134
+"fishash+ Poisson (ours)","high_gRNA",200,0.965311755138183
+"fishash","high_gRNA",200,0.972562937369914
+"fishash+ Poisson (ours)","high_gRNA",2000,0.964632777948094
+"fishash","high_gRNA",2000,0.978872154536162
+"fishash+ Poisson (ours)","high_gRNA",20000,0.956495524677937
+"fishash","high_gRNA",20000,0.97950548595189
+"fishash+ Poisson (ours)","low_gRNA",20,0.741465344899626
+"fishash","low_gRNA",20,0.749940755701449
+"fishash+ Poisson (ours)","low_gRNA",200,0.844507585746924
+"fishash","low_gRNA",200,0.845337474042702
+"fishash+ Poisson (ours)","low_gRNA",2000,0.86900521482583
+"fishash","low_gRNA",2000,0.87486020444003
+"fishash+ Poisson (ours)","low_gRNA",20000,0.880814784306124
+"fishash","low_gRNA",20000,0.889684048990322

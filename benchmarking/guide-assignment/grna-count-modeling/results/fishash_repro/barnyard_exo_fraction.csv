@@ -1,0 +1,5 @@
+"sample","pure_human_cells","noise_umis","median_nonzero","n_events_ge10","exo_pct_ge10","exo_pct_ge5","exo_pct_ge3"
+"mix0hr_DirectCapture",2718,3606,1,14,13.9,15.3,17.2
+"mix72hr_DirectCapture",1893,7813,1,52,55,57.3,58.5
+"mix0hr_Cropseq",3269,8667,1,0,0,0,0.1
+"mix72hr_Cropseq",3119,9674,1,0,0,0,0.1

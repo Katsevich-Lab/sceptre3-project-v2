@@ -52,3 +52,11 @@ results/error_control/de/*.sh
 # global-ambient-poisson ML fit caches (large; regenerable via the global_ambient_poisson scripts)
 results/global_ambient_poisson/*.rds
 .posit/
+
+# fishash_repro reproduction: regenerable dataset cache (byte-exact from seeds)
+results/fishash_repro/datasets/
+results/fishash_repro/*/*__confusion.csv
+results/fishash_repro/*/manifest.csv
+results/fishash_repro/sceptre_h2h/reps_cache/
+results/fishash_repro/sceptre_h2h/*_x*_i*.csv
+results/fishash_repro/*.log

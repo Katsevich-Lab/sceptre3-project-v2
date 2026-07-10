@@ -1,0 +1,25 @@
+"moi","method","AUPRC"
+0.1,"fishash",0.986855307192549
+0.1,"fishash+ Poisson (ours)",0.984260701080139
+0.1,"raw_count",0.967592366811653
+0.3,"fishash",0.983866071770409
+0.3,"fishash+ Poisson (ours)",0.982905199668467
+0.3,"raw_count",0.964977066263008
+0.5,"fishash",0.97983789278856
+0.5,"fishash+ Poisson (ours)",0.980865664062781
+0.5,"raw_count",0.964627739053503
+1,"fishash",0.973422679114868
+1,"fishash+ Poisson (ours)",0.977706420031748
+1,"raw_count",0.960353323326162
+2,"fishash",0.960614380541435
+2,"fishash+ Poisson (ours)",0.969691450680404
+2,"raw_count",0.950475609849968
+3,"fishash",0.9498542047701
+3,"fishash+ Poisson (ours)",0.960390063522557
+3,"raw_count",0.940290741318806
+5,"fishash",0.933516456330694
+5,"fishash+ Poisson (ours)",0.945820851154344
+5,"raw_count",0.926079332047335
+10,"fishash",0.911669176109468
+10,"fishash+ Poisson (ours)",0.923117658734844
+10,"raw_count",0.906234994090773
