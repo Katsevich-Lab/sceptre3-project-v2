@@ -20,16 +20,18 @@ dataset         <- dataset_replogle
 gene_qc_thresh  <- 7
 METHODS_TO_SKIP <- character(0)          # e.g. c("frperturb", "mixscale")
 
-# One param table for EVERY computational dataset. `pipeline_only`:
-#   FALSE = 6 in-memory datasets (full export): ngenes {250,500} x ntargets {100,200,400}
-#           (mixscale OOMs on the ntargets=400 rows -> built anyway for frperturb/sceptre,
-#            just skipped for mixscale in the cluster config)
-#   TRUE  = 4 pipeline-only extension datasets: ngenes {250,500} x ntargets {800,1600}
+# One param table for EVERY computational dataset (ngenes in {500, 1000}). `pipeline_only`:
+#   FALSE = 6 in-memory datasets (full export): ngenes {500,1000} x ntargets {200,400,800}
+#           (all 3 methods run; sceptre/mixscale/frperturb).
+#   TRUE  = 4 pipeline-only datasets: ngenes {500,1000} x ntargets {1600,2383}
+#           (nt1600 is pipeline-only FOR NOW -- in-memory nt1600 deferred to a later round;
+#            flip it to FALSE + rebuild to add the matrices. 2383 = all targets, the full screen.)
 # max_num_cells = Inf everywhere -> no downsampling (full cell union per target set).
-# Dimension-based seeding (below) -> cells at a given ntargets are identical across ngenes.
+# Dimension seeding (below): cells at a given ntargets are IDENTICAL across ngenes (clean ngenes axis).
+# Cell counts (aligned sweep): 200->37k, 400->62k, 800->111k, 1600->215k, 2383(all)->~308k.
 dataset_params <- rbind(
-  expand.grid(num_genes = c(250, 500), num_targets = c(100, 200, 400), pipeline_only = FALSE),
-  expand.grid(num_genes = c(250, 500), num_targets = c(800, 1600),     pipeline_only = TRUE)
+  expand.grid(num_genes = c(500, 1000), num_targets = c(200, 400, 800),  pipeline_only = FALSE),
+  expand.grid(num_genes = c(500, 1000), num_targets = c(1600, 2383),     pipeline_only = TRUE)
 ) |>
   mutate(max_num_cells = Inf,
          dataset_name = paste0(dataset$name, "_max_comp_ngenes=", num_genes,
@@ -74,3 +76,13 @@ for (i in seq_len(nrow(dataset_params))) {
 }
 
 cat("\nAll computational datasets created.\n")
+
+# ---- scp command to sync exactly these datasets to the cluster ------------
+# Printed so it can be pasted straight into a terminal after every build.
+# $LOCAL_BENCHMARKING_DIR / $REMOTE_BENCHMARKING_DIR are expanded by the shell.
+.ds_names <- dataset_params$dataset_name
+.ds_arg   <- if (length(.ds_names) > 1) paste0("{", paste(.ds_names, collapse = ","), "}") else .ds_names
+cat("\n# ---- copy these datasets to the cluster (paste into a terminal) ----\n")
+cat(sprintf(
+  "scp -r ${LOCAL_BENCHMARKING_DIR}/association/computational/input_data/%s ${REMOTE_BENCHMARKING_DIR}/association/computational/input_data\n\n",
+  .ds_arg))

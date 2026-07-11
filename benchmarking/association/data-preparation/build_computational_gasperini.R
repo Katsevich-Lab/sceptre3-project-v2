@@ -77,3 +77,13 @@ for (i in seq_len(nrow(dataset_params))) {
 }
 
 cat("\nAll computational datasets created.\n")
+
+# ---- scp command to sync exactly these datasets to the cluster ------------
+# Printed so it can be pasted straight into a terminal after every build.
+# $LOCAL_BENCHMARKING_DIR / $REMOTE_BENCHMARKING_DIR are expanded by the shell.
+.ds_names <- dataset_params$dataset_name
+.ds_arg   <- if (length(.ds_names) > 1) paste0("{", paste(.ds_names, collapse = ","), "}") else .ds_names
+cat("\n# ---- copy these datasets to the cluster (paste into a terminal) ----\n")
+cat(sprintf(
+  "scp -r ${LOCAL_BENCHMARKING_DIR}/association/computational/input_data/%s ${REMOTE_BENCHMARKING_DIR}/association/computational/input_data\n\n",
+  .ds_arg))
