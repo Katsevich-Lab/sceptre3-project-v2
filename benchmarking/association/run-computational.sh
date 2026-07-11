@@ -7,7 +7,9 @@
 
 set -euo pipefail
 
-RUN_ID="run_repl_cells_50k_100k"
+## these ended up being pretty small, so i'm trying bigger
+# RUN_ID="run_all_max_t5"
+RUN_ID="run_repl_max_upto_ng1000nt800"
 
 OUT_BASE="${LOCAL_BENCHMARKING_DIR}/association/computational/outputs"
 OUT_DIR="${OUT_BASE}/${RUN_ID}"
