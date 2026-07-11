@@ -28,12 +28,32 @@ process SCEPTRE_COMPUTATIONAL {
   ls -l "${dataset_dir}" || true
 
   # Fair benchmarking: pin EVERY threading layer to 1 core so no method sneaks a
-  # second core via BLAS. Set BEFORE Rscript loads BLAS. Verify via trace %cpu ~100.
+  # second core via BLAS/OpenMP/etc. Set BEFORE R/Python starts and loads libraries.
   export OMP_NUM_THREADS=1
+  export OMP_THREAD_LIMIT=1
+  export OMP_DYNAMIC=FALSE
+  export OMP_MAX_ACTIVE_LEVELS=1
+
   export OPENBLAS_NUM_THREADS=1
+  export OPENBLAS_DEFAULT_NUM_THREADS=1
+  export GOTO_NUM_THREADS=1
+
   export MKL_NUM_THREADS=1
+  export MKL_DYNAMIC=FALSE
+
   export NUMEXPR_NUM_THREADS=1
   export VECLIB_MAXIMUM_THREADS=1
+  export BLIS_NUM_THREADS=1
+  export RAYON_NUM_THREADS=1
+  export RCPP_PARALLEL_NUM_THREADS=1
+  export R_DATATABLE_NUM_THREADS=1
+
+  echo "Thread-control environment:"
+  env | grep -E 'OMP|OPENBLAS|GOTO|MKL|NUMEXPR|VECLIB|BLIS|RAYON|RCPP|DATATABLE' | sort || true
+
+  echo "Nextflow task cpus: ${task.cpus}"
+  echo "NSLOTS: \${NSLOTS:-unset}"
+  echo "Host: \$(hostname)"
 
   # R needs writable temp and (if any package tries) a user lib dir
   export TMPDIR="\$PWD/tmp";           mkdir -p "\$TMPDIR"
