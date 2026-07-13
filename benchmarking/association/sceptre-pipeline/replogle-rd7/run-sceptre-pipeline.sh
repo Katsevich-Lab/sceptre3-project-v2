@@ -4,6 +4,8 @@
 #$ -j y
 #$ -l m_mem_free=20G
 #$ -q 16xl.q
+#$ -P stat_ekatsevi_team     # project with 16xl.q access (matches profile_16xl pods)
+#$ -l h_rt=24:00:00          # driver must outlive all pods; explicit so it can't inherit a short default
 
 set -euo pipefail
 
@@ -49,14 +51,14 @@ nextflow run jdeu1023/sceptre-pipeline -r main \
   --response_odm_fp "${response_odm_fp}" \
   --grna_odm_fp "${grna_odm_fp}" \
   --output_directory "${output_fp}" \
-  --grna_assignment_method mixture \
+  --grna_assignment_method maximum \
   --grna_pod_size 90 \
   --pair_pod_size "${pair_pod_size}" \
   --n_calibration_pairs 0 \
   --additional_cells_to_remove "${cells_to_remove_fp}" \
   --assign_grnas_memory "2GB" \
   --assign_grnas_time_per_grna "25s" \
-  --run_association_analysis_time_per_pair "1.5s" \
+  --run_association_analysis_time_per_pair "0.3s" \
   --combine_association_analysis_memory "20GB" \
   --combine_association_analysis_time "30m" \
   --n_nonzero_trt_thresh 0 \
