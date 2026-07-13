@@ -35,7 +35,8 @@ workflow {
             def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${data_method}")
             def resources = [
                 cpus: resource_row.cpus,
-                memory: resource_row.memory
+                memory: resource_row.memory,
+                time: resource_row.time
             ]
 
             [dataset_id, dataset_dir, method, resources]

@@ -6,6 +6,7 @@ process SCEPTRE_COMPUTATIONAL {
 
   cpus { resources.cpus }
   memory { resources.memory }
+  time { resources.time }
 
   stageInMode 'symlink'
 
