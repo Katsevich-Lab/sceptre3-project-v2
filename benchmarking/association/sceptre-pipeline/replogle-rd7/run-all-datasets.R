@@ -15,7 +15,7 @@
 source("~/.Rprofile")
 args <- commandArgs(trailingOnly = TRUE)
 csv_file   <- if (length(args) >= 1) args[1] else "datasets_config.csv"
-batch_size <- if (length(args) >= 2) as.integer(args[2]) else 3L
+batch_size <- if (length(args) >= 2) as.integer(args[2]) else 1L
 
 if (is.na(batch_size) || batch_size < 1) {
   stop("batch_size must be a positive integer")
