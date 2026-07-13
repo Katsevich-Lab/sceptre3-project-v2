@@ -25,18 +25,23 @@ dataset         <- dataset_gasperini
 gene_qc_thresh  <- 7
 METHODS_TO_SKIP <- character(0)          # high-MOI writers = sceptre + frperturb
 
-# One param table for EVERY computational dataset. `pipeline_only`:
-#   FALSE = 6 in-memory datasets (full export): ngenes {250,500} x ntargets {100,200,400}
-#   TRUE  = 4 pipeline-only extension datasets: ngenes {250,500} x ntargets {800,1600}
+# One param table for EVERY computational dataset (ngenes in {500, 1000}), MIRRORING replogle.
+#   FALSE = 6 in-memory datasets (full export): ngenes {500,1000} x ntargets {200,400,800}
+#           (sceptre + frperturb; high-MOI never runs mixscale).
+#   TRUE  = 4 pipeline-only datasets: ngenes {500,1000} x ntargets {1600, 6105=ALL targets}.
 # max_num_cells = Inf everywhere -> no downsampling (full cell union per target set).
 # Dimension-based seeding (below) -> cells at a given ntargets are identical across ngenes.
+# NOTE (high-MOI specific): cells SATURATE fast -- nt200~60%, nt400~82%, nt800~94%, all~99% of the
+# 207k cells -- and the complement control tests every pair over ALL cells regardless. So past ~nt400
+# the ladder mainly adds PAIRS, not cells (unlike low-MOI replogle where cells grow with ntargets).
 dataset_params <- rbind(
-  expand.grid(num_genes = c(250, 500), num_targets = c(100, 200, 400), pipeline_only = FALSE),
-  expand.grid(num_genes = c(250, 500), num_targets = c(800, 1600),     pipeline_only = TRUE)
+  expand.grid(num_genes = c(500, 1000), num_targets = c(200, 400, 800),  pipeline_only = FALSE),
+  expand.grid(num_genes = c(500, 1000), num_targets = c(1600, 3200),     pipeline_only = TRUE)
 ) |>
   mutate(max_num_cells = Inf,
          dataset_name = paste0(dataset$name, "_t5_comp_ngenes=", num_genes,
                                "_ntargets=", num_targets, "_gene_thresh=", gene_qc_thresh))
+
 
 # ---- load -----------------------------------------------------------------
 src <- read_source_data(dataset$name)
