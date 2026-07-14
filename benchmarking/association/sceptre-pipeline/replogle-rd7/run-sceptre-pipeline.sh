@@ -59,7 +59,7 @@ nextflow run jdeu1023/sceptre-pipeline -r main \
   --additional_cells_to_remove "${cells_to_remove_fp}" \
   --assign_grnas_memory "2GB" \
   --assign_grnas_time_per_grna "25s" \
-  --run_association_analysis_time_per_pair "0.3s" \
+  --run_association_analysis_time_per_pair "1.1s" \
   --combine_association_analysis_memory "20GB" \
   --combine_association_analysis_time "30m" \
   --n_nonzero_trt_thresh 0 \
