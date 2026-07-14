@@ -54,6 +54,7 @@ nextflow run jdeu1023/sceptre-pipeline -r main \
   --grna_assignment_method maximum \
   --grna_pod_size 90 \
   --pair_pod_size "${pair_pod_size}" \
+  --num_assoc_workers "${num_assoc_workers}" \
   --n_calibration_pairs 0 \
   --additional_cells_to_remove "${cells_to_remove_fp}" \
   --assign_grnas_memory "2GB" \
