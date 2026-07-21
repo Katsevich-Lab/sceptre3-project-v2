@@ -1,0 +1,308 @@
+<style>
+  :root{
+    --paper:#FBFBFD; --ink:#14181F; --ink-soft:#39414D; --muted:#5E6773;
+    --rule:#E4E7EC; --rule-soft:#EEF1F5;
+    --blue:#0B5CAD; --blue-tint:#EAF1FA; --blue-line:#0072B2;
+    --orange:#C4471A; --orange-tint:#FBEDE6; --orange-line:#D55E00;
+    --green:#1B7F5C; --green-tint:#E7F3EE;
+    --serif:"Iowan Old Style",Georgia,"Times New Roman",serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","Menlo","Cascadia Code",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--serif);font-size:18px;line-height:1.66;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .wrap{max-width:760px;margin:0 auto;padding:56px 26px 96px}
+  p{margin:0 0 1.05em;color:var(--ink-soft)}
+  strong{color:var(--ink);font-weight:600}
+  a{color:var(--blue)}
+  h1,h2,h3,.eyebrow,.label,figcaption,th,.tag,.rec-h,.num{font-family:var(--sans)}
+
+  .kicker{font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--blue);font-weight:600;margin-bottom:18px}
+  h1{font-size:35px;line-height:1.12;letter-spacing:-.012em;font-weight:700;
+    margin:0 0 .5em;text-wrap:balance}
+  .standfirst{font-size:20px;line-height:1.5;color:var(--muted);margin:0 0 6px;
+    font-style:italic}
+  .byline{font-family:var(--sans);font-size:13px;color:var(--muted);
+    border-top:1px solid var(--rule);margin-top:26px;padding-top:14px;
+    display:flex;flex-wrap:wrap;gap:6px 18px}
+
+  .rec{background:var(--blue-tint);border:1px solid #CFE0F2;border-radius:12px;
+    padding:24px 26px;margin:34px 0 8px}
+  .rec-h{font-size:12px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--blue);font-weight:700;margin-bottom:10px}
+  .rec p{color:#123A5E;margin-bottom:0}
+  .rec p+p{margin-top:.8em}
+
+  section{margin-top:52px}
+  .eyebrow{display:block;font-size:12px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--muted);font-weight:600;margin-bottom:7px}
+  h2{font-size:25px;line-height:1.2;letter-spacing:-.01em;font-weight:700;
+    margin:0 0 .7em;display:flex;gap:.55em;align-items:baseline}
+  .num{color:var(--blue);font-weight:700;font-size:19px;font-variant-numeric:tabular-nums}
+  h3{font-size:17px;font-weight:700;margin:1.8em 0 .5em;color:var(--ink);
+    font-family:var(--sans);letter-spacing:-.005em}
+
+  .formula{font-family:var(--mono);background:#fff;border:1px solid var(--rule);
+    border-left:3px solid var(--blue);border-radius:8px;padding:16px 20px;
+    margin:1.4em 0;font-size:15px;line-height:1.7;color:var(--ink);overflow-x:auto}
+  .formula .c{color:var(--muted)}
+  var{font-family:var(--mono);font-style:normal;font-size:.92em;
+    background:var(--rule-soft);padding:1px 5px;border-radius:4px;color:#2A3340}
+
+  figure{margin:1.9em 0;background:#fff;border:1px solid var(--rule);border-radius:12px;
+    padding:14px 14px 6px;box-shadow:0 1px 2px rgba(20,24,31,.04)}
+  figure img{display:block;width:100%;height:auto;border-radius:6px}
+  figcaption{font-size:13.5px;line-height:1.5;color:var(--muted);
+    padding:12px 8px 8px;border-top:1px solid var(--rule-soft);margin-top:10px}
+  figcaption b{color:var(--ink-soft);font-weight:600}
+
+  .call{border-radius:10px;padding:16px 20px;margin:1.5em 0;font-size:16px;line-height:1.55}
+  .call.good{background:var(--green-tint);border:1px solid #C6E3D6}
+  .call.good .tag{color:var(--green)}
+  .call.warn{background:var(--orange-tint);border:1px solid #F0D2C2}
+  .call.warn .tag{color:var(--orange)}
+  .call .tag{display:block;font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;
+    font-weight:700;margin-bottom:6px}
+  .call p{margin:0;color:var(--ink-soft)}
+
+  .tbl{width:100%;border-collapse:collapse;margin:1.5em 0;font-size:14.5px;
+    font-variant-numeric:tabular-nums}
+  .tbl caption{font-family:var(--sans);font-size:13px;color:var(--muted);
+    text-align:left;margin-bottom:9px;line-height:1.45}
+  .tbl th{font-size:12.5px;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);
+    font-weight:600;text-align:right;padding:8px 12px;border-bottom:1.5px solid var(--rule)}
+  .tbl th:first-child{text-align:left}
+  .tbl td{padding:8px 12px;border-bottom:1px solid var(--rule-soft);text-align:right;color:var(--ink-soft)}
+  .tbl td:first-child{text-align:left;color:var(--ink)}
+  .tbl tr:last-child td{border-bottom:none}
+  .tbl .cur{color:var(--orange);font-weight:600}
+  .tbl .new{color:var(--blue);font-weight:600}
+  .tbl-scroll{overflow-x:auto}
+
+  /* contingency-table example */
+  .duo{display:flex;gap:16px;flex-wrap:wrap;margin:1.3em 0}
+  .ctab{flex:1;min-width:250px;background:#fff;border:1px solid var(--rule);border-radius:10px;padding:12px 14px 14px}
+  .ctab .ch{font-family:var(--sans);font-size:12px;font-weight:700;letter-spacing:.02em;margin-bottom:8px}
+  .ctab.down .ch{color:var(--orange)} .ctab.up .ch{color:var(--green)}
+  .ctab table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums}
+  .ctab td,.ctab th{padding:4px 8px;text-align:right;color:var(--ink-soft)}
+  .ctab th{font-family:var(--sans);font-size:11px;color:var(--muted);font-weight:600;border-bottom:1px solid var(--rule-soft)}
+  .ctab td:first-child,.ctab th:first-child{text-align:left;color:var(--muted)}
+  .ctab .pv{font-family:var(--sans);font-size:12.5px;margin-top:8px;color:var(--ink)}
+  .ctab .hl{color:var(--ink);font-weight:700}
+
+  pre{background:#12161D;color:#E6EAF0;border-radius:10px;padding:18px 20px;
+    overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.6;margin:1.4em 0}
+  pre .c{color:#7C8798} pre .del{color:#E7896F} pre .add{color:#8FD6A8}
+  code{font-family:var(--mono);font-size:.88em;background:var(--rule-soft);
+    padding:1.5px 5px;border-radius:4px;color:#2A3340}
+
+  ul{margin:0 0 1.05em;padding-left:1.2em;color:var(--ink-soft)}
+  li{margin:.4em 0}
+  .foot{font-family:var(--sans);font-size:13px;color:var(--muted);line-height:1.6;
+    border-top:1px solid var(--rule);margin-top:52px;padding-top:20px}
+  @media (max-width:520px){ .wrap{padding:40px 18px 70px} h1{font-size:29px} body{font-size:17px} }
+</style>
+
+<div class="wrap">
+
+  <div class="kicker">sceptre · methods recommendation</div>
+  <h1>Filter on the margins, not the interior: directional testability for pairwise QC</h1>
+  <p class="standfirst">The current <code>n_nonzero_trt&nbsp;&ge;&nbsp;7</code> rule filters on a quantity that is a proxy for the test statistic — so a strong knockdown fails QC <em>because</em> it worked. The fix: keep a pair only if its most favorable table could reach significance <em>in the direction you're testing</em>. Everything else is margins, and margins are ancillary.</p>
+  <div class="byline">
+    <span>Analysis for the sceptre maintainers</span><span>·</span>
+    <span>Ground-truth simulation + five real CRISPR screens</span>
+  </div>
+
+  <div class="rec">
+    <div class="rec-h">Recommendation</div>
+    <p>For each pair the margins are fixed and <strong>ancillary</strong>: the group sizes <var>n_trt</var>, <var>n_cntrl</var> and the number of cells expressing the gene, <var>n_nonzero_tot</var>. Ask the only question QC should ask — given those margins, could the <strong>most favorable table</strong> even reach significance, in the direction the test targets? If not, drop the pair.</p>
+    <div class="formula" style="margin:16px 0 4px">
+p&#772;     <span class="c">= n_nonzero_tot / N            // baseline detection rate (a margin)</span>
+p_min <span class="c">=</span> (1 &minus; p&#772;)<sup>n_trt</sup>              <span class="c">// best attainable KNOCKDOWN p (left-sided test)</span>
+      <span class="c">// two-sided: min over BOTH extreme tables</span>
+<span class="c">keep pair &hArr;</span>  p_min &le; &alpha;            <span class="c">// &alpha; = the FDR level you run BH at</span>
+    </div>
+    <p style="margin-top:14px">Because <var>p_min</var> is a function of the margins alone, it is independent of the test statistic under the null — calibration is preserved. Anchoring the bar at the FDR target <var>&alpha;</var> is <strong>safe and non-circular</strong>: a pair whose best case can't clear <var>&alpha;</var> can never be a BH discovery at level <var>&alpha;</var>, so dropping it never costs one. And the direction matters — a knockdown screen uses a one-sided test, so use the one-sided (knockdown) attainable p.</p>
+  </div>
+
+  <section>
+    <span class="eyebrow">The mechanism today</span>
+    <h2><span class="num">1</span> How the current filter works</h2>
+    <p>For each perturbation–gene pair, sceptre builds the 2&times;2 table of <em>{treatment, control}</em> against <em>{gene non-zero, gene zero}</em> and keeps the pair only if both non-zero counts clear a threshold (default <code>7</code>):</p>
+    <div class="tbl-scroll">
+    <table class="tbl">
+      <caption>The 2&times;2 table. sceptre thresholds the two shaded cells of the non-zero column — <em>a</em> and <em>c</em>, both <em>interior</em> cells, symmetric, neither a margin.</caption>
+      <thead><tr><th></th><th>gene&nbsp;non-zero</th><th>gene&nbsp;zero</th><th>row&nbsp;margin</th></tr></thead>
+      <tbody>
+        <tr><td>treatment (has gRNA)</td><td class="cur"><b>a</b> = n_nonzero_trt&nbsp;&ge;&nbsp;7</td><td>b</td><td><b>n_trt</b></td></tr>
+        <tr><td>control (NT / complement)</td><td class="cur"><b>c</b> = n_nonzero_cntrl&nbsp;&ge;&nbsp;7</td><td>d</td><td>n_cntrl</td></tr>
+        <tr><td>col. margin</td><td>a+c = n_nonzero_tot</td><td>b+d</td><td>N</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>The stated intent is sound — sceptre's own documentation says the goal is to drop pairs "whose data are too sparse to be analyzed reliably." That is exactly what independent filtering is for. The problem is <em>which</em> quantity is thresholded.</p>
+  </section>
+
+  <section>
+    <span class="eyebrow">Why it is circular</span>
+    <h2><span class="num">2</span> The treatment count is a shadow of the test statistic</h2>
+    <p>sceptre's test statistic is a resampling score: with the gene's expression held fixed, it resamples <em>which cells carry the gRNA</em> and compares</p>
+    <div class="formula">
+z <span class="c">=</span> ( &Sigma;<sub>i&isin;trt</sub> a<sub>i</sub> ) / sd,      a<sub>i</sub> <span class="c">= (y<sub>i</sub> &minus; &mu;<sub>i</sub>) / (1 + &mu;<sub>i</sub>/&theta;)   // NB residual</span>
+    </div>
+    <p>Now look at the filter quantity: <code>n_nonzero_trt = &Sigma;<sub>i&isin;trt</sub> 1{y<sub>i</sub>&gt;0}</code>. It is a sum, over the very same treatment cells, of a per-cell expression signal — <strong>the same functional form as the numerator of&nbsp;<var>z</var></strong>, with a coarse indicator in place of the residual. The filter is a low-resolution copy of the test statistic.</p>
+    <p>So the two move together. A strong knockdown drives <code>y&rarr;0</code> in the treatment cells; <var>z</var> becomes sharply negative <em>and</em> <code>n_nonzero_trt</code> falls — the pair is filtered out <strong>because it shows the effect</strong>. The rule is also directional: repression lowers the count, activation raises it, so it is biased against detecting repression — the primary readout of a CRISPRi screen. (The control count <code>c</code> is the symmetric interior cell; it escapes the same fate only because the control group is large, not because it is a margin.)</p>
+    <figure>
+      <img src="{{FIG1}}" alt="Under the null, signed test statistic z vs the current filter statistic (correlated) and the margin-based statistic (flat).">
+      <figcaption><b>The entanglement, on null pairs.</b> Each point is a null pair from a controlled simulation. <b>Left:</b> the current statistic <code>n_nonzero_trt</code> is correlated with the signed test statistic <var>z</var> (r&nbsp;=&nbsp;+0.26) — thresholding it at 7 (dashed) preferentially removes the negative-<var>z</var> repression tail. <b>Right:</b> the margin-based expected count is flat in <var>z</var> (r&nbsp;=&nbsp;&minus;0.01): independent, as an admissible filter must be.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <span class="eyebrow">The principle</span>
+    <h2><span class="num">3</span> Independent filtering &amp; testability</h2>
+    <p>Bourgon, Gentleman &amp; Huber (<a href="https://www.pnas.org/doi/10.1073/pnas.0914005107">PNAS 2010</a>) formalized the two-stage recipe DESeq2 uses: filter on a statistic, then test only survivors. It preserves type-I / FDR control <strong>iff the filter is marginally independent of the test statistic under the null</strong>. Under the resampling, a statistic is ancillary — hence independent — exactly when it depends only on the fixed quantities: the gene's expression, the covariates, and the group sizes. <strong>Margins qualify; interior cells do not.</strong></p>
+    <p>The sharpest margin-only filter is <strong>testability</strong> (Tarone, <a href="https://doi.org/10.2307/2531848">Biometrics 1990</a>; the engine behind significant-pattern-mining and discrete-FDR methods): a hypothesis whose <em>minimum attainable</em> p-value already exceeds the threshold can never be rejected, so removing it changes no rejection — it only shrinks the multiplicity. Applied to the 2&times;2 table, that minimum attainable p is a pure function of the margins.</p>
+  </section>
+
+  <section>
+    <span class="eyebrow">The fix</span>
+    <h2><span class="num">4</span> Directional testability</h2>
+    <p>Fix the margins; the table has one degree of freedom. Push it to the most favorable value and read off the hypergeometric (Fisher) tail — the minimum attainable p. For a knockdown that means all treatment cells zero, giving <var>p_min&nbsp;=&nbsp;(1&minus;p&#772;)<sup>n_trt</sup></var> with <var>p&#772;&nbsp;=&nbsp;n_nonzero_tot/N</var>. Drop the pair iff even that best case can't clear <var>&alpha;</var>.</p>
+
+    <h3>It reverse-engineers the magic number 7</h3>
+    <p>Take logs: <code>p_min &le; &delta;</code> becomes <code>n_trt&middot;(&minus;ln(1&minus;p&#772;)) &ge; ln(1/&delta;)</code>, and for small <var>p&#772;</var> that is just <code>E[a] = n_trt&middot;p&#772; &ge; ln(1/&delta;)</code> — the expected non-zero count. So a fixed-count rule is the small-<var>p&#772;</var> face of testability, and its threshold is <code>ln(1/&delta;)</code>. <strong>sceptre's default of 7 is an implicit &delta;&nbsp;=&nbsp;e<sup>&minus;7</sup>&nbsp;&asymp;&nbsp;9&times;10<sup>&minus;4</sup></strong> — a per-test significance level nobody chose on purpose, and (see §5) one that usually sits <em>below</em> the BH threshold, so it over-filters.</p>
+
+    <h3>One number, not two</h3>
+    <p>The current filter thresholds two cells, but in the margin framing the control side is redundant: <code>E[c] = n_cntrl&middot;p&#772; &ge; E[a]</code> whenever <code>n_cntrl &ge; n_trt</code> — always true, since control is the larger group. Verified: <strong>0 of 1840</strong> pairs bind on the control side once the treatment side passes. The "two knobs" were an artifact of thresholding the two <em>observed</em> cells, which a real effect decouples.</p>
+
+    <h3>Direction is the whole game</h3>
+    <p>Take <var>N&nbsp;=&nbsp;1000</var> cells, a gene non-zero in <strong>50 (5%)</strong>, a guide in <strong>n_trt&nbsp;=&nbsp;20</strong> cells. Under independence you'd expect only <var>E[a]&nbsp;=&nbsp;1</var> non-zero treatment cell. Push the free cell to each extreme:</p>
+    <div class="duo">
+      <div class="ctab down">
+        <div class="ch">▼ most extreme knockdown (a = 0)</div>
+        <table>
+          <thead><tr><th></th><th>nonzero</th><th>zero</th></tr></thead>
+          <tr><td>treatment</td><td class="hl">0</td><td>20</td></tr>
+          <tr><td>control</td><td>50</td><td>930</td></tr>
+        </table>
+        <div class="pv">one-sided p = <span class="hl">0.36</span> — <span style="color:var(--orange)">not testable</span></div>
+      </div>
+      <div class="ctab up">
+        <div class="ch">▲ most extreme activation (a = 20)</div>
+        <table>
+          <thead><tr><th></th><th>nonzero</th><th>zero</th></tr></thead>
+          <tr><td>treatment</td><td class="hl">20</td><td>0</td></tr>
+          <tr><td>control</td><td>30</td><td>950</td></tr>
+        </table>
+        <div class="pv">one-sided p = <span class="hl">1.4&times;10<sup>&minus;28</sup></span> — <span style="color:var(--green)">testable</span></div>
+      </div>
+    </div>
+    <p>It's a <strong>floor effect</strong>. The gene sits near zero, so there is almost no room to go <em>down</em> — the maximal knockdown moves you from ~1 expected non-zero cell to 0, a one-cell step that is completely unsurprising. But there is enormous room to go <em>up</em>: all 20 cells lighting up a gene that's off in 95% of cells is astronomically improbable by chance. So one-sided knockdown testability <strong>drops</strong> this pair (you cannot knock down a gene that's already off), while two-sided <strong>keeps</strong> it — for an activation a CRISPRi screen doesn't care about. Move the gene to 50% expressed and both extremes clear easily (p&nbsp;=&nbsp;8&times;10<sup>&minus;7</sup> each); the split only appears near a boundary.</p>
+    <p><strong>So match the filter's direction to the test's.</strong> A left-sided knockdown screen uses the one-sided attainable p and filters meaningfully; a two-sided analysis uses the two-sided p, which legitimately removes almost nothing (most pairs can detect <em>something</em>) and leaves the multiplicity to BH.</p>
+
+    <h3>Choosing the threshold</h3>
+    <p>The filter set at any <var>&delta;</var> is ancillary — known before any test, independent of the signal — so the only thing the signal touches is the <em>choice</em> of <var>&delta;</var>.</p>
+    <ul>
+      <li><strong>Default: &delta; = &alpha;</strong> (the FDR target, e.g. 0.1). Safe and non-circular — a pair whose best case exceeds &alpha; can never be BH-rejected at &alpha;, so this only removes provably-hopeless pairs and weakly <em>raises</em> power. This is the recommended default.</li>
+      <li><strong>More power, more machinery:</strong> a tighter &delta; shrinks the multiplicity further, but the best &delta; sits just above the realized BH threshold — the one signal-dependent quantity, and the source of the circularity. Resolve it exactly via <em>Tarone's fixed point</em> (<code>k(&delta;)&middot;&delta; &le; &alpha;</code>, computed from the margins alone) for FWER, DESeq2-style optimization (sweep &delta;, maximize rejections) for a data-driven pick, or <em>discrete BH</em> (Döhler–Durand–Roquain 2018) to fold testability into the FDR step with no pre-filter at all.</li>
+    </ul>
+  </section>
+
+  <section>
+    <span class="eyebrow">Evidence · controlled simulation</span>
+    <h2><span class="num">5</span> What it buys, with ground truth</h2>
+    <p>Real sceptre, run on simulated low-MOI data where every pair's knockdown strength <var>&kappa;</var> is known, QC set permissive so every pair is tested and the filters applied afterward.</p>
+    <figure>
+      <img src="{{FIG2}}" alt="Retention of true-effect pairs vs knockdown strength: current filter collapses, testability stays flat.">
+      <figcaption><b>The current filter discards true effects in proportion to how strong they are.</b> Fraction of genuine knockdowns retained, vs. strength <var>&kappa;</var>, across baseline expression (rows) and treatment-cell count (columns). The current rule (orange) collapses toward zero as the effect strengthens; the margin-based filter (blue) is flat — dropping only the one genuinely underpowered cell.</figcaption>
+    </figure>
+    <div class="tbl-scroll">
+    <table class="tbl">
+      <caption>True discoveries at BH-adjusted <var>p</var>&nbsp;&lt;&nbsp;0.1 (two-sided). The independence fix (observed&rarr;expected) does most of the work; relaxing the implicit &delta; from 7 to &alpha; recovers the rest. Realized FDR stays &lt;10% throughout.</caption>
+      <thead><tr><th>filter</th><th>effective &delta;</th><th>true discoveries</th></tr></thead>
+      <tbody>
+        <tr><td><span style="color:var(--orange)">current</span> (observed n_nonzero_trt&nbsp;&ge;&nbsp;7)</td><td>&mdash;</td><td>159</td></tr>
+        <tr><td>expected count &ge; 7 (margin)</td><td>&asymp; e<sup>&minus;7</sup> = 9&times;10<sup>&minus;4</sup></td><td>502</td></tr>
+        <tr><td><span style="color:var(--blue)">directional testability</span>, &delta; = &alpha;</td><td>0.1</td><td class="new">576</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="call good">
+      <span class="tag">Calibration preserved · the "7" over-filters</span>
+      <p>Retained null p-values stay uniform under the margin filter (P(<var>p</var>&lt;.05)&nbsp;=&nbsp;0.051 vs 0.045 current). The realized BH threshold here is &asymp;&nbsp;0.03, so the current filter's implicit &delta;&nbsp;&asymp;&nbsp;9&times;10<sup>&minus;4</sup> sits well below it — squarely in the over-filtering regime, discarding pairs that would have been discoveries.</p>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Evidence · real screen, mechanism</span>
+    <h2><span class="num">6</span> The entanglement is real</h2>
+    <p>On a real A549 CRISPRi screen (GSE236304), null (trans) pairs binned by each statistic show the same signature as the simulation:</p>
+    <figure>
+      <img src="{{FIG_R1}}" alt="In real A549 data, null pairs with few observed non-zero treatment cells carry systematically negative test statistics; the margin statistic shows no gradient.">
+      <figcaption><b>Binning real null pairs by the current statistic sorts them by their test statistic.</b> Pairs the current filter would drop (<code>n_nonzero_trt</code>&nbsp;&lt;&nbsp;7) carry a mean <var>z</var> of &minus;0.31 — down to &minus;1.08 in the lowest bin, the repression tail. Binning by the expected count shows no gradient (r&nbsp;=&nbsp;+0.11 vs. +0.01).</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <span class="eyebrow">Evidence · five real screens</span>
+    <h2><span class="num">7</span> How much it actually removes</h2>
+    <p>Applying both filters to the full pair grids of five screens spanning MOI, depth, and library size:</p>
+    <div class="tbl-scroll">
+    <table class="tbl">
+      <caption>Fraction of pairs dropped. "testability" is one-sided knockdown at &delta;&nbsp;=&nbsp;0.1; the last column is the same at two-sided.</caption>
+      <thead><tr><th>screen</th><th>design</th><th>med. n_trt</th><th>pairs</th><th>current</th><th>testability 1-sided</th><th>2-sided</th></tr></thead>
+      <tbody>
+        <tr><td>Replogle RD7</td><td>low-MOI, genome-wide</td><td>67</td><td>5.1M</td><td class="cur">77.2%</td><td class="new">69.9%</td><td>0.1%</td></tr>
+        <tr><td>a549 CRISPRi</td><td>high-MOI</td><td>2007</td><td>1.9M</td><td class="cur">44.2%</td><td class="new">37.5%</td><td>0.0%</td></tr>
+        <tr><td>T-cell CD4</td><td>low-MOI, sparse</td><td>7</td><td>1.3M</td><td class="cur">89.6%</td><td class="new">69.6%</td><td>5.4%</td></tr>
+        <tr><td>dc-TAP K562</td><td>low-MOI, focused</td><td>651</td><td>279</td><td class="cur">8.6%</td><td class="new">7.5%</td><td>0.0%</td></tr>
+        <tr><td>dc-TAP K562</td><td>high-MOI, focused</td><td>7995</td><td>279</td><td class="cur">5.4%</td><td class="new">3.6%</td><td>0.0%</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>Three things hold across all five. <strong>(1) The drop fraction is large and dataset-driven</strong> — in genome-wide or sparse-cell screens most pairs are genuinely untestable (Replogle's median gene is on in 0.1% of cells), so both filters remove 70–90%. Testability isn't a "keep everything" rule; a lot really is hopeless. <strong>(2) Testability removes slightly fewer, and it's nearly one-way</strong> — it drops ~0% of what the current rule keeps, while <strong>rescuing 9–33%</strong> of what the current rule drops. It's "current, minus the false drops," and the gap is widest where cells-per-guide is smallest, exactly where the strict "7" bites hardest. <strong>(3) Two-sided removes almost nothing</strong> — the multiplicity then falls entirely on BH.</p>
+    <div class="call good">
+      <span class="tag">Safe on gold-standard knockdowns</span>
+      <p>On Replogle's 717 strong self-targeting positive controls (median log&#8322;FC&nbsp;=&nbsp;&minus;2.99, ~8&times; repression), the two filters agree completely — all kept, identical 683 discoveries. Where pairs are well-powered the fix is a no-op; it changes decisions only near the boundary, and in the right direction.</p>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Implementation</span>
+    <h2><span class="num">8</span> The change to sceptre</h2>
+    <p><code>compute_pairwise_qc_information()</code> already returns <code>n_nonzero_trt</code> and <code>n_nonzero_cntrl</code> (their sum is the column margin); the only additions are the group sizes <var>n_trt</var> and <var>n_cntrl</var>, which the C++ has in hand. Then <code>compute_qc_metrics()</code> becomes a directional testability check:</p>
+    <pre><span class="c"># R/pairwise_qc_functs.R — compute_qc_metrics()</span>
+<span class="del">- pass_qc = (n_nonzero_trt  &gt;= n_nonzero_trt_thresh &amp;</span>
+<span class="del">-            n_nonzero_cntrl &gt;= n_nonzero_cntrl_thresh)</span>
+<span class="add">+ p_bar  = (n_nonzero_trt + n_nonzero_cntrl) / (n_trt + n_cntrl)   # detection rate (margin)</span>
+<span class="add">+ p_down = stats::phyper(0, m = n_nonzero_trt + n_nonzero_cntrl,   # best attainable knockdown p</span>
+<span class="add">+                        n = (n_trt + n_cntrl) - (n_nonzero_trt + n_nonzero_cntrl), k = n_trt)</span>
+<span class="add">+ p_up   = stats::phyper(n_trt - 1, m = n_nonzero_trt + n_nonzero_cntrl,</span>
+<span class="add">+                        n = (n_trt + n_cntrl) - (n_nonzero_trt + n_nonzero_cntrl),</span>
+<span class="add">+                        k = n_trt, lower.tail = FALSE)             # best attainable activation p</span>
+<span class="add">+ p_min  = switch(side, left = p_down, right = p_up, both = pmin(1, 2*pmin(p_down, p_up)))</span>
+<span class="add">+ pass_qc = (p_min &lt;= alpha)                                        # alpha = multiple_testing_alpha</span></pre>
+    <p>The knob changes from a hard-coded count to the FDR level <var>&alpha;</var> the analysis already carries (<code>multiple_testing_alpha</code>), and it respects the analysis's <code>side</code>. Keep the observed <code>n_nonzero_trt</code> in the results table as a diagnostic; just stop <em>gating</em> on it. For the extra multiplicity margin, expose an <code>independent_filtering = TRUE</code> option that sweeps &delta; DESeq2-style.</p>
+  </section>
+
+  <section>
+    <span class="eyebrow">Caveats</span>
+    <h2><span class="num">9</span> Where to be careful</h2>
+    <ul>
+      <li><strong>Two-sided filters little.</strong> That's correct, not a bug — a pair that could detect a large activation <em>is</em> testable two-sided. If you want QC to shrink the multiplicity in a two-sided analysis you must move to a tighter &delta; (with the circularity), because a valid filter can't remove pairs that are genuinely testable.</li>
+      <li><strong>It's a proxy for the real test.</strong> sceptre's test is the covariate-adjusted resampling score test, not Fisher's exact; the hypergeometric <var>p_min</var> is a fast closed-form stand-in for attainability. It is a valid (ancillary) filter regardless; for exactness you'd compute the minimum attainable p under sceptre's own resampling.</li>
+      <li><strong>Null reliability</strong> (as opposed to power) is governed by the total non-zero count <var>n_nonzero_tot</var> — largely implied, since low-total pairs are also low-power, but a light explicit floor is cheap insurance if the resampling tail worries you.</li>
+    </ul>
+  </section>
+
+  <div class="foot">
+    <p><strong>Reproducibility.</strong> sceptre 0.99.0, permutation resampling. The simulation calls sceptre end-to-end on data with known per-pair knockdown strength; real screens are Replogle RD7 (genome-wide K562, ~93M pairs), A549 (GSE236304), CD4 T-cell (GSE314342), and dc-TAP K562 low/high-MOI (GSE303901). Filter: current = observed <code>n_nonzero_trt</code>; proposed = minimum attainable hypergeometric p given the margins, in the test's direction, compared to the FDR level. Scripts and build instructions are in <code>writeups/pairwise-qc/</code>.</p>
+    <p style="margin-top:.6em">References: Bourgon, Gentleman &amp; Huber, PNAS 107:9546 (2010); Tarone, Biometrics 46:515 (1990); Döhler, Durand &amp; Roquain, Electron. J. Statist. 12:1023 (2018).</p>
+  </div>
+
+</div>
