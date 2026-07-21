@@ -55,11 +55,13 @@ nextflow run jdeu1023/sceptre-pipeline -r main \
   --threshold 5 \
   --grna_pod_size 425 \
   --pair_pod_size "${pair_pod_size}" \
+  --num_assoc_workers "${num_assoc_workers}" \
   --n_calibration_pairs 0 \
   --additional_cells_to_remove "${cells_to_remove_fp}" \
   --assign_grnas_memory "2GB" \
   --assign_grnas_time_per_grna "25s" \
   --run_association_analysis_time_per_pair "0.3s" \
+  --run_association_analysis_memory "4GB" \
   --combine_association_analysis_memory "20GB" \
   --combine_association_analysis_time "30m" \
   --n_nonzero_trt_thresh 0 \
