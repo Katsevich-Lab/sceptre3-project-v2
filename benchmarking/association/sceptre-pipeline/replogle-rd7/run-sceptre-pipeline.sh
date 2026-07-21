@@ -60,7 +60,7 @@ nextflow run jdeu1023/sceptre-pipeline -r main \
   --assign_grnas_memory "2GB" \
   --assign_grnas_time_per_grna "25s" \
   --run_association_analysis_time_per_pair "1.1s" \
-  --run_association_analysis_memory "10GB" \
+  --run_association_analysis_memory "7GB" \
   --combine_association_analysis_memory "20GB" \
   --combine_association_analysis_time "30m" \
   --n_nonzero_trt_thresh 0 \
