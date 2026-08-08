@@ -1,0 +1,606 @@
+---
+title: "gRNA assignment benchmarking — dissertation figures"
+output: html_document
+date: "2026-07-14"
+---
+
+Figure pipeline for the gRNA-assignment benchmarking chapter (adapted from
+`assignment-for-defense.Rmd`).
+
+**All helper functions, palettes, the print theme, and the `save_fig()` writer live
+in `assignment-helpers.R`.** Run the `setup` chunk once and every figure chunk below
+then stands alone — no need to run several cells to see one plot. Figures are written
+as PDFs to the `thesis-figures/` folder alongside this writeup.
+
+```{r setup, include=FALSE}
+rm(list=ls())
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+source("assignment-helpers.R")
+
+# Quantile levels for the Fig 1 low/high panels — single knob for all of §1.
+q_eda <- c(.01, .25, .75, .99)
+
+sim <- load_sim_bundle()   # $sims_assns, $true_perts, $sim_data
+sim_scores <- sim_per_guide_scores(sim)
+```
+
+# §1 — EDA: illustrating the two datasets
+
+Give the reader a feel for the raw gRNA-count data before any method touches it.
+The two axes of difficulty are **sparsity** (most guides are near-absent in most
+cells) and **ambient noise / heavy tails** (a low background of counts everywhere).
+We show this from two angles: the distribution of counts *within a guide* (across
+cells) and *within a cell* (across guides).
+
+## Fig 1a — Guides at low vs. high sparsity/abundance
+
+Two panels per dataset — a low-quantile (10th) and a high-quantile (90th) panel.
+Guides are selected **separately** by each statistic: each panel overlays the guide
+at that quantile of `grna_nonzero` (**Nonzero UMIs**) with the guide at that
+quantile of `grna_total` (**Total UMIs**), colored by which statistic selected it.
+(Jointly-extreme guides like "high nonzero, low total" don't exist and aren't
+useful.) One figure per dataset.
+
+
+
+<!-- ```{r fig-1a-replogle, fig.width=6.5, fig.height=3.2} -->
+<!-- p_guide_repl <- plot_overlay_sweep_hist( -->
+<!--   build_guide_overlay_df("replogle-rd7", q = q_eda), -->
+<!--   title = "Replogle: guides by varying sparsity and total expression" -->
+<!-- ) + -->
+<!--   theme(axis.text=element_text(size=6)) -->
+<!-- p_guide_repl -->
+<!-- save_fig(p_guide_repl, "eda-guide-sweep-replogle", width = 5, height = 3) -->
+<!-- ``` -->
+
+<!-- ```{r fig-1a-gasperini, fig.width=6.5, fig.height=3.2} -->
+<!-- p_guide_gasp <- plot_overlay_sweep_hist( -->
+<!--   build_guide_overlay_df("gasperini", q = q_eda), -->
+<!--   title = "Gasperini: guides by varying sparsity and total expression" -->
+<!-- ) -->
+<!-- p_guide_gasp -->
+<!-- save_fig(p_guide_gasp, "eda-guide-sweep-gasperini", width = 6.5, height = 3.2) -->
+<!-- ``` -->
+
+
+
+
+```{r}
+p_guide_both = plot_overlay_sweep_hist_combined(
+  build_guide_overlay_df, q = c(.049, .95),
+  title = "Guides by varying sparsity and total",
+  features = "total"
+) + 
+  labs(x = bquote("Cell UMI count (linear then log"[2] ~"scale)"),
+       title = "Exploring the data: four gRNAs by varying total expression",
+       y = "Number of cells (log scale)") +
+  theme(axis.text=element_text(size=6))
+p_guide_both
+save_fig(p_guide_both, "eda-guide-sweep-both", width = 5, height = 5)
+```
+
+
+
+
+
+
+## Fig 1b — Cells at low vs. high sparsity/abundance
+
+Exact mirror of Fig 1a, for cells. Each panel (a quantile level) overlays the cell
+at that quantile of per-cell `grna_n_nonzero` (**Nonzero UMIs** — number of guides
+detected) with the cell at that quantile of `grna_n_umis` (**Total UMIs**), colored
+by which statistic selected it. One figure per dataset.
+
+*Note: each figure loops over every guide in the odm to pull the picked cells'
+entries, so these two chunks are the slow part of §1. If it drags, add `cache=TRUE`
+to the chunk options.*
+
+<!-- ```{r fig-1b-replogle, fig.width=6.5, fig.height=3.2} -->
+<!-- p_cell_repl <- plot_overlay_sweep_hist( -->
+<!--   build_cell_overlay_df("replogle-rd7", q = q_eda), -->
+<!--   title = "Replogle: cells by varying sparsity and total", -->
+<!--   y_lab = "Number of guides" -->
+<!-- ) -->
+<!-- p_cell_repl -->
+<!-- save_fig(p_cell_repl, "eda-cell-sweep-replogle", width = 6.5, height = 3.2) -->
+<!-- ``` -->
+
+<!-- ```{r fig-1b-gasperini, fig.width=6.5, fig.height=3.2} -->
+<!-- p_cell_gasp <- plot_overlay_sweep_hist( -->
+<!--   build_cell_overlay_df("gasperini", q = q_eda), -->
+<!--   title = "Gasperini: cells by varying sparsity and total", -->
+<!--   y_lab = "Number of guides" -->
+<!-- ) -->
+<!-- p_cell_gasp -->
+<!-- save_fig(p_cell_gasp, "eda-cell-sweep-gasperini", width = 6.5, height = 3.2) -->
+<!-- ``` -->
+
+
+
+
+```{r}
+p_cell_both = plot_overlay_sweep_hist_combined(
+  build_cell_overlay_df, q = c(.049, .95),
+  title = "Guides by varying sparsity and total",
+  features = "total"
+) + 
+  labs(x = bquote("gRNA UMI count (linear then log"[2] ~"scale)"),
+       title = "Exploring the data: four cells by varying total expression",
+       y = "Number of gRNAs (log scale)") +
+  theme(axis.text=element_text(size=6))
+p_cell_both
+save_fig(p_cell_both, "eda-cell-sweep-both", width = 5, height = 5)
+```
+
+
+
+## Fig 1c — Cell-level covariates (2x2 hexbins)
+
+The joint structure of the four per-cell count covariates, read straight from the
+ondisc-backed sceptre object's covariate data frame. Each panel is a hexbin of one
+covariate pair (strip reads "y vs. x"). Top row shares x = number of nonzero gRNAs;
+bottom row shares x = number of expressed genes. One figure per dataset.
+
+
+<!-- ```{r fig-1c-replogle, cache=TRUE, fig.width=6.5, fig.height=5.6} -->
+<!-- p_cov_grid_repl <- plot_covariate_grid( -->
+<!--   build_cell_covariate_df("replogle-rd7"), "Replogle" -->
+<!-- ) -->
+<!-- p_cov_grid_repl -->
+<!-- save_fig(p_cov_grid_repl, "eda-covariate-grid-replogle", width = 6.5, height = 5.6) -->
+<!-- ``` -->
+
+<!-- ```{r fig-1c-gasperini, cache=TRUE, fig.width=6.5, fig.height=5.6} -->
+<!-- p_cov_grid_gasp <- plot_covariate_grid( -->
+<!--   build_cell_covariate_df("gasperini"), "Gasperini" -->
+<!-- ) -->
+<!-- p_cov_grid_gasp -->
+<!-- save_fig(p_cov_grid_gasp, "eda-covariate-grid-gasperini", width = 6.5, height = 5.6) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- p_cov_pair_gasp <- plot_covariate_pair( -->
+<!--   build_cell_covariate_df("gasperini"), "Gasperini" -->
+<!-- ) -->
+<!-- p_cov_pair_gasp -->
+<!-- save_fig(p_cov_pair_gasp, "eda-covariate-pair-gasperini", width = 6.5, height = 5.6) -->
+<!-- ``` -->
+
+
+## Fig 1d — CLEANSER low-pass depth (hexbin)
+
+CLEANSER's per-cell "low-pass" depth — the sum of the cell's gRNA counts that are
+$\leq 2$, the signal-free ambient scaling factor it conditions on — against total
+gRNA UMIs per cell. One figure per dataset.
+
+*Note: the low-pass depth loops over every guide in the odm, so these two chunks are
+slow (~10s Replogle, ~45s Gasperini) — `cache=TRUE` keeps them one-time.*
+
+
+<!-- ```{r fig-1d-replogle, cache=TRUE, fig.width=5.5, fig.height=4.4} -->
+<!-- p_lowpass_repl <- plot_low_pass_hex( -->
+<!--   build_grna_covariate_df("replogle-rd7"), "Replogle" -->
+<!-- ) -->
+<!-- p_lowpass_repl -->
+<!-- save_fig(p_lowpass_repl, "eda-low-pass-hex-replogle", width = 5.5, height = 4.4) -->
+<!-- ``` -->
+
+<!-- ```{r fig-1d-gasperini, cache=TRUE, fig.width=5.5, fig.height=4.4} -->
+<!-- p_lowpass_gasp <- plot_low_pass_hex( -->
+<!--   build_grna_covariate_df("gasperini"), "Gasperini" -->
+<!-- ) -->
+<!-- p_lowpass_gasp -->
+<!-- save_fig(p_lowpass_gasp, "eda-low-pass-hex-gasperini", width = 5.5, height = 4.4) -->
+<!-- ``` -->
+
+
+
+# sceptre bug
+
+<!-- ```{r} -->
+<!-- source("assignment-helpers.R") -->
+<!-- ``` -->
+
+
+```{r, cache=TRUE}
+sim_metrics_df <- load_sim_bugfix_metrics()   # scores all 3 datasets (a bit slow; cache it)
+plot_bug = plot_sim_bugfix_metrics(
+  sim_metrics_df,
+  title = "      Evaluation of SCEPTRE bug\n      on simulated guides",
+  metric_order = c("jaccard", "precision", "recall"),
+  methods = c("SCEPTRE", "Fixed Poisson"),
+  y_lim_min = .5
+) 
+plot_bug
+save_fig(plot_bug, "sceptre-bug-sims", width = 5.5, height = 3.5)
+```
+
+
+
+
+combining sim guides + sceptre bug performance
+```{r}
+combo_plot = cowplot::plot_grid(
+  p_example_sims + theme(axis.text=element_text(size=6), plot.title = element_text(size=14)),
+  plot_bug + theme(axis.text=element_text(size=6), plot.title = element_text(size=6)),
+  nrow=1, labels = c("(A)", "(B)"))
+combo_plot
+save_fig(combo_plot, "sims-and-sceptre-bug-evals", width = 9, height = 6)
+```
+
+
+<!-- ```{r} -->
+<!-- sim_metrics_df <- load_sim_bugfix_metrics()   # scores all 3 datasets (a bit slow; cache it) -->
+<!-- plot_bug = plot_sim_bugfix_metrics_t( -->
+<!--   sim_metrics_df, -->
+<!--   title = "Evaluation of SCEPTRE bug on simulated guides", -->
+<!--   metric_order = c("precision", "recall"), -->
+<!--   methods = c("SCEPTRE", "Fixed Poisson") -->
+<!-- )  -->
+<!-- plot_bug -->
+<!-- save_fig(plot_bug, "sceptre-bug-sims", width = 5.5, height = 5.5) -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# §2 — Simulations with ground truth
+
+With no real ground truth for gRNA assignment, we simulate from CLEANSER's model:
+sequencing-depth scaling factors from Replogle, perturbation status
+$Z_i \sim \text{Ber}(\pi)$, and counts $Y_i \mid Z_i \sim \text{NegBin}(L_i\mu_{Z_i},
+\theta_{Z_i})$. Four perturbation strengths are generated ($\mu_1 = 971/2^j$ for
+$j = 0,1,2,3$), all sharing the same $L_i$. Each method is then scored against the
+known perturbation matrix.
+
+# ```{r sim-load, cache=TRUE}
+# sim <- load_sim_bundle()   # $sims_assns, $true_perts, $sim_data
+# ```
+
+## Fig 2a — Example simulated guides (ambient vs perturbed)
+
+Four example simulated guides spanning the burst and overdispersion settings. Top
+row: the two medium-overdispersion settings (large vs. small burst) at
+$\mu_\text{pert} = 1000$. Bottom row: the large-overdispersion, no-burst setting at
+a strong ($\mu_\text{pert} = 970$) and a weak ($\mu_\text{pert} = 121$)
+perturbation. Each cell's count is colored by its ground-truth status: the ambient
+component (teal) is the low-count background present in every cell, while the
+perturbed component (red) shifts to higher counts — clearly separated at large
+$\mu_\text{pert}$, but collapsing toward the ambient pile at small $\mu_\text{pert}$.
+
+```{r fig-2a, fig.width=6.5, fig.height=5.2}
+IN_BASE <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data")
+
+# 2x2 of example simulated guides. Top row: the two burst settings at the largest
+# mu (1000). Bottom row: the no-burst setting at two mu levels (strong 970, weak
+# 121). mu is added as a third facet line to mark the choice.
+mu_of <- function(ds, p) { t <- sim_bugfix_datasets[[ds]]; t$mu_pert[match(p, t$p)] }
+mk_2a <- function(key, p) {
+  parts <- strsplit(key, "|", fixed = TRUE)[[1]]; ds <- parts[1]; np <- parts[2]
+  list(dataset = ds, guide = sprintf("sim_%s_%s_1", np, p),
+       tag = paste0(sim_row_renamer[[key]], "\nµ = ", round(mu_of(ds, p))))
+}
+picks_2a <- list(
+  mk_2a("sims_sum_2np_3p|NPhighvar",  "P3"),
+  mk_2a("sims_sum_2np_3p|NPlowvar",   "P3"),
+  mk_2a("sims_sum_repeat_old|NPpois", "Plarge"),
+  mk_2a("sims_sum_repeat_old|NPpois", "Psmall")
+)
+df_2a <- purrr::map_dfr(picks_2a, function(p) {
+  gm <- readRDS(file.path(IN_BASE, p$dataset, "sceptre", "grna_matrix.rds"))
+  tp <- readRDS(file.path(IN_BASE, p$dataset, "true_pert_matrix.rds"))
+  tibble(umi = as.integer(gm[p$guide, ]),
+         pert_status = factor(ifelse(tp[p$guide, ] == 1, "Pert.", "Ambient"),
+                              levels = c("Ambient", "Pert.")),
+         panel = p$tag)
+}) |> mutate(panel = factor(panel, levels = vapply(picks_2a, `[[`, "", "tag")))
+
+p_example_sims <- plot_sim_component_hist(
+  df_2a, title = "Simulated gRNA counts:\nambient vs. perturbed"
+) + facet_wrap(~ panel, nrow = 2) + theme(axis.text.x = element_text(size = 6), 
+                                          axis.text.y = element_text(size = 7))
+p_example_sims
+save_fig(p_example_sims, "sim-example-guides", width = 6.5, height = 5.5)
+```
+
+## Fig 2b — Mean metrics vs. perturbation strength
+
+The central simulation result. Each method is scored per guide against ground truth
+(truly-perturbed cells with a nonzero UMI), and we plot the mean **Jaccard /
+Precision / Recall** at each perturbation strength ($\mu_1 = 971/2^j$). Recall stays
+high for all methods (they capture most true positives); the separation is in
+precision at low $\mu_1$, where over-assignment hurts.
+
+# ```{r sim-scores, cache=TRUE}
+# # Per-(guide, method) Jaccard/Precision/Recall — the expensive step; reused by 2c.
+# sim_scores <- sim_per_guide_scores(sim)
+# ```
+
+```{r fig-2b, fig.width=6.5, fig.height=3}
+p_sim_metrics <- plot_sim_avg_metrics(
+  sim_avg_metrics(sim_scores),
+  title = "Performance on simulated data"
+) +
+  labs(x = expression("Perturbed cell average mean"))
+p_sim_metrics
+save_fig(p_sim_metrics, "sim-avg-metrics", width = 6.5, height = 3)
+```
+
+## Fig 2c — Per-guide Jaccard, strong vs. weak perturbation
+
+Beyond the means: the full spread of per-guide Jaccard for each method at the
+strongest and weakest perturbation. At $\mu_1 = 971$ most guides sit near 1; at
+$\mu_1 = 121$ the distributions slide down and spread out, and any mass piling up at
+0 marks guides a method failed on outright.
+
+```{r fig-2c, fig.width=6.5, fig.height=3}
+p_sim_jaccard <- plot_sim_jaccard_hist(
+  sim_scores,
+  mupows = c(0, 3),   # largest (mu=971) and smallest (mu=121) only
+  title = "Per-guide Jaccard to ground truth"
+) +
+  theme(aspect.ratio=1) +
+  facet_wrap(~panel)
+p_sim_jaccard
+save_fig(p_sim_jaccard, "sim-jaccard-hists", width = 6, height = 4)
+```
+
+
+
+```{r}
+combo_sim_metrics = cowplot::plot_grid(
+  p_sim_metrics + theme(aspect.ratio=1),
+  p_sim_jaccard,
+  nrow=2,
+  labels = c("(A)", "(B)")
+)
+combo_sim_metrics
+save_fig(combo_sim_metrics, "sim-avg-metrics-and-jaccard-hists", width = 6, height = 4)
+```
+
+
+## Fig 2d — Assignments per guide vs. tail heaviness
+
+The same view used on the real data (§3), here on the simulations: for each guide,
+the number of cells a method assigns vs. the guide's tail mean (mean UMI among
+counts $\geq$ 10). Methods that key on the heavy tail assign more cells as the tail
+grows; the sensitivity differs sharply by method.
+
+```{r fig-2d, fig.width=6.5, fig.height=5}
+p_sim_tail <- plot_tail_sensitivity(
+  build_tail_sensitivity_df(sim$sim_data, sim$sims_assns$sims, thresh = 10),
+  title = "Simulations: assignments vs. tail heaviness",
+  thresh = 10,
+  colour_by = "mu"
+) + facet_wrap(~ method, nrow = 1) 
+p_sim_tail
+save_fig(p_sim_tail, "sim-tail-sensitivity", width = 7, height = 3)
+```
+
+## Table 2 — Calling thresholds by method and perturbation strength
+
+For each method and perturbation level, averaged over the 100 guides: the smallest
+UMI called perturbed (min over assigned cells) and the largest UMI left unperturbed
+(max over unassigned cells). Where the "largest unperturbed" exceeds the "smallest
+perturbed," the method's decision boundary is non-monotone in count — a sign it is
+leaning on covariates rather than a hard UMI threshold.
+
+
+<!-- ```{r table-2-thresholds, cache=TRUE} -->
+<!-- sim_thresh_tbl <- sim_threshold_table(sim) -->
+<!-- knitr::kable(sim_thresh_tbl, digits = 1) -->
+<!-- ``` -->
+
+
+## Fig 2e — Calling boundary by method
+
+Table 2 made graphical. For each method (x-axis), two boxplots across the 100
+guides: the largest UMI it leaves unperturbed and the smallest it calls perturbed.
+Whiskers span the full range, so each box is the five-number summary (min, Q1,
+median, Q3, max). Faceted by perturbation strength (2x2). Where a method's two
+boxes overlap, its decision boundary is not a clean count cutoff.
+
+<!-- ```{r fig-2e, fig.width=6.5, fig.height=5} -->
+<!-- sim_thresh_pg <- sim_threshold_per_guide(sim) -->
+<!-- p_sim_boundary <- plot_sim_threshold_box( -->
+<!--   sim_thresh_pg, -->
+<!--   title = "Calling boundary by method and perturbation strength" -->
+<!-- ) + -->
+<!--   scale_y_log10() -->
+<!-- p_sim_boundary -->
+<!-- save_fig(p_sim_boundary, "sim-threshold-box", width = 6.5, height = 5) -->
+<!-- ``` -->
+
+# §3 — Real data: agreement between methods
+
+No ground truth here, so instead of scoring against a known answer we ask how much
+the methods agree with each other, and what drives their assignments. The
+real-data assignments are loaded once below (800-guide downsample of each dataset,
+100k cells).
+
+```{r real-load, cache=TRUE}
+real <- load_real_bundle(nguides = 800L)  # $assns, $grna_mat, per dataset
+```
+
+## Fig 3a — Average pairwise Jaccard between methods
+
+For each pair of methods, the mean per-guide Jaccard of their assigned-cell sets.
+One dataset per triangle — Replogle above the diagonal, Gasperini below — so a
+single matrix shows both. Warmer cells = closer agreement.
+
+```{r fig-3a, fig.width=5, fig.height=4.6}
+p_jaccard_heat <- plot_jaccard_heatmap(
+  build_jaccard_heatmap_df(real, upper = "replogle-rd7", lower = "gasperini"),
+  upper_label = "Replogle",
+  lower_label = "Gasperini",
+  title = "Average per-guide Jaccard between methods"
+) +
+  theme(axis.text=element_text(size=8), plot.title=element_text(size=10))
+p_jaccard_heat
+save_fig(p_jaccard_heat, "real-jaccard-heatmap", width = 4, height = 4)
+```
+
+## Fig 3b — Assignments per guide vs. tail heaviness (Replogle)
+
+The real-data analogue of Fig 2d. For each guide, the number of cells a method
+assigns vs. the guide's tail mean (mean UMI among counts $\geq$ 10). Methods that
+key on the heavy tail assign more cells as the tail grows.
+
+<!-- ```{r fig-3b, fig.width=6.5, fig.height=5} -->
+<!-- p_tail_repl <- plot_tail_sensitivity( -->
+<!--   build_tail_sensitivity_df(real$grna_mat[["replogle-rd7"]], -->
+<!--                             real$assns[["replogle-rd7"]], thresh = 10), -->
+<!--   title = "Replogle: number of assignments vs. tail heaviness", -->
+<!--   thresh = 10 -->
+<!-- ) -->
+<!-- p_tail_repl -->
+<!-- save_fig(p_tail_repl, "real-tail-sensitivity-replogle", width = 6.5, height = 5) -->
+<!-- ``` -->
+
+<!-- ## Fig 3c — Assignments per guide vs. tail heaviness (Gasperini) -->
+
+<!-- Same as Fig 3b, for Gasperini. -->
+
+<!-- ```{r fig-3c, fig.width=6.5, fig.height=5} -->
+<!-- p_tail_gasp <- plot_tail_sensitivity( -->
+<!--   build_tail_sensitivity_df(real$grna_mat[["gasperini"]], -->
+<!--                             real$assns[["gasperini"]], thresh = 10), -->
+<!--   title = "Gasperini: number of assignments vs. tail heaviness", -->
+<!--   thresh = 10 -->
+<!-- ) -->
+<!-- p_tail_gasp -->
+<!-- save_fig(p_tail_gasp, "real-tail-sensitivity-gasperini", width = 6.5, height = 5) -->
+<!-- ``` -->
+
+
+
+## Fig 3d — Tail heaviness, both datasets overlaid
+
+Fig 3b and 3c on one figure: both datasets in the same panel per method (colour =
+dataset, Replogle blue / Gasperini orange). x is `log1p` since Replogle's tails are
+far heavier than Gasperini's.
+
+```{r fig-3d, fig.width=6.5, fig.height=5.5}
+p_tail_both <- plot_tail_sensitivity_combined(
+  build_tail_sensitivity_combined_df(real, thresh = 10),
+  title = "Number of assignments vs. tail heaviness",
+  thresh = 10
+)
+p_tail_both
+save_fig(p_tail_both, "real-tail-sensitivity-both", width = 6.5, height = 5.5)
+```
+
+
+```{r}
+combo_real <- cowplot::plot_grid(
+  p_jaccard_heat,
+  p_tail_both,
+  nrow=1
+)
+combo_real
+```
+
+
+
+## Fig 3e — Guides where a method went wrong (UMI histograms)
+
+Four illustrative guides, one per failure mode, each a UMI histogram of its nonzero
+counts (coloured by dataset). (a) a Gasperini guide crispat's mixture model fits
+degenerately (0 assigned); (b) a Replogle guide whose heavy tail makes SCEPTRE
+over-assign; (c) a Replogle guide CLEANSER leaves empty despite a heavy tail; (d) a
+Gasperini guide pertpy leaves empty. Titles are passed via `titles`.
+
+
+
+```{r fig-3e, fig.width=9, fig.height=6.5}
+problem_picks <- list(
+  list(dataset = "Gasperini", guide = "ATAAAGCCTGTTATTACCAA"),          # crispat = 0
+  list(dataset = "Replogle",  guide = "9570_UFL1_P1P2_ENSG00000014123"),# sceptre over-assigns
+  list(dataset = "Replogle",  guide = "8221_SNRNP48_P1P2_ENSG00000168566"), # cleanser = 0
+  list(dataset = "Gasperini", guide = "TTGTCTCGACTCTCACCATA")           # pertpy = 0
+)
+p_problem_guides <- plot_guide_umi_grid(
+  real, problem_picks,
+  titles = c("(a) Gasperini: crispat assigns 0",
+             "(b) Replogle: SCEPTRE over-assigns",
+             "(c) Replogle: CLEANSER assigns 0 ",
+             "(d) Gasperini: pertpy assigns 0")
+)
+p_problem_guides
+save_fig(p_problem_guides, "real-problem-guides", width = 9, height = 6.5)
+```
+
+
+
+# §4 — Computational benchmarking
+
+Runtime and peak memory of each method as the guide count grows. The four methods
+run in-memory across a guide-count sweep (circles); the SCEPTRE pipeline runs
+distributed over workers on the full dataset (triangle, one point). The
+`comp-load` chunk reads all the Nextflow trace files once.
+
+```{r comp-load, cache=TRUE}
+trace_all <- load_comp_bundle()  # method, peak_rss_gb, realtime_sec, nguides, source_data
+```
+
+## Fig 4 — Combined (2×2: dataset × runtime/memory)
+
+```{r fig-4, fig.width=9, fig.height=7.5}
+p_comp_grid <- plot_comp_grid(trace_all)
+p_comp_grid
+save_fig(p_comp_grid, "assign-compute-grid", width = 9, height = 7.5)
+```
+
+## Fig 4′ — Combined, faceted (dataset × metric)
+
+A tidier alternative to Fig 4: dataset as facet columns, runtime and memory
+stacked as rows. Each metric keeps its own y-axis with the exact ticks and labels
+of the standalone figures (H:M:S for runtime, GB for memory).
+
+```{r fig-4-faceted, fig.width=7.5, fig.height=6.2}
+p_comp_grid_faceted <- plot_comp_grid_faceted(trace_all, title = "gRNA assignment: runtime and memory benchmarking")
+p_comp_grid_faceted
+save_fig(p_comp_grid_faceted, "assign-compute-grid-faceted", width = 8, height = 6.75)
+```
+
+## Fig 4a — Runtime (Replogle)
+
+```{r fig-4a, fig.width=6.5, fig.height=4.4}
+p_runtime_repl <- plot_comp_runtime(trace_all, "Replogle: assignment runtime", "replogle")
+p_runtime_repl
+save_fig(p_runtime_repl, "assign-runtime-replogle", width = 6.5, height = 4.4)
+```
+
+## Fig 4b — Memory (Replogle)
+
+```{r fig-4b, fig.width=6.5, fig.height=4.4}
+p_memory_repl <- plot_comp_memory(trace_all, "Replogle: assignment memory", "replogle")
+p_memory_repl
+save_fig(p_memory_repl, "assign-memory-replogle", width = 6.5, height = 4.4)
+```
+
+## Fig 4c — Runtime (Gasperini)
+
+```{r fig-4c, fig.width=6.5, fig.height=4.4}
+p_runtime_gasp <- plot_comp_runtime(trace_all, "Gasperini: assignment runtime", "gasperini")
+p_runtime_gasp
+save_fig(p_runtime_gasp, "assign-runtime-gasperini", width = 6.5, height = 4.4)
+```
+
+## Fig 4d — Memory (Gasperini)
+
+```{r fig-4d, fig.width=6.5, fig.height=4.4}
+p_memory_gasp <- plot_comp_memory(trace_all, "Gasperini: assignment memory", "gasperini")
+p_memory_gasp
+save_fig(p_memory_gasp, "assign-memory-gasperini", width = 6.5, height = 4.4)
+```

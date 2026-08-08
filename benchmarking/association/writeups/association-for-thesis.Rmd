@@ -1,0 +1,351 @@
+---
+title: "Association-testing benchmarking — dissertation figures"
+date: "2026-07-16"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+Figure pipeline for the association-testing benchmarking chapter (adapted from
+`assoc-for-defense.Rmd`).
+
+**All helper functions, palettes, the print theme, and the `save_fig()` writer live
+in `association-helpers.R`.** Run the `setup` chunk once (it loads the combined
+neg/pos-control results for both datasets), and every figure chunk below then stands
+alone. Figures are written as PDFs to the `thesis-figures/` folder alongside this
+writeup.
+
+Methods: SCEPTRE (red), Mixscale (teal), FR-Perturb (purple). Gasperini has no
+Mixscale results.
+
+```{r setup, include=FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+options(scipen = 10)
+source("association-helpers.R")
+```
+
+```{r load-results, cache=TRUE}
+results_repl <- load_assoc_bundle("replogle")    # p_value_SCEPTRE/Mixscale/FR-Perturb, pair_type
+results_gasp <- load_assoc_bundle("gasperini")   # no Mixscale
+```
+
+# §0 — Feature sparsity (EDA)
+
+Before the association results, a look at how sparse the count matrices are.
+Using the precomputed `*_summary_stats.csv` files (every feature, no sampling),
+each feature's detection rate is `n_nonzero / n_cells`. Overlaying the gene and
+gRNA distributions on a log scale, one panel per dataset, shows that genes span
+many orders of magnitude (broad, right-skewed, tail reaching ~100% detection)
+while gRNAs are tightly clustered. The dashed medians give the "typical" feature:
+the typical gRNA is *less* sparse than the typical gene in Replogle, but this
+reverses in Gasperini, whose gene set is filtered to expressed genes (Replogle's
+36.6k genes are essentially unfiltered — 4,195 are never detected at all).
+
+<!-- ```{r fig-0, fig.width=6.5, fig.height=5, cache=TRUE} -->
+<!-- feature_sparsity_df <- load_feature_sparsity_df() -->
+<!-- p_density <- plot_feature_density_overlay(feature_sparsity_df) -->
+<!-- p_density -->
+<!-- save_fig(p_density, "feature-detection-rate", width = 5, height = 4.5) -->
+<!-- ``` -->
+
+Adding a third curve for the genes that pass our gene-wise QC (`compute_genes_passing_qc`,
+threshold 7) shows what the analysis actually uses. QC removes the sparse tail: in
+Replogle the gene set drops 36.6k → 11.3k and the median detection rate jumps from
+0.07% to 23%, landing next to Gasperini's QC-passing genes (13.1k → 12.8k, 16% →
+17%). So although the raw gene sets differ wildly, the *analyzed* genes are
+comparably dense across datasets.
+
+```{r fig-0b, fig.width=6.5, fig.height=5, cache=TRUE}
+feature_sparsity_qc_df <- load_feature_sparsity_qc_df()
+p_density_qc <- plot_gene_qc_density_overlay(feature_sparsity_qc_df,
+              title = "Gene and guide sparsity in Replogle and Gasperini")
+p_density_qc
+save_fig(p_density_qc, "feature-detection-rate-qc", width = 5, height = 4.5)
+```
+
+# §1 — Marginal p-value distributions
+
+The simplest first look: for each dataset, the marginal distribution of each
+method's $-\log_{10}$ p-values, one violin per method, split into positive- and
+negative-control facets. Well-behaved negative controls sit low (near a uniform);
+positive controls should push to larger $-\log_{10}$ values.
+
+
+
+<!-- ## Fig 1a — Replogle -->
+
+<!-- ```{r fig-1a, fig.width=6.5, fig.height=4} -->
+<!-- p_violin_repl <- plot_pval_violin(results_repl, "Replogle", p_floor=1e-50, log1p_y = FALSE) -->
+<!-- p_violin_repl -->
+<!-- save_fig(p_violin_repl, "pval-violin-replogle", width = 6.5, height = 4) -->
+<!-- ``` -->
+
+<!-- ## Fig 1b — Gasperini -->
+
+<!-- ```{r fig-1b, fig.width=6.5, fig.height=4} -->
+<!-- p_violin_gasp <- plot_pval_violin(results_gasp, "Gasperini") -->
+<!-- p_violin_gasp -->
+<!-- save_fig(p_violin_gasp, "pval-violin-gasperini", width = 6.5, height = 4) -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+```{r fig-poster-replogle, fig.width=13, fig.height=11}
+p_poster_repl <- plot_assoc_poster(results_repl, "Replogle: positive and negative controls", legend = "right", square = F,
+                                   neg_clip = c(Mixscale = 10, `FR-Perturb` = 10, SCEPTRE = 10))
+p_poster_repl
+save_fig(p_poster_repl, "poster-replogle", width = 10, height = 9)
+```
+
+```{r fig-poster-gasperini, fig.width=13, fig.height=11}
+p_poster_gasp <- plot_assoc_poster(results_gasp, "Gasperini: positive and negative controls", legend = "right", square = T)
+p_poster_gasp
+save_fig(p_poster_gasp, "poster-gasperini", width = 10, height = 9)
+```
+
+
+
+<!-- ```{r fig-hex-combined, fig.width=8, fig.height=11} -->
+<!-- p_hex_combined <- plot_pval_comparison_hex_combined(results_repl, results_gasp) -->
+<!-- p_hex_combined -->
+<!-- save_fig(p_hex_combined, "pval-comparison-hex-combined", width = 8, height = 11) -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+# §2 — Pairwise p-value comparison
+
+How each method's p-values relate to SCEPTRE's, split by pair type. Each panel is a
+method-vs-SCEPTRE scatter on the $-\log_{10}$ scale; negative controls are
+downsampled to 10k so the cloud is legible.
+
+## Fig 2a — Replogle
+
+<!-- ```{r fig-2a, fig.width=7, fig.height=5} -->
+<!-- p_pairs_repl <- plot_pval_comparison(results_repl, "Replogle") -->
+<!-- p_pairs_repl -->
+<!-- save_fig(p_pairs_repl, "pval-comparison-replogle", width = 7, height = 5) -->
+<!-- ``` -->
+
+<!-- ## Fig 2b — Gasperini -->
+
+<!-- ```{r fig-2b, fig.width=7, fig.height=3} -->
+<!-- p_pairs_gasp <- plot_pval_comparison(results_gasp, "Gasperini") -->
+<!-- p_pairs_gasp -->
+<!-- save_fig(p_pairs_gasp, "pval-comparison-gasperini", width = 7, height = 3) -->
+<!-- ``` -->
+
+
+
+<!-- ```{r fig-2b, fig.width=7, fig.height=3} -->
+<!-- p_pairs_gasp_hex <- plot_pval_comparison_hex(results_gasp, "Gasperini", bins=50) -->
+<!-- p_pairs_gasp_hex -->
+<!-- save_fig(p_pairs_gasp_hex, "pval-comparison-gasperini-hex", width = 4, height = 4) -->
+<!-- ``` -->
+
+<!-- ```{r fig-2b, fig.width=7, fig.height=3} -->
+<!-- p_pairs_repl_hex <- plot_pval_comparison_hex(results_repl, "Replogle", bins = 50) -->
+<!-- p_pairs_repl_hex -->
+<!-- save_fig(p_pairs_repl_hex, "pval-comparison-replogle-hex", width = 5, height = 5) -->
+<!-- ``` -->
+
+
+# §3 — Calibration under the null
+
+QQ plot (tail) of the negative-control p-values for each method. Points hugging the
+diagonal are calibrated; points bowing above it are anti-conservative (miscalibrated).
+
+## Fig 3a — Replogle
+
+<!-- ```{r fig-3a, fig.width=6.5, fig.height=4.4} -->
+<!-- p_qq_repl <- plot_qq_tail(results_repl, "Replogle") -->
+<!-- p_qq_repl -->
+<!-- save_fig(p_qq_repl, "qq-tail-replogle", width = 6.5, height = 4.4) -->
+<!-- ``` -->
+
+<!-- ## Fig 3b — Gasperini -->
+
+<!-- ```{r fig-3b, fig.width=6.5, fig.height=4.4} -->
+<!-- p_qq_gasp <- plot_qq_tail(results_gasp, "Gasperini") -->
+<!-- p_qq_gasp -->
+<!-- save_fig(p_qq_gasp, "qq-tail-gasperini", width = 6.5, height = 4.4) -->
+<!-- ``` -->
+
+# §4 — Separating positive from negative controls
+
+ROC across the p-value threshold, treating positive controls as the true signal and
+negative controls as the null. AUC in the legend summarizes the separation.
+
+## Fig 4a — Replogle
+
+<!-- ```{r fig-4a, fig.width=5.5, fig.height=5} -->
+<!-- p_roc_repl <- plot_assoc_roc(results_repl, "Replogle") -->
+<!-- p_roc_repl -->
+<!-- save_fig(p_roc_repl, "roc-replogle", width = 5.5, height = 5) -->
+<!-- ``` -->
+
+<!-- ## Fig 4b — Gasperini -->
+
+<!-- ```{r fig-4b, fig.width=5.5, fig.height=5} -->
+<!-- p_roc_gasp <- plot_assoc_roc(results_gasp, "Gasperini") -->
+<!-- p_roc_gasp -->
+<!-- save_fig(p_roc_gasp, "roc-gasperini", width = 5.5, height = 5) -->
+<!-- ``` -->
+
+# §5 — True positives at a false-positive budget (Replogle)
+
+For each method, the number of positive controls recovered when we allow at most a
+given number of false positives (negative controls called significant). A direct
+read of usable power at a controlled error level. (Only Replogle, matching the
+defense — Gasperini's methods are calibrated, so this view is less informative there.)
+
+## Fig 5a — Replogle
+
+<!-- ```{r fig-5a, fig.width=6.5, fig.height=4.4} -->
+<!-- p_fpb_repl <- plot_fp_budget(results_repl, "Replogle") -->
+<!-- p_fpb_repl -->
+<!-- save_fig(p_fpb_repl, "fp-budget-replogle", width = 6.5, height = 4.4) -->
+<!-- ``` -->
+
+<!-- ```{r fig-5a, fig.width=6.5, fig.height=4.4} -->
+<!-- p_fpb_gasp <- plot_fp_budget(results_gasp, "Gasperini") -->
+<!-- p_fpb_gasp -->
+<!-- save_fig(p_fpb_gasp, "fp-budget-gasperini", width = 6.5, height = 4.4) -->
+<!-- ``` -->
+
+
+
+# §6 — FDR control across positive prevalence (Replogle)
+
+Mixtures of positive and negative controls are drawn at a range of positive
+prevalences, BH-adjusted at $q = 0.1$, and the realized false-discovery proportion is
+recorded (median $\pm$ IQR over 100 draws). A miscalibrated method's FDP climbs above
+the dashed target as positives become rarer. (Replogle only, as in the defense.)
+
+## Fig 6a — Replogle
+
+```{r fig-6a, cache=TRUE, fig.width=6.5, fig.height=4.4}
+p_bh_repl <- plot_bh_vs_pi(
+  results_repl, "Replogle",
+  N_total = 7500,
+  pi_grid = c(.01, .02, .05, .075, .1),
+  q_target = 0.1
+)
+# p_bh_repl <- plot_bh_vs_pi(
+#   results_repl |> filter(n_nonzero_trt > 0), "Replogle",
+#   N_total = 7500,
+#   pi_grid = c(.01, .02, .05, .075),
+#   q_target = 0.1
+# )
+p_bh_repl
+save_fig(p_bh_repl, "bh-fdp-replogle", width = 6.5, height = 4.4)
+```
+
+
+
+
+
+<!-- ```{r fig-zero-trt-replogle, fig.width=6.5, fig.height=5} -->
+<!-- p_zerotrt_repl <- plot_pval_hist_zero_trt(results_repl, "Replogle") -->
+<!-- p_zerotrt_repl -->
+<!-- save_fig(p_zerotrt_repl, "pval-hist-zero-trt-replogle", width = 6.5, height = 5) -->
+<!-- ``` -->
+
+<!-- ```{r fig-zero-trt-gasperini, fig.width=5, fig.height=5} -->
+<!-- p_zerotrt_gasp <- plot_pval_hist_zero_trt(results_gasp, "Gasperini") -->
+<!-- p_zerotrt_gasp -->
+<!-- save_fig(p_zerotrt_gasp, "pval-hist-zero-trt-gasperini", width = 5, height = 5) -->
+<!-- ``` -->
+
+
+
+<!-- ```{r fig-roc-zerotrt-replogle, fig.width=6, fig.height=5.5} -->
+<!-- p_roc_zt_repl <- plot_assoc_roc_zero_trt(results_repl, "Replogle") -->
+<!-- p_roc_zt_repl -->
+<!-- save_fig(p_roc_zt_repl, "roc-zero-trt-replogle", width = 6, height = 5.5) -->
+<!-- ``` -->
+
+<!-- ```{r fig-roc-zerotrt-gasperini, fig.width=6, fig.height=5.5} -->
+<!-- p_roc_zt_gasp <- plot_assoc_roc_zero_trt(results_gasp, "Gasperini") -->
+<!-- p_roc_zt_gasp -->
+<!-- save_fig(p_roc_zt_gasp, "roc-zero-trt-gasperini", width = 6, height = 5.5) -->
+<!-- ``` -->
+
+
+```{r fig-zerotrt-grid, fig.width=10, fig.height=9.4}
+p_zt_grid <- plot_assoc_zero_trt_grid(results_repl, "Replogle",
+                                      title = "Replogle: behavior for all-zero treatment groups",
+                                      roc_zoom = .4)
+p_zt_grid
+save_fig(p_zt_grid, "zero-trt-grid-replogle", width = 10, height = 9.4)
+```
+
+
+# §7 — On-target significance vs. effective sample size
+
+Positive controls only: each method's on-target $-\log_{10}$ p-value against
+SCEPTRE's `n_nonzero_trt` (the number of perturbed cells with nonzero expression —
+the effective treatment sample size, shared by all methods for a given target). A
+per-method smoother shows whether significance grows with sample size or plateaus.
+
+## Fig 7a — Replogle
+
+
+<!-- ```{r fig-7a, fig.width=6.5, fig.height=4.4} -->
+<!-- p_ss_repl <- plot_pval_vs_ntrt(results_repl, "Replogle") -->
+<!-- p_ss_repl -->
+<!-- save_fig(p_ss_repl, "pval-vs-ntrt-replogle", width = 6.5, height = 4.4) -->
+<!-- ``` -->
+
+<!-- ## Fig 7b — Gasperini -->
+
+<!-- ```{r fig-7b, fig.width=6.5, fig.height=4.4} -->
+<!-- p_ss_gasp <- plot_pval_vs_ntrt(results_gasp, "Gasperini") -->
+<!-- p_ss_gasp -->
+<!-- save_fig(p_ss_gasp, "pval-vs-ntrt-gasperini", width = 6.5, height = 4.4) -->
+<!-- ``` -->
+
+# §8 — Computational benchmarking
+
+Runtime and peak memory as the number of guides grows. The three association
+methods run in-memory (circles); the SCEPTRE pipeline ("pipeline") runs distributed
+over workers (triangle). Both `comp-load` chunks read the Nextflow trace files once.
+
+```{r comp-load, cache=TRUE}
+trace_repl <- load_assoc_comp_bundle("replogle")
+trace_gasp <- load_assoc_comp_bundle("gasperini")
+```
+
+## Fig 8 — Combined, faceted (dataset × metric)
+
+Dataset as facet columns, runtime and memory stacked as rows. Each metric keeps
+its own y-axis with the exact ticks and labels of the standalone figures (H:M:S
+for runtime, GB for memory).
+
+<!-- ```{r fig-8, fig.width=7.5, fig.height=6.2} -->
+<!-- p_comp_grid_faceted <- plot_assoc_comp_grid_faceted( -->
+<!--   trace_repl, trace_gasp, title = "Association: computational benchmarking") -->
+<!-- p_comp_grid_faceted -->
+<!-- save_fig(p_comp_grid_faceted, "comp-grid-faceted", width = 7.5, height = 6.2) -->
+<!-- ``` -->
+
+
+
+
+```{r fig-comp-ngenes, fig.width=8, fig.height=6.5}
+p_comp_ngenes <- plot_assoc_comp_grid_faceted_ngenes(
+  trace_repl, trace_gasp, title = "Association: computational benchmarking")
+p_comp_ngenes
+save_fig(p_comp_ngenes, "comp-grid-ngenes", width = 6.5, height = 6.5)
+```
