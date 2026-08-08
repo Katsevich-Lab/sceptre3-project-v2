@@ -1,0 +1,822 @@
+---
+title: "assign-for-assoc"
+output: html_document
+date: "2026-06-27"
+---
+
+
+the purpose of this notebook is to do EDA to verify the assignment choices I'm making for my association benchmarking.
+
+
+Gasperini: they use threshold of 5, although in the paper they also say something about "read counts" seaprate from UMI counts, and i don't know what those are.
+
+# 1. does thresh=5 seem ok on Gasperini?
+
+
+```{r}
+rm(list=ls())
+library(tidyverse)
+
+
+source("~/.Rprofile")
+source("~/katsevich-lab/code/sceptre3-project-v2/benchmarking/guide-assignment/assignment-analysis/script_runs_analysis_functions.R")
+source("~/katsevich-lab/code/sceptre3-project-v2/benchmarking/guide-assignment/sceptre-nb/nb-bench_v3-helpers.R")
+
+get_guides <- function(guide_stats, n, min_idx = 200) {
+   guide_stats |>
+  arrange(grna_total) |>
+  pull(grna) %>%
+  `[`(seq(min_idx, nrow(guide_stats) - 50, length = n) |> round())
+}
+```
+
+
+
+```{r}
+
+
+
+grna_odm_gasp = ondisc::initialize_odm_from_backing_file(
+  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/gasperini/sceptre-pipeline/grna.odm"
+)
+
+gasp_guide_stats = read_csv(
+  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/gasperini/sceptre-pipeline/grna_summary_stats.csv",
+  show_col_types = FALSE
+)
+
+
+
+# let's pick a sequence of guides in terms of expression
+# repl_guides <- get_guides(repl_guide_stats, 4)
+
+gasp_guides <-  get_guides(gasp_guide_stats, 16) 
+
+
+plotlist <- lapply(seq_along(gasp_guides), function(i) {
+    plot_umi_histogram(grna_odm_gasp[gasp_guides[i],],
+                       title = paste0("Gasperini: ", i, " / ", length(gasp_guides)),
+                       x_breaks = c(1,10,100,1000,10000,100000)) 
+  })
+
+
+cowplot::plot_grid(plotlist = plotlist)
+```
+
+
+ok yeah this set of 16 at least all looks reasonable, and we have the justification of it being what the scientists did.
+
+
+
+
+# 2. Replogle
+
+From the paper:
+
+Reads from the sgRNA libraries were mapped with Cell Ranger. To account for differences in sequencing depths across GEM
+groups from the same experiment, reads were downsampled to produce a more even distribution of the number of reads per cell
+across gemgroups, with a threshold of 1000 reads per cell in the K562 day 8 experiment, 800 reads per cell in the K562 day 6 experiment, and 3000 reads per cell in the RPE1 experiment. Guide calling was performed with a Poisson-Gaussian mixture model as previously described. For each guide, the mixture model was fit 100 times, selecting the maximum likelihood model from among the fits.
+After guide calling, each cell was categorized according to its guide identities as representing a single genetic perturbation or a multiplet (which may arise from lentiviral recombination or multiple cell encapsulation during droplet generation). Only cells bearing two
+guides targeting the same gene or a single guide were used for downstream analysis
+
+
+So: they used a Poisson-Gaussian mixture on the log2 counts. exactly crispat.
+
+so should i do max method, or pois-gauss?
+
+let's look at max. how can i verify reasonableness? i should look at the difference between the max and the next for each cell. if it's big, then this is easy.
+
+```{r}
+grna_odm_repl = ondisc::initialize_odm_from_backing_file(
+  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline/grna.odm"
+)
+
+repl_guide_stats = read_csv(
+  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline/grna_summary_stats.csv",
+  show_col_types = FALSE
+)
+
+thresh <- 1  # with this thresh, we actually get the real answer
+# each entry is a cell, 
+large_umis <- vector("list", ncol(grna_odm_repl))
+for(i in 1:nrow(grna_odm_repl)) {
+  y <- grna_odm_repl[i,]
+  
+  big_locs <- which(y >= thresh)
+  # large_umis[big_locs] 
+  for(loc in big_locs) {
+    large_umis[[loc]] <- c(large_umis[[loc]], 
+                           y[loc] |> setNames(i)
+                           )
+  }
+}
+
+sapply(large_umis, length) |> table()
+
+
+gaps = sapply(large_umis, function(l) {
+  if(length(l) == 0) {
+    0
+  } else if(length(l) == 1) {
+    l[1]
+  } else {
+    sort(l) |> tail(5) |> diff() |> rev()
+  }
+})
+
+
+cell_df <- data.frame(
+    grna_n_nonzero = numeric(length(large_umis)),
+  grna_n_umis = 0,
+  grna_max = 0,
+  gap_1 = 0,
+  gap_2 = 0
+)
+
+cell_df$grna_n_nonzero <- sapply(large_umis, length)
+cell_df$grna_n_umis <- sapply(large_umis, sum)
+cell_df$grna_max <- sapply(large_umis, max)
+cell_df$gap_1 = sapply(gaps, `[`, 1)
+cell_df$gap_2 = sapply(gaps, `[`, 2)
+```
+
+TEST: from sceptre max assign, is the lot of "0 or 2+" in agreement with what i compute here?
+```{r}
+zero_or_twoplus <- which(cell_df$grna_n_umis < 5 | (cell_df$grna_max / cell_df$grna_n_umis <= .8))
+
+jacc <- function(a,b) length(intersect(a,b)) / length(union(a,b))
+
+jacc(scep@cells_w_zero_or_twoplus_grnas, zero_or_twoplus)
+
+setdiff(scep@cells_w_zero_or_twoplus_grnas, zero_or_twoplus)
+setdiff(zero_or_twoplus, scep@cells_w_zero_or_twoplus_grnas)
+
+diff_idx = setdiff(scep@cells_w_zero_or_twoplus_grnas, zero_or_twoplus)
+cell_df[diff_idx,]
+
+```
+
+
+
+hmm! so there are 120k cells that don't have an umis 50 or bigger!
+
+how big are gaps?
+```{r}
+cell_df %>%
+  filter(complete.cases(.)) %>%
+  `+`(1) |> log10() |>
+  sample_n(20000) |>
+  GGally::ggpairs()
+
+# cell_df %>%
+#   filter(complete.cases(.)) %>%
+#   # `+`(1) |> log10() |>
+# ggplot(aes(x = grna_max, y = gap_1)) +
+#   geom_hex(bins = 40) +
+#     scale_fill_viridis_c(
+#     # trans = "log10",
+#     option = "plasma"
+#   ) +
+#   # scale_fill_continuous(trans = "log10") +
+#   theme_minimal() +
+#   labs(
+#     x = "max guide UMI for this cell",
+#     y = "Difference between largest and 2nd largest guide UMI for this cell",
+#     title = "Max vs top difference in guide UMI for each cell"
+#   )
+```
+
+```{r}
+log1p_trans <- scales::trans_new(
+  name = "log1p",
+  transform = log1p,
+  inverse = expm1
+)
+
+nice_log1p_breaks <- function(x) {
+  rng <- range(x, finite = TRUE)
+  breaks <- c(
+    0, 1, 2, 5,
+    10, 20, 50,
+    100, 200, 500,
+    1000, 2000, 5000,
+    10000, 20000, 50000,
+    1e5, 2e5, 5e5,
+    1e6
+  )
+  breaks[breaks >= rng[1] & breaks <= rng[2]]
+}
+
+cell_df %>%
+  filter(complete.cases(.)) %>%
+  # `+`(1) |> log10() |>
+ggplot(aes(x = grna_max, y = gap_1)) +
+  geom_hex(bins = 40) +
+  scale_x_continuous(
+    trans = log1p_trans,
+    breaks = nice_log1p_breaks,
+    labels = scales::label_number(accuracy = 1)
+  ) +
+  scale_y_continuous(
+    trans = log1p_trans,
+    breaks = nice_log1p_breaks,
+    labels = scales::label_number(accuracy = 1)
+  ) +
+  scale_fill_viridis_c(
+    # trans = "log10",
+    option = "plasma",
+    name = "Count"
+  ) +
+  theme_minimal() +
+    labs(
+    x = "max guide UMI for this cell",
+    y = "Difference between largest and 2nd largest guide UMI for this cell",
+    title = "Max vs top difference in guide UMI for non-empty cells"
+  )
+```
+
+ok i don't think max alone will be good
+
+
+what threshold should i do?
+
+
+
+
+
+
+
+ok let's look at some cell dists?
+
+- sample 
+
+```{r}
+
+path_to_data <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data",
+  "replogle-rd7",
+  "sceptre-pipeline"
+)
+scep <- sceptre::read_ondisc_backed_sceptre_object(
+  sceptre_object_fp = file.path(path_to_data, "sceptre_object.rds"),
+  response_odm_file_fp = file.path(path_to_data, "response.odm"),
+  grna_odm_file_fp = file.path(path_to_data, "grna.odm")
+)
+
+# good check!!
+cor(scep@covariate_data_frame$grna_n_nonzero, sapply(large_umis, length))
+cor(scep@covariate_data_frame$grna_n_umis, sapply(large_umis, sum))
+
+
+scep@covariate_data_frame |>
+  ggplot(aes(x = grna_n_umis)) +
+  geom_histogram() +
+  scale_x_log10()
+```
+
+
+
+
+do replogle cells have barcodes that i can use for confident removal? nope. just int idx
+
+
+
+
+
+ok, so how to get these assignments? do it as a sceptre run, or just directly ... ? well, why not. but i don't need the pipeline. in-mem will be fine probably.
+
+
+GASPERINI
+
+```{r}
+rm(list=ls())
+library(sceptre)
+source("~/.Rprofile")
+
+dataset <- "gasperini"
+THRESHOLD = 5
+
+path_to_data <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data",
+  dataset,
+  "sceptre-pipeline"
+)
+
+path_to_outputs <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/outputs",
+  dataset,
+  paste0("thresholding-", THRESHOLD)
+)
+dir.create(path_to_outputs, showWarnings = FALSE)
+
+scep <- sceptre::read_ondisc_backed_sceptre_object(
+  sceptre_object_fp = file.path(path_to_data, "sceptre_object.rds"),
+  response_odm_file_fp = file.path(path_to_data, "response.odm"),
+  grna_odm_file_fp = file.path(path_to_data, "grna.odm")
+)
+
+scep = scep |>
+  set_analysis_parameters(resampling_mechanism = "permutations", formula_object = ~1) |>
+  assign_grnas(method = "thresholding", threshold = THRESHOLD)
+
+assn_mat = get_grna_assignments(scep)
+
+## some checks before writing ~~~~~~~~~~~~~~~~
+
+grna_odm <- file.path(path_to_data, "grna.odm") |> ondisc::initialize_odm_from_backing_file()
+
+# check that guides haven't been shuffled
+if(!identical(rownames(assn_mat), rownames(grna_odm))) {
+  stop("assignment matrix rownames and odm rownames do not match.")
+}
+
+# checking that cells haven't been shuffled
+guide_to_check <- seq(1, nrow(grna_odm), by = 100)
+guides_agree <- sapply(guide_to_check, function(idx) all.equal(grna_odm[idx,] >= 5, assn_mat[idx,])) |>
+  all()
+if(!guides_agree) {
+  stop("directly computing the thresholding on the ODM leads to different cell-wise results than in the assignment matrix.")
+}
+
+## write ~~~~~~~~~~~~~~~~~~~
+saveRDS(assn_mat, file.path(path_to_outputs, "grna_assignment_matrix.rds"))
+
+```
+
+
+now repeating for replogle, except i also need to decide what cells to remove
+
+```{r}
+rm(list=ls())
+library(sceptre)
+source("~/.Rprofile")
+
+dataset <- "replogle-rd7"
+
+path_to_data <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data",
+  dataset,
+  "sceptre-pipeline"
+)
+
+# path_to_outputs <- file.path(
+#   .get_config_path("LOCAL_BENCHMARKING_DIR"),
+#   "guide_assignment/outputs",
+#   dataset,
+#   paste0("thresholding-", THRESHOLD)
+# )
+# dir.create(path_to_outputs, showWarnings = FALSE)
+
+scep <- sceptre::read_ondisc_backed_sceptre_object(
+  sceptre_object_fp = file.path(path_to_data, "sceptre_object.rds"),
+  response_odm_file_fp = file.path(path_to_data, "response.odm"),
+  grna_odm_file_fp = file.path(path_to_data, "grna.odm")
+)
+
+scep = scep |>
+  set_analysis_parameters(resampling_mechanism = "permutations", formula_object = ~1) |>
+  assign_grnas(method = "maximum")
+```
+
+```{r}
+assn_mat = get_grna_assignments(scep)
+
+## some checks before writing ~~~~~~~~~~~~~~~~
+
+grna_odm <- file.path(path_to_data, "grna.odm") |> ondisc::initialize_odm_from_backing_file()
+
+# check that guides haven't been shuffled
+if(!identical(rownames(assn_mat), rownames(grna_odm))) {
+  stop("assignment matrix rownames and odm rownames do not match.")
+}
+
+# checking that cells haven't been shuffled
+guide_to_check <- seq(1, nrow(grna_odm), by = 100)
+guides_agree <- sapply(guide_to_check, function(idx) all.equal(grna_odm[idx,] >= 5, assn_mat[idx,])) |>
+  all()
+if(!guides_agree) {
+  stop("directly computing the thresholding on the ODM leads to different cell-wise results than in the assignment matrix.")
+}
+
+## write ~~~~~~~~~~~~~~~~~~~
+saveRDS(assn_mat, file.path(path_to_outputs, "grna_assignment_matrix.rds"))
+```
+
+
+
+
+
+
+
+CRISPAT ANALYSIS
+
+```{r}
+path_to_assns = "~/data/projects/sceptre3/benchmarking/guide_assignment/outputs/run_all_3guides_100k/"
+curr_grna_mat = read_rds("~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7_assign_nguides=400_ncells=100k/sceptre/grna_matrix.rds")
+crisp_assign_raw <- file.path(path_to_assns, "assignments_crispat_replogle-rd7_assign_nguides=400_ncells=100k.csv") |>
+  read_csv(show_col_types = FALSE)
+all(crisp_assign_raw$grna_id %in% rownames(curr_grna_mat))
+guide2cells =  split(crisp_assign_raw$cell_id, crisp_assign_raw$grna_id)
+setequal(names(guide2cells), rownames(curr_grna_mat))
+
+
+
+# now i can get umi histograms for the pert cells
+
+min_pert = sapply(names(guide2cells), function(guide) {
+  assns = guide2cells[[guide]]
+  y = curr_grna_mat[guide,]
+  min(y[assns])
+}) 
+
+hist(min_pert |> log10(), 50)
+sort(min_pert)[1:20]
+
+lowest_guide = "10821_non-targeting_non-targeting_non-targeting"
+low_guide = "10073_ZFC3H1_P1P2_ENSG00000133858"
+high_guide = "1399_CDC40_P1P2_ENSG00000168438"
+highest_guide = "1586_CHMP4B_P1P2_ENSG00000101421"
+# ok... very variable. we are going as low as 5 for a bunch of these... 
+# so am i comfortable using a umi count of 5? sure, i am for gasp
+# so let's do thresh of 5 combined with max ... ?
+plot_umi_histogram(curr_grna_mat[lowest_guide,])
+mean(curr_grna_mat[lowest_guide,] >= 5) * 100  # veery few considered pert here
+
+plot_umi_histogram(curr_grna_mat[low_guide,])
+mean(curr_grna_mat[low_guide,] >= 5) * 100  # veery few considered pert here
+
+plot_umi_histogram(curr_grna_mat[high_guide,])
+mean(curr_grna_mat[high_guide,] >= 5) * 100  # veery few considered pert here
+
+# ohhh... the relly high thresholds are for BAD ones ... ??
+plot_umi_histogram(curr_grna_mat[highest_guide,])
+mean(curr_grna_mat[highest_guide,] >= 5) * 100  # veery few considered pert here
+
+
+```
+
+
+ok. i need to justify my choice here. how can i do that?
+
+i pick a threshold that is:
+
+1. scientifically reasonable
+
+2. generally matches the data: i agree that cells with UMI counts below this should not be called pert
+
+
+is 5 fine? how many cells are likely below this? 
+
+
+
+```{r}
+mean(min_pert < 5)
+
+
+cell_has_large_enough = Matrix::colSums(curr_grna_mat >= 5)
+mean(cell_has_large_enough >= 1)
+# 20% of cells have at least one guide with a UMI >= 5
+
+
+
+```
+
+ok.. now how will i go about removing these? loop thru, compute max, ? or just loop thru and any cells with guide >= 5 are safe
+
+
+```{r}
+min_umi_to_keep = 5
+
+cells_too_small <- rep(TRUE, ncol(grna_odm_repl))
+
+for(i in 1:nrow(grna_odm_repl)) {
+  y = grna_odm_repl[i,]
+  
+  cells_too_small[y >= min_umi_to_keep] <- FALSE
+}
+
+table(cells_too_small)
+
+# ok yep these agree with the full results!
+cell_df$grna_max[cells_too_small] |> table()
+cell_df$grna_max[!cells_too_small] |> min()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+checking moi of my old assignment methods
+
+```{r}
+rm(list=ls())
+source("~/.Rprofile")
+source_data <- "replogle-rd7"
+gene_qc_thresh = 7
+
+# Set up paths
+path_to_data <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data", source_data, "sceptre-pipeline"
+)
+
+path_to_assigns <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/outputs", source_data, "sceptre-pipeline"
+)
+
+scep <- sceptre::read_ondisc_backed_sceptre_object(
+  sceptre_object_fp = file.path(path_to_data, "sceptre_object.rds"),
+  response_odm_file_fp = file.path(path_to_data, "response.odm"),
+  grna_odm_file_fp = file.path(path_to_data, "grna.odm")
+)
+
+# scep_assn_mat = readRDS(file.path(path_to_assigns, "grna_assignment_matrix.rds"))
+# scep_assn_mat = readRDS(file.path("~/data/projects/sceptre3/benchmarking/guide_assignment/outputs", source_data, "thresholding-5", "grna_assignment_matrix.rds"))
+scep_assn_mat = readRDS(file.path("~/data/projects/sceptre3/benchmarking/guide_assignment/outputs", source_data, "maximum", "grna_assignment_matrix.rds"))
+
+
+grna_target_df = scep@grna_target_data_frame
+
+moi_observed <- Matrix::colSums(scep_assn_mat) |> mean()
+
+total_num_guides <- grna_target_df |>
+  filter(! grna_target %in% c("nt_off_target", "unknown")) |>
+  pull(grna_id) |>
+  unique() |>
+  length()
+
+avg_num_guides_per_target <- grna_target_df |>
+  filter(! grna_target %in% c("nt_off_target", "unknown")) |>
+  group_by(grna_target) |>
+  summarize(n=n()) |>
+  pull(n) |>
+  mean()
+
+gene_summary_stats = read_csv(file.path(path_to_data, "gene_summary_stats.csv"), show_col_types = FALSE)
+
+genes_passing_qc <- gene_summary_stats |>
+  filter(gene_n_nonzero * moi_observed / total_num_guides * avg_num_guides_per_target >= gene_qc_thresh) |>
+  pull(gene)
+
+cat(length(genes_passing_qc), " genes (out of ", nrow(gene_summary_stats), ") pass gene QC.\n", sep="")
+```
+
+
+
+
+tim question: what about using the filtering `remove cells for which the top gRNA contributes <80% of the UMIs`
+
+--> look at max / sum, see where we end up. i suspect we'll have bad behavior from small ones...
+
+i need to see the symmetric diffs between this and my QC
+
+
+
+
+```{r}
+
+cell_df |>
+  mutate(
+    max_over_tot = grna_max / grna_n_umis
+  ) |>
+  filter(grna_n_umis > 0) |>
+  sample_n(10000) |>
+  ggplot(aes(x = grna_n_umis, y = max_over_tot)) +
+  # geom_point() +
+  geom_jitter(width = .05, height = .025, size = .5, alpha = .4) +
+  scale_x_log10() +
+  geom_hline(yintercept = .8, color = "red4", linetype="dashed")
+
+cell_df |>
+  mutate(
+    max_over_tot = grna_max / grna_n_umis
+  ) |>
+  filter(grna_n_umis > 0) |>
+  # sample_n(10000) |>
+  ggplot(aes(x = grna_n_umis, y = max_over_tot)) +
+  geom_hex(bins = 40) +
+  scale_x_log10() +
+  # scale_y_continuous(
+  #   trans = log1p_trans,
+  #   breaks = nice_log1p_breaks,
+  #   labels = scales::label_number(accuracy = 1)
+  # ) +
+  scale_fill_viridis_c(
+    trans = "log10",
+    option = "plasma",
+    name = "Count"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = .8, linetype="dashed", color="green") +
+  labs(
+    x = "cell UMI total (log10 scale)",
+    y = "cell max / cell total",
+    title = "Max/Tot vs Tot for Replogle cells",
+    subtitle = "aaa"
+  )
+
+```
+
+what is my QC? max < 5 are removed
+
+```{r}
+cell_df |>
+  mutate(
+    max_over_tot = grna_max / grna_n_umis,
+    scep_qc = max_over_tot >= .8,
+    my_qc = grna_max >= 5
+  ) |>
+  group_by(scep_qc, my_qc) |>
+  summarize(n=n())
+```
+
+```{r}
+log1p_trans <- scales::trans_new(
+  name = "log1p",
+  transform = log1p,
+  inverse = expm1
+)
+
+nice_log1p_breaks <- function(x) {
+  rng <- range(x, finite = TRUE)
+  breaks <- c(
+    0, 1, 2, 5,
+    10, 20, 50,
+    100, 500,
+    1000,  5000,
+    10000,  50000,
+    1e5, 5e5,
+    1e6
+  )
+  breaks[breaks >= rng[1] & breaks <= rng[2]]
+}
+
+
+cell_df |>
+  mutate(
+    max_over_tot = grna_max / grna_n_umis,
+    scep_qc = max_over_tot >= .8,
+    thresh_qc = grna_max >= 5
+  ) |>
+  ggplot(aes(x = grna_n_umis)) +
+  geom_histogram(bins=50) +
+  facet_wrap(scep_qc ~ thresh_qc) +
+   scale_x_continuous(
+    trans = log1p_trans,
+    breaks = nice_log1p_breaks,
+    labels = scales::label_number(accuracy = 1)
+  ) +
+  theme_bw()
+
+
+```
+
+
+```{r}
+log1p_trans <- scales::trans_new(
+  name = "log1p",
+  transform = log1p,
+  inverse = expm1
+)
+
+nice_log1p_breaks <- function(x) {
+  rng <- range(x, finite = TRUE)
+  breaks <- c(
+    0, 1, 2, 5,
+    10, 
+    100, 
+    1000,
+    10000, 
+    1e5,
+    1e6
+  )
+  breaks[breaks >= rng[1] & breaks <= rng[2]]
+}
+
+label_scientific_10 <- function(x) {
+  sapply(x, function(z) {
+    if (is.na(z)) return(NA_character_)
+    if (z <= 10) return(as.character(z))
+
+    exponent <- floor(log10(z))
+    coefficient <- z / 10^exponent
+
+    if (abs(coefficient - 1) < 1e-10) {
+      paste0("10^", exponent)
+    } else {
+      paste0(coefficient, " %*% 10^", exponent)
+    }
+  }) |>
+    parse(text = _)
+}
+
+cell_df |>
+  mutate(
+    max_over_tot = grna_max / grna_n_umis,
+    pass_sceptre_qc = max_over_tot >= .8,
+    pass_thresh_5_qc = grna_max >= 5
+  ) |>
+  ggplot(aes(x = grna_n_umis)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(
+    pass_sceptre_qc ~ pass_thresh_5_qc,
+    labeller = label_both
+  ) +
+  scale_x_continuous(
+    trans = log1p_trans,
+    breaks = nice_log1p_breaks,
+    labels = label_scientific_10
+  ) +
+  theme_bw()
+
+cell_df |>
+  mutate(
+    max_over_tot = grna_max / grna_n_umis,
+    pass_sceptre_qc = max_over_tot >= .8,
+    pass_thresh_5_qc = grna_max >= 5
+  ) |>
+  ggplot(aes(x = grna_n_umis, y = grna_max)) +
+  # geom_point(size=.5, alpha = .4) +
+  geom_hex(bins = 40) +
+  facet_wrap(
+    pass_sceptre_qc ~ pass_thresh_5_qc,
+    labeller = label_both
+  ) +
+  scale_x_continuous(
+    trans = log1p_trans,
+    breaks = nice_log1p_breaks,
+    labels = label_scientific_10
+  ) +
+  scale_y_continuous(
+    trans = log1p_trans,
+    breaks = nice_log1p_breaks,
+    labels = label_scientific_10
+  ) +
+  theme_bw() +
+    scale_fill_viridis_c(
+    trans = "log10",
+    option = "plasma",
+    name = "Count"
+  ) +
+  labs(title = "Replogle: QC differences", x = "cell UMI total", y = "cell max UMI")
+```
+
+
+```{r}
+cell_df |>
+  mutate(
+    max_over_tot = grna_max / grna_n_umis,
+    pass_sceptre_qc = max_over_tot >= .8,
+    pass_thresh_5_qc = grna_max >= 5
+  ) |>
+  ggplot(aes(x = grna_n_umis, y = grna_max)) +
+  # geom_point(size=.5, alpha = .4) +
+  geom_hex(bins = 40) +
+  facet_wrap(
+    pass_sceptre_qc ~ pass_thresh_5_qc,
+    labeller = label_both
+  ) +
+  scale_x_continuous(
+    trans = log1p_trans,
+    breaks = nice_log1p_breaks,
+    labels = label_scientific_10
+  ) +
+  scale_y_continuous(
+    trans = log1p_trans,
+    breaks = nice_log1p_breaks,
+    labels = label_scientific_10
+  ) +
+  theme_bw() +
+    scale_fill_viridis_c(
+    trans = "log10",
+    option = "plasma",
+    name = "Count"
+  ) +
+  labs(title = "Replogle: QC differences", x = "cell UMI total", y = "cell max UMI")
+```
+
+
+
+ok so scep_qc let's very few in that i don't. those are all junk cells, but only a couple thousand isn't a lot.
+
+my_qc lets MANY cells in that sceptre doesn't. i keep 500k cells. scep_qc keeps 300k. 
+
+let's look at some dists for this
