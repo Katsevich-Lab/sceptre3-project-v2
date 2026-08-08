@@ -4,7 +4,7 @@ set -euo pipefail
 # Select which run to execute
 # RUN_ID="test_100genes"
 # RUN_ID="small_500genes"
-RUN_ID="test_sceptregampoi"
+RUN_ID="test_frpert"
 
 OUT_BASE="$HOME/data/projects/sceptre3/benchmarking/association/computational/outputs"
 OUT_DIR="${OUT_BASE}/${RUN_ID}"
