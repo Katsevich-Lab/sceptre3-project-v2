@@ -50,6 +50,18 @@ scep = scep |>
 
 assn_mat = get_grna_assignments(scep)
 
+
+# 
+# targets = scep@grna_target_data_frame$grna_target
+# genes = file.path(path_to_data, "response.odm") |> ondisc::initialize_odm_from_backing_file()
+# sum(targets %in% rownames(genes))
+# on_targets = targets[targets %in% rownames(genes)]
+# scep@grna_target_data_frame |>
+#   filter(targets %in% on_targets) |>
+#   pull(grna_id) |>
+#   unique() |>
+#   length()
+
 ## some checks before writing ~~~~~~~~~~~~~~~~
 
 grna_odm <- file.path(path_to_data, "grna.odm") |> ondisc::initialize_odm_from_backing_file()

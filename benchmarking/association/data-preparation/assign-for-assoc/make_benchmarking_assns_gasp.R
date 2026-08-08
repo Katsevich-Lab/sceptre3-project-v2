@@ -31,6 +31,20 @@ scep <- sceptre::read_ondisc_backed_sceptre_object(
   response_odm_file_fp = file.path(path_to_data, "response.odm"),
   grna_odm_file_fp = file.path(path_to_data, "grna.odm")
 )
+
+# targets = scep@grna_target_data_frame$grna_target
+# genes = file.path(path_to_data, "response.odm") |> ondisc::initialize_odm_from_backing_file()
+# sum(targets %in% rownames(genes))
+# on_targets = targets[targets %in% rownames(genes)]
+# scep@grna_target_data_frame |>
+#   filter(targets %in% on_targets) |>
+#   pull(grna_id) |>
+#   unique() |>
+#   length()
+
+
+
+
 if(scep@low_moi) {
   stop("The loaded sceptre_object has low MOI but this is Gasperini and it should be high MOI!")
 }
@@ -40,6 +54,8 @@ scep = scep |>
   assign_grnas(method = "thresholding", threshold = THRESHOLD)
 
 assn_mat = get_grna_assignments(scep)
+
+scep@cells_w_zero_or_twoplus_grnas
 
 ## some checks before writing ~~~~~~~~~~~~~~~~
 
