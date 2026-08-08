@@ -1,0 +1,746 @@
+---
+title: "Overprediction & offsets — Replogle: glmpois_poisbug vs glmpoisallgrnafix_poisbug vs glmpoisallgrnafix_poisfix"
+output: html_document
+---
+
+Investigate Replogle guides where current SCEPTRE (`glmpois_poisbug`) makes far
+too many positive assignments, and relate the overprediction to the offset-GLM
+coefficients, the reconstructed per-cell offsets `o_j = log(mu0)`, the total
+gRNA UMIs per cell (`grna_n_umis`), and assignment status.
+
+Model recap (`glmpois_poisbug`: family `pois`, `fix_curr_g_pert_bug = FALSE`):
+
+- non-pert cell `~ Pois(mu0)`, `mu0 = exp(o_j)`, `o_j = X %*% beta`
+- perturbed cell `~ Pois(mu0 + gamma)` (bugged ADDITIVE count bump)
+
+Each plot has a twin (`... -ag`) drawn with the results from
+`glmpoisallgrnafix_poisbug` (grnafix circularity-corrected grna covariates +
+uncorrected response covariates). The guide **selection** is fixed by
+`glmpois_poisbug` (the overpredicting method) and reused for both, so the twins
+show how those same guides behave under the new offset.
+
+**Every plot chunk below depends ONLY on the `setup` chunk** — for either offset.
+Run `setup` plus any one plot chunk; nothing else. Everything shared is in `setup`.
+
+```{r setup, message=FALSE, warning=FALSE}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(Matrix)
+})
+
+## --- config --------------------------------------------------------------
+BM     <- "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment"
+DS     <- "replogle-rd7_assign_nguides=800_ncells=100k"
+IN     <- file.path(BM, "input_data", DS, "sceptre")
+TAIL_THRESH <- 10   # "upper tail" = counts >= this
+
+# Each method: display name, the outputs run dir it lives in, and the offset
+# "kind" used to reconstruct per-cell o_j (shared model.matrix vs per-guide
+# circularity-corrected design). Guide selection is fixed by REF.
+METHODS <- list(
+  pb = list(name = "glmpois_poisbug",
+            out  = file.path(BM, "outputs", "script_real_data"),
+            kind = "shared"),
+  ag = list(name = "glmpoisallgrnafix_poisbug",
+            out  = file.path(BM, "outputs", "run_grnafix_sceptre"),
+            kind = "allgrnafix"),
+  bf = list(name = "glmpoisallgrnafix_poisfix",
+            out  = file.path(BM, "outputs", "run_grnafix_bugfix_sceptre"),
+            kind = "allgrnafix")
+)
+
+## --- shared load (method-independent) ------------------------------------
+grna_matrix <- readRDS(file.path(IN, "grna_matrix.rds"))
+guide_names <- rownames(grna_matrix)
+genes       <- vapply(strsplit(guide_names, "_", fixed = TRUE), function(z) z[[2]], character(1))
+cov_df0     <- read.csv(file.path(IN, "cell_covariates.csv"))
+
+grna_n_umis    <- Matrix::colSums(grna_matrix)        # per-cell totals over all guides
+grna_n_nonzero <- Matrix::colSums(grna_matrix > 0)
+response_umis  <- as.numeric(cov_df0$response_n_umis_full)
+response_nnz   <- as.numeric(cov_df0$response_n_nonzero_full)
+
+# shared covariate matrix for the glmpois (shared-X) offset
+build_covariate_matrix <- function(input_dir, grna_matrix) {
+  cov_df <- read.csv(file.path(input_dir, "cell_covariates.csv"))
+  formula <- as.formula(readRDS(file.path(input_dir, "formula_object.rds")))
+  cov_df$grna_n_nonzero <- Matrix::colSums(grna_matrix > 0)
+  cov_df$grna_n_umis    <- Matrix::colSums(grna_matrix)
+  X <- model.matrix(object = formula, data = cov_df)
+  stopifnot(nrow(X) == ncol(grna_matrix))
+  X
+}
+X <- build_covariate_matrix(IN, grna_matrix)
+
+tail_mean <- apply(grna_matrix, 1, function(y) {
+  y <- as.numeric(y); t <- y[y >= TAIL_THRESH]; if (length(t) == 0) NA_real_ else mean(t)
+})
+n_ge10    <- Matrix::rowSums(grna_matrix >= TAIL_THRESH)
+n_nonzero <- Matrix::rowSums(grna_matrix > 0)   # per-GUIDE nonzero-cell count
+
+## --- per-cell offset reconstruction o_j = log(mu0) -----------------------
+# glmpois: shared model.matrix X. allgrnafix: per-guide circularity-corrected X
+# (guide's own count removed from the grna covariates; response covars uncorrected).
+recon_offset <- function(id, coef, kind) {
+  if (kind == "shared") return(as.numeric(X %*% coef))
+  if (kind == "allgrnafix") {
+    y          <- as.numeric(grna_matrix[id, ])
+    other_umis <- pmax(grna_n_umis    - y,                 0)
+    other_nnz  <- pmax(grna_n_nonzero - as.numeric(y > 0), 0)
+    Xg <- cbind(1, log1p(other_umis), log1p(other_nnz),
+                log1p(response_umis), log1p(response_nnz))
+    return(as.numeric(Xg %*% coef))
+  }
+  stop("unknown offset kind: ", kind)
+}
+
+## --- load one method: coefficients, gamma, assignments -------------------
+load_method <- function(m) {
+  assn   <- readRDS(file.path(m$out, paste0("assignment_matrix_script_", m$name, "_", DS, ".rds")))
+  extras <- readRDS(file.path(m$out, paste0("assignment_extras_script_",  m$name, "_", DS, ".rds")))
+  stopifnot(all(rownames(grna_matrix) == rownames(assn)))
+  ex <- function(id) {
+    co <- extras$per_guide[[id]]$offset_model_summary$coefficients
+    if (is.null(co)) return(NULL); co[is.na(co)] <- 0; co
+  }
+  cn   <- names(ex(guide_names[1]))
+  cmat <- t(vapply(guide_names, function(id) {
+    co <- ex(id); if (is.null(co)) rep(NA_real_, length(cn)) else as.numeric(co)
+  }, numeric(length(cn))))
+  colnames(cmat) <- cn
+  gam <- vapply(guide_names, function(id) {
+    v <- extras$per_guide[[id]]$em_g_pert
+    if (is.null(v) || length(v) != 1) NA_real_ else as.numeric(v)
+  }, numeric(1))
+  list(cfg = m, assn = assn, coef_names = cn, coef_mat = cmat,
+       gamma = gam, n_assign = Matrix::rowSums(assn))
+}
+
+make_guide_df <- function(M) {
+  tibble(grna_id = guide_names, gene = genes, tail_mean = tail_mean,
+         n_assign = M$n_assign, n_ge10 = n_ge10, n_nonzero = n_nonzero, gamma = M$gamma,
+         overpred_ratio = M$n_assign / pmax(n_ge10, 1)) |>
+    bind_cols(as_tibble(M$coef_mat))
+}
+
+M_pb <- load_method(METHODS$pb)
+M_ag <- load_method(METHODS$ag)
+M_bf <- load_method(METHODS$bf)
+
+## --- guide selection from the REFERENCE method (glmpois_poisbug) ----------
+ref_df <- make_guide_df(M_pb)
+q_tail <- quantile(ref_df$tail_mean, 0.75, na.rm = TRUE)
+overpred_ids <- ref_df |>
+  filter(tail_mean >= q_tail) |>
+  slice_max(n_assign, n = 8, with_ties = FALSE) |>
+  pull(grna_id)
+q1_tail <- min(quantile(ref_df$tail_mean, 0.25, na.rm = TRUE), 1000)
+control_ids <- ref_df |>
+  filter(tail_mean <= q1_tail, tail_mean < 1000) |>
+  slice_min(n_assign, n = 8, with_ties = FALSE) |>
+  pull(grna_id)
+high4    <- head(overpred_ids, 4)
+low4     <- head(control_ids, 4)
+hist_ids <- c(overpred_ids, control_ids)
+grp      <- setNames(c(rep("overprediction", length(overpred_ids)),
+                       rep("low-tail (control)", length(control_ids))), hist_ids)
+gene_of  <- function(ids) genes[match(ids, guide_names)]
+
+add_picked <- function(df) df |>
+  mutate(picked = ifelse(grna_id %in% overpred_ids, "overprediction", "other"))
+
+# per-cell offsets for the 16 histogram guides, using this method's coefficients
+# + offset kind; facet labels carry this method's own n_assign.
+make_off_long <- function(M) {
+  kind <- M$cfg$kind
+  ol <- map_dfr(hist_ids, function(id) {
+    o <- recon_offset(id, M$coef_mat[id, ], kind)
+    tibble(grna_id = id, gene = gene_of(id), group = grp[[id]], o = o,
+           assigned = as.logical(M$assn[id, ]), log_grna_n_umis = log1p(grna_n_umis))
+  })
+  lab <- tibble(
+    grna_id   = hist_ids,
+    facet_lab = sprintf("%s\n(tail %.0f, n_assn %d)",
+                        gene_of(hist_ids), tail_mean[match(hist_ids, guide_names)],
+                        M$n_assign[hist_ids])
+  )
+  ol <- ol |> left_join(lab, by = "grna_id")
+  ol$facet_lab <- factor(ol$facet_lab, levels = lab$facet_lab[match(hist_ids, lab$grna_id)])
+  ol
+}
+
+## --- per-method plotting objects -----------------------------------------
+# poisbug (un-suffixed = the default objects the base plot chunks use)
+guide_df   <- add_picked(ref_df)
+coef_names <- M_pb$coef_names
+gamma      <- M_pb$gamma
+off_long   <- make_off_long(M_pb)
+
+# allgrnafix (_ag objects, used by the twin chunks)
+guide_df_ag   <- add_picked(make_guide_df(M_ag))
+coef_names_ag <- M_ag$coef_names
+off_long_ag   <- make_off_long(M_ag)
+
+# allgrnafix + poisfix mixture (_bf objects, used by the -bf twin chunks)
+guide_df_bf   <- add_picked(make_guide_df(M_bf))
+coef_names_bf <- M_bf$coef_names
+off_long_bf   <- make_off_long(M_bf)
+
+## --- selection summaries -------------------------------------------------
+guide_df |> filter(grna_id %in% overpred_ids) |>
+  select(gene, tail_mean, n_assign, n_ge10, overpred_ratio, gamma, `(Intercept)`) |>
+  arrange(desc(n_assign))
+guide_df |> filter(grna_id %in% control_ids) |>
+  select(gene, tail_mean, n_assign, n_ge10, overpred_ratio, gamma, `(Intercept)`)
+```
+
+## (a) #assignments vs upper-tail mean
+
+All guides; picked overpredictors highlighted.
+
+```{r plot-a, fig.width=7.5, fig.height=5.5}
+pa <- ggplot(guide_df, aes(tail_mean, n_assign)) +
+  geom_point(data = filter(guide_df, picked == "other"),
+             colour = "grey70", alpha = 0.6, size = 1.3) +
+  geom_point(data = filter(guide_df, picked == "overprediction"),
+             colour = "firebrick", size = 2.6) +
+  geom_text(
+    data = filter(guide_df, picked == "overprediction"),
+    aes(label = gene), colour = "firebrick", size = 3,
+    vjust = -0.7, check_overlap = TRUE) +
+  labs(x = "Upper-tail mean  mean(y | y >= 10)", y = "# assignments (glmpois_poisbug)",
+       title = "Replogle: assignments vs upper-tail mean",
+       subtitle = "Red = heavy-tail, heavily-overpredicting guides picked for study") +
+  theme_bw()
+print(pa)
+```
+
+### (a-ag) same, glmpoisallgrnafix_poisbug
+
+```{r plot-a-ag, fig.width=7.5, fig.height=5.5}
+pa_ag <- ggplot(guide_df_ag, aes(tail_mean, n_assign)) +
+  geom_point(data = filter(guide_df_ag, picked == "other"),
+             colour = "grey70", alpha = 0.6, size = 1.3) +
+  geom_point(data = filter(guide_df_ag, picked == "overprediction"),
+             colour = "firebrick", size = 2.6) +
+  geom_text(
+    data = filter(guide_df_ag, picked == "overprediction"),
+    aes(label = gene), colour = "firebrick", size = 3,
+    vjust = -0.7, check_overlap = TRUE) +
+  labs(x = "Upper-tail mean  mean(y | y >= 10)", y = "# assignments (glmpoisallgrnafix_poisbug)",
+       title = "Replogle (allgrnafix): assignments vs upper-tail mean",
+       subtitle = "Red = same guides picked as glmpois_poisbug overpredictors") +
+  theme_bw()
+print(pa_ag)
+```
+
+### (a-bf) same, glmpoisallgrnafix_poisfix
+
+```{r plot-a-bf, fig.width=7.5, fig.height=5.5}
+pa_bf <- ggplot(guide_df_bf, aes(tail_mean, n_assign)) +
+  geom_point(data = filter(guide_df_bf, picked == "other"),
+             colour = "grey70", alpha = 0.6, size = 1.3) +
+  geom_point(data = filter(guide_df_bf, picked == "overprediction"),
+             colour = "firebrick", size = 2.6) +
+  geom_text(
+    data = filter(guide_df_bf, picked == "overprediction"),
+    aes(label = gene), colour = "firebrick", size = 3,
+    vjust = -0.7, check_overlap = TRUE) +
+  labs(x = "Upper-tail mean  mean(y | y >= 10)", y = "# assignments (glmpoisallgrnafix_poisfix)",
+       title = "Replogle (allgrnafix + poisfix): assignments vs upper-tail mean",
+       subtitle = "Red = same guides picked as glmpois_poisbug overpredictors") +
+  theme_bw()
+print(pa_bf)
+```
+
+## (b) offset-GLM coefficients vs upper-tail mean
+
+One facet per coefficient; picked overpredictors highlighted.
+
+```{r plot-b, fig.width=9, fig.height=6}
+# Spearman correlation between the upper-tail mean and each offset coefficient
+# (over all guides) -- i.e. how each coefficient (plot b's y-axes) tracks tail mean.
+tail_coef_spearman <- tibble(
+  coef = coef_names,
+  spearman_rho = vapply(coef_names, function(cn)
+    cor(guide_df$tail_mean, guide_df[[cn]], method = "spearman", use = "complete.obs"),
+    numeric(1)),
+  median_beta = vapply(coef_names, function(cn)
+    median(guide_df[[cn]], na.rm = TRUE), numeric(1))
+)
+
+
+beta_long <- guide_df |>
+  select(grna_id, gene, tail_mean, picked, all_of(coef_names)) |>
+  pivot_longer(all_of(coef_names), names_to = "coef", values_to = "beta") |>
+  mutate(coef = factor(coef, levels = coef_names))
+pb <- ggplot(beta_long, aes(tail_mean, beta)) +
+  geom_point(data = filter(beta_long, picked == "other"),
+             colour = "grey70", alpha = 0.5, size = 1) +
+  geom_point(data = filter(beta_long, picked == "overprediction"),
+             colour = "firebrick", size = 2) +
+  facet_wrap(~ coef, scales = "free_y") +
+  labs(x = "Upper-tail mean  mean(y | y >= 10)", y = "offset-GLM coefficient (beta)",
+       title = "Replogle: offset-GLM coefficients vs upper-tail mean",
+       subtitle = "Red = picked overpredicting guides; facet = coefficient") +
+  theme_bw()
+print(pb)
+print(tail_coef_spearman)
+```
+
+### (b-ag) same, glmpoisallgrnafix_poisbug
+
+```{r plot-b-ag, fig.width=9, fig.height=6}
+tail_coef_spearman_ag <- tibble(
+  coef = coef_names_ag,
+  spearman_rho = vapply(coef_names_ag, function(cn)
+    cor(guide_df_ag$tail_mean, guide_df_ag[[cn]], method = "spearman", use = "complete.obs"),
+    numeric(1)),
+  median_beta = vapply(coef_names_ag, function(cn)
+    median(guide_df_ag[[cn]], na.rm = TRUE), numeric(1))
+)
+
+
+beta_long_ag <- guide_df_ag |>
+  select(grna_id, gene, tail_mean, picked, all_of(coef_names_ag)) |>
+  pivot_longer(all_of(coef_names_ag), names_to = "coef", values_to = "beta") |>
+  mutate(coef = factor(coef, levels = coef_names_ag))
+pb_ag <- ggplot(beta_long_ag, aes(tail_mean, beta)) +
+  geom_point(data = filter(beta_long_ag, picked == "other"),
+             colour = "grey70", alpha = 0.5, size = 1) +
+  geom_point(data = filter(beta_long_ag, picked == "overprediction"),
+             colour = "firebrick", size = 2) +
+  facet_wrap(~ coef, scales = "free_y") +
+  labs(x = "Upper-tail mean  mean(y | y >= 10)", y = "offset-GLM coefficient (beta)",
+       title = "Replogle (allgrnafix): offset-GLM coefficients vs upper-tail mean",
+       subtitle = "Red = picked (glmpois_poisbug) overpredicting guides; facet = coefficient") +
+  theme_bw()
+print(pb_ag)
+print(tail_coef_spearman_ag)
+```
+
+### (b-bf) same, glmpoisallgrnafix_poisfix
+
+```{r plot-b-bf, fig.width=9, fig.height=6}
+tail_coef_spearman_bf <- tibble(
+  coef = coef_names_bf,
+  spearman_rho = vapply(coef_names_bf, function(cn)
+    cor(guide_df_bf$tail_mean, guide_df_bf[[cn]], method = "spearman", use = "complete.obs"),
+    numeric(1)),
+  median_beta = vapply(coef_names_bf, function(cn)
+    median(guide_df_bf[[cn]], na.rm = TRUE), numeric(1))
+)
+
+
+beta_long_bf <- guide_df_bf |>
+  select(grna_id, gene, tail_mean, picked, all_of(coef_names_bf)) |>
+  pivot_longer(all_of(coef_names_bf), names_to = "coef", values_to = "beta") |>
+  mutate(coef = factor(coef, levels = coef_names_bf))
+pb_bf <- ggplot(beta_long_bf, aes(tail_mean, beta)) +
+  geom_point(data = filter(beta_long_bf, picked == "other"),
+             colour = "grey70", alpha = 0.5, size = 1) +
+  geom_point(data = filter(beta_long_bf, picked == "overprediction"),
+             colour = "firebrick", size = 2) +
+  facet_wrap(~ coef, scales = "free_y") +
+  labs(x = "Upper-tail mean  mean(y | y >= 10)", y = "offset-GLM coefficient (beta)",
+       title = "Replogle (allgrnafix + poisfix): offset-GLM coefficients vs upper-tail mean",
+       subtitle = "Red = picked (glmpois_poisbug) overpredicting guides; facet = coefficient") +
+  theme_bw()
+print(pb_bf)
+print(tail_coef_spearman_bf)
+```
+
+## (c) per-cell offset histograms (all cells)
+
+4x4: top 2 rows overpredictors, bottom 2 rows low-tail controls.
+
+```{r plot-c, fig.width=11, fig.height=9}
+pc <- ggplot(off_long, aes(o, fill = group)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~ facet_lab, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = c("overprediction" = "firebrick",
+                               "low-tail (control)" = "steelblue")) +
+  labs(x = expression("per-cell offset  " * o[j] == log(mu[0]) * "  (link scale)"),
+       y = "cell count",
+       title = "Per-cell offset distributions o_j (link scale)",
+       subtitle = "Top 2 rows: overpredicting guides. Bottom 2 rows: low-tail controls.") +
+  theme_bw() +
+  theme(legend.position = "bottom", strip.text = element_text(size = 7))
+pc
+```
+
+### (c-ag) same, glmpoisallgrnafix_poisbug
+
+```{r plot-c-ag, fig.width=11, fig.height=9}
+pc_ag <- ggplot(off_long_ag, aes(o, fill = group)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~ facet_lab, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = c("overprediction" = "firebrick",
+                               "low-tail (control)" = "steelblue")) +
+  labs(x = expression("per-cell offset  " * o[j] == log(mu[0]) * "  (link scale)"),
+       y = "cell count",
+       title = "allgrnafix: per-cell offset distributions o_j (link scale)",
+       subtitle = "Top 2 rows: (poisbug-picked) overpredictors. Bottom 2 rows: low-tail controls.") +
+  theme_bw() +
+  theme(legend.position = "bottom", strip.text = element_text(size = 7))
+pc_ag
+```
+
+### (c-bf) same, glmpoisallgrnafix_poisfix
+
+```{r plot-c-bf, fig.width=11, fig.height=9}
+pc_bf <- ggplot(off_long_bf, aes(o, fill = group)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~ facet_lab, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = c("overprediction" = "firebrick",
+                               "low-tail (control)" = "steelblue")) +
+  labs(x = expression("per-cell offset  " * o[j] == log(mu[0]) * "  (link scale)"),
+       y = "cell count",
+       title = "allgrnafix + poisfix: per-cell offset distributions o_j (link scale)",
+       subtitle = "Top 2 rows: (poisbug-picked) overpredictors. Bottom 2 rows: low-tail controls.") +
+  theme_bw() +
+  theme(legend.position = "bottom", strip.text = element_text(size = 7))
+pc_bf
+```
+
+## (c2) per-cell offset histograms (assigned cells only)
+
+Same guides, restricted to the cells each guide assigned.
+
+```{r plot-c2, fig.width=11, fig.height=9}
+pc2 <- off_long |> filter(assigned) |>
+  ggplot(aes(o, fill = group)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~ facet_lab, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = c("overprediction" = "firebrick",
+                               "low-tail (control)" = "steelblue")) +
+  labs(x = expression("per-cell offset  " * o[j] == log(mu[0]) * "  (link scale)"),
+       y = "assigned-cell count",
+       title = "Per-cell offset distributions o_j - ASSIGNED cells only",
+       subtitle = "Top 2 rows: overpredicting guides. Bottom 2 rows: low-tail controls.") +
+  theme_bw() +
+  theme(legend.position = "bottom", strip.text = element_text(size = 7))
+pc2
+```
+
+### (c2-ag) same, glmpoisallgrnafix_poisbug
+
+```{r plot-c2-ag, fig.width=11, fig.height=9}
+pc2_ag <- off_long_ag |> filter(assigned) |>
+  ggplot(aes(o, fill = group)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~ facet_lab, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = c("overprediction" = "firebrick",
+                               "low-tail (control)" = "steelblue")) +
+  labs(x = expression("per-cell offset  " * o[j] == log(mu[0]) * "  (link scale)"),
+       y = "assigned-cell count",
+       title = "allgrnafix: per-cell offset distributions o_j - ASSIGNED cells only",
+       subtitle = "Top 2 rows: (poisbug-picked) overpredictors. Bottom 2 rows: low-tail controls.") +
+  theme_bw() +
+  theme(legend.position = "bottom", strip.text = element_text(size = 7))
+pc2_ag
+```
+
+### (c2-bf) same, glmpoisallgrnafix_poisfix
+
+```{r plot-c2-bf, fig.width=11, fig.height=9}
+pc2_bf <- off_long_bf |> filter(assigned) |>
+  ggplot(aes(o, fill = group)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~ facet_lab, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = c("overprediction" = "firebrick",
+                               "low-tail (control)" = "steelblue")) +
+  labs(x = expression("per-cell offset  " * o[j] == log(mu[0]) * "  (link scale)"),
+       y = "assigned-cell count",
+       title = "allgrnafix + poisfix: per-cell offset distributions o_j - ASSIGNED cells only",
+       subtitle = "Top 2 rows: (poisbug-picked) overpredictors. Bottom 2 rows: low-tail controls.") +
+  theme_bw() +
+  theme(legend.position = "bottom", strip.text = element_text(size = 7))
+pc2_bf
+```
+
+## (c3) per-cell offset histograms (unassigned cells only)
+
+```{r plot-c3, fig.width=11, fig.height=9}
+pc3 <- off_long |> filter(!assigned) |>
+  ggplot(aes(o, fill = group)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~ facet_lab, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = c("overprediction" = "firebrick",
+                               "low-tail (control)" = "steelblue")) +
+  labs(x = expression("per-cell offset  " * o[j] == log(mu[0]) * "  (link scale)"),
+       y = "assigned-cell count",
+       title = "Per-cell offset distributions o_j - UNASSIGNED cells only",
+       subtitle = "Top 2 rows: overpredicting guides. Bottom 2 rows: low-tail controls.") +
+  theme_bw() +
+  theme(legend.position = "bottom", strip.text = element_text(size = 7))
+pc3
+```
+
+### (c3-ag) same, glmpoisallgrnafix_poisbug
+
+```{r plot-c3-ag, fig.width=11, fig.height=9}
+pc3_ag <- off_long_ag |> filter(!assigned) |>
+  ggplot(aes(o, fill = group)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~ facet_lab, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = c("overprediction" = "firebrick",
+                               "low-tail (control)" = "steelblue")) +
+  labs(x = expression("per-cell offset  " * o[j] == log(mu[0]) * "  (link scale)"),
+       y = "assigned-cell count",
+       title = "allgrnafix: per-cell offset distributions o_j - UNASSIGNED cells only",
+       subtitle = "Top 2 rows: (poisbug-picked) overpredictors. Bottom 2 rows: low-tail controls.") +
+  theme_bw() +
+  theme(legend.position = "bottom", strip.text = element_text(size = 7))
+pc3_ag
+```
+
+### (c3-bf) same, glmpoisallgrnafix_poisfix
+
+```{r plot-c3-bf, fig.width=11, fig.height=9}
+pc3_bf <- off_long_bf |> filter(!assigned) |>
+  ggplot(aes(o, fill = group)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~ facet_lab, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = c("overprediction" = "firebrick",
+                               "low-tail (control)" = "steelblue")) +
+  labs(x = expression("per-cell offset  " * o[j] == log(mu[0]) * "  (link scale)"),
+       y = "assigned-cell count",
+       title = "allgrnafix + poisfix: per-cell offset distributions o_j - UNASSIGNED cells only",
+       subtitle = "Top 2 rows: (poisbug-picked) overpredictors. Bottom 2 rows: low-tail controls.") +
+  theme_bw() +
+  theme(legend.position = "bottom", strip.text = element_text(size = 7))
+pc3_bf
+```
+
+
+
+observations:
+- on UNASSIGNED there is a second mode to the offsets, clearly for the big tail means, there but not as strong for the low tail means
+- on ASSIGNED, there are very few points in the small mean histograms.
+    - conclusion: very few points on small mean guides get called assigned.
+      - so restricting to ASSIGNED isn't useful for small mean guides
+      - and those guides are only flagged as being expressed by a couple cells.
+
+
+
+## (d) offset vs total gRNA UMIs, split by assignment
+
+Hypothesis: `grna_n_umis` (total gRNA UMIs per cell) is the culprit — Replogle is
+heavy-tailed enough that a cell's max single-guide UMI ~ its gRNA-UMI sum, so the
+offset leans on a feature that partly echoes the response. Each guide gets two
+hexbins of `o_j` vs `log1p(grna_n_umis)`: assigned cells and unassigned cells.
+4x4, **each row shares assignment status** — rows 1-2 are the 4 overpred guides
+(assigned / unassigned), rows 3-4 the 4 low-tail controls.
+
+```{r plot-d, fig.width=12, fig.height=11}
+panel_levels <- c(
+  paste0(gene_of(high4), " | assigned"),
+  paste0(gene_of(high4), " | unassigned"),
+  paste0(gene_of(low4),  " | assigned"),
+  paste0(gene_of(low4),  " | unassigned")
+)
+hex_df <- off_long |>
+  filter(grna_id %in% c(high4, low4)) |>
+  mutate(status = ifelse(assigned, "assigned", "unassigned"),
+         panel  = factor(paste0(gene, " | ", status), levels = panel_levels))
+
+pd <- ggplot(hex_df, aes(log_grna_n_umis, o)) +
+  geom_hex(bins = 40) +
+  facet_wrap(~ panel, ncol = 4) +
+  scale_fill_viridis_c(trans = "log10", name = "cells") +
+  labs(x = "log1p(grna_n_umis)  (total gRNA UMIs in cell)",
+       y = expression("offset  " * o[j] == log(mu[0])),
+       title = "Offset vs total gRNA UMIs, split by assignment",
+       subtitle = "Rows 1-2: overpred guides (assigned / unassigned). Rows 3-4: low-tail controls.") +
+  theme_bw() +
+  theme(strip.text = element_text(size = 7))
+pd
+```
+
+### (d-ag) same, glmpoisallgrnafix_poisbug
+
+```{r plot-d-ag, fig.width=12, fig.height=11}
+panel_levels_ag <- c(
+  paste0(gene_of(high4), " | assigned"),
+  paste0(gene_of(high4), " | unassigned"),
+  paste0(gene_of(low4),  " | assigned"),
+  paste0(gene_of(low4),  " | unassigned")
+)
+hex_df_ag <- off_long_ag |>
+  filter(grna_id %in% c(high4, low4)) |>
+  mutate(status = ifelse(assigned, "assigned", "unassigned"),
+         panel  = factor(paste0(gene, " | ", status), levels = panel_levels_ag))
+
+pd_ag <- ggplot(hex_df_ag, aes(log_grna_n_umis, o)) +
+  geom_hex(bins = 40) +
+  facet_wrap(~ panel, ncol = 4) +
+  scale_fill_viridis_c(trans = "log10", name = "cells") +
+  labs(x = "log1p(grna_n_umis)  (total gRNA UMIs in cell)",
+       y = expression("offset  " * o[j] == log(mu[0])),
+       title = "allgrnafix: offset vs total gRNA UMIs, split by assignment",
+       subtitle = "Rows 1-2: overpred guides (assigned / unassigned). Rows 3-4: low-tail controls.") +
+  theme_bw() +
+  theme(strip.text = element_text(size = 7))
+pd_ag
+```
+
+### (d-bf) same, glmpoisallgrnafix_poisfix
+
+```{r plot-d-bf, fig.width=12, fig.height=11}
+panel_levels_bf <- c(
+  paste0(gene_of(high4), " | assigned"),
+  paste0(gene_of(high4), " | unassigned"),
+  paste0(gene_of(low4),  " | assigned"),
+  paste0(gene_of(low4),  " | unassigned")
+)
+hex_df_bf <- off_long_bf |>
+  filter(grna_id %in% c(high4, low4)) |>
+  mutate(status = ifelse(assigned, "assigned", "unassigned"),
+         panel  = factor(paste0(gene, " | ", status), levels = panel_levels_bf))
+
+pd_bf <- ggplot(hex_df_bf, aes(log_grna_n_umis, o)) +
+  geom_hex(bins = 40) +
+  facet_wrap(~ panel, ncol = 4) +
+  scale_fill_viridis_c(trans = "log10", name = "cells") +
+  labs(x = "log1p(grna_n_umis)  (total gRNA UMIs in cell)",
+       y = expression("offset  " * o[j] == log(mu[0])),
+       title = "allgrnafix + poisfix: offset vs total gRNA UMIs, split by assignment",
+       subtitle = "Rows 1-2: overpred guides (assigned / unassigned). Rows 3-4: low-tail controls.") +
+  theme_bw() +
+  theme(strip.text = element_text(size = 7))
+pd_bf
+```
+
+
+ok so the circularity is driving a lot of this behavior.
+
+idea:
+- the circularity makes things bad, and the bug makes us more robust to
+
+## (e) per-cell offset: poisbug vs allgrnafix, per guide
+
+For each of the 16 guides, a hexbin of the per-cell offset `o_j` under
+`glmpois_poisbug` (x) vs `glmpoisallgrnafix_poisbug` (y). The dashed `y = x` line
+marks no change; the circularity correction should lift the extreme-negative
+poisbug offsets back up (points above the line at low x).
+
+```{r plot-e, fig.width=12, fig.height=11}
+off_compare <- map_dfr(hist_ids, function(id) {
+  tibble(grna_id = id, gene = gene_of(id), group = grp[[id]],
+         o_pb = recon_offset(id, M_pb$coef_mat[id, ], M_pb$cfg$kind),
+         o_ag = recon_offset(id, M_ag$coef_mat[id, ], M_ag$cfg$kind))
+})
+# facet order: 8 overpred first, then 8 control; label with gene + tail mean
+lab_e <- tibble(
+  grna_id   = hist_ids,
+  facet_lab = sprintf("%s (tail %.0f)", gene_of(hist_ids),
+                      tail_mean[match(hist_ids, guide_names)])
+)
+off_compare <- off_compare |> left_join(lab_e, by = "grna_id")
+off_compare$facet_lab <- factor(off_compare$facet_lab,
+  levels = lab_e$facet_lab[match(hist_ids, lab_e$grna_id)])
+
+pe <- ggplot(off_compare, aes(o_pb, o_ag)) +
+  geom_hex(bins = 40) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey40") +
+  facet_wrap(~ facet_lab, ncol = 4, scales = "free") +
+  scale_fill_viridis_c(trans = "log10", name = "cells") +
+  labs(x = expression("offset  " * o[j] * "   (glmpois_poisbug)"),
+       y = expression("offset  " * o[j] * "   (glmpoisallgrnafix_poisbug)"),
+       title = "Per-cell offset o_j: poisbug vs allgrnafix, per guide",
+       subtitle = "Top 2 rows: overpredictors. Bottom 2 rows: low-tail controls. Dashed = y = x.") +
+  theme_bw() +
+  theme(strip.text = element_text(size = 7))
+pe
+```
+
+### (e-bf) same, glmpois_poisbug vs glmpoisallgrnafix_poisfix
+
+```{r plot-e-bf, fig.width=12, fig.height=11}
+off_compare_bf <- map_dfr(hist_ids, function(id) {
+  tibble(grna_id = id, gene = gene_of(id), group = grp[[id]],
+         o_pb = recon_offset(id, M_pb$coef_mat[id, ], M_pb$cfg$kind),
+         o_bf = recon_offset(id, M_bf$coef_mat[id, ], M_bf$cfg$kind))
+})
+lab_e_bf <- tibble(
+  grna_id   = hist_ids,
+  facet_lab = sprintf("%s (tail %.0f)", gene_of(hist_ids),
+                      tail_mean[match(hist_ids, guide_names)])
+)
+off_compare_bf <- off_compare_bf |> left_join(lab_e_bf, by = "grna_id")
+off_compare_bf$facet_lab <- factor(off_compare_bf$facet_lab,
+  levels = lab_e_bf$facet_lab[match(hist_ids, lab_e_bf$grna_id)])
+
+pe_bf <- ggplot(off_compare_bf, aes(o_pb, o_bf)) +
+  geom_hex(bins = 40) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey40") +
+  facet_wrap(~ facet_lab, ncol = 4, scales = "free") +
+  scale_fill_viridis_c(trans = "log10", name = "cells") +
+  labs(x = expression("offset  " * o[j] * "   (glmpois_poisbug)"),
+       y = expression("offset  " * o[j] * "   (glmpoisallgrnafix_poisfix)"),
+       title = "Per-cell offset o_j: poisbug vs allgrnafix + poisfix, per guide",
+       subtitle = "Top 2 rows: overpredictors. Bottom 2 rows: low-tail controls. Dashed = y = x.") +
+  theme_bw() +
+  theme(strip.text = element_text(size = 7))
+pe_bf
+```
+
+now why are the offsets so negative...? i thought they should be positive for big ones...
+ok they are
+
+
+so what we have here:
+- the overpred is actually caused entirely by the circularity!! 
+- we get extremly small mu_0j due to the intercept being super negative to balance out the massive 
+
+so i need to see 
+
+
+i need to separate out the bug from this offsets error. I won't make a big deal out of this one. just mention it. 
+the data that i need now: 
+
+so why exactly does beta0 get small?
+_this model is fit on everything_
+we have 
+$$
+\log \E[y_i \mid x_i , z_i = 0] \approx \log \E[y_i \mid x_i] \stackrel{\text{set}}= \underbrace{x_i^T\beta}_{:=\eta_i}
+$$
+what's score func? is that useful here?
+
+eh this feels slow.
+
+$$
+\max \prod_{i=1}^n \exp(-\exp(\eta_i))\exp(\eta_iy_i) / y_i!   = \max \sum \eta_iy_i - \exp(\eta_i) \\
+\nabla = X^Ty - \sum \exp(\eta_i) x_i = X^T(y - \exp(\eta))
+$$
+so we try to solve
+$$
+X^T(y-\exp(\eta)) = \mathbf 0
+$$
+$$
+y - \exp(\eta) \in N(X^T)
+$$
+
+what's being in here mean? orthog to each column of $X$. we choose $\beta$ so $y - \exp(\eta) \perp X_j$ for $j=1,\dots,p$.
+
+Intercept:
+$$
+\begin{aligned}
+\sum_i y_i &= \sum_i \exp(\eta_i) \\
+\sum_i y_i \log(T_i) = \sum_i \exp(\beta_0 + \beta_1 \log(T_1)) \log(T_i)
+\end{aligned}
+$$
+
+
+
+
+ok so i want to now compare the poisbug with poisfix without the circularity.
+
+they use the same offsets, so the offset analysis is not interesting... i need to actually look at mixture model results now.
+
+what do i want to see?
+
+- performance results: metrics on simulations
+  - i need to 

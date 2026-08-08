@@ -1,0 +1,825 @@
+---
+title: "Bug compare, no circularity — glmpoisallgrnafix: poisbug vs poisfix on simulations"
+output: html_document
+---
+
+Cross the two axes of the guide-assignment model on the three simulated datasets:
+
+- **offset** (colour): `glmpois` (shared-X offset, keeps the `grna_n_umis`
+  circularity) vs `glmpoisallgrnafix` (circularity-corrected gRNA covariates +
+  uncorrected response covariates).
+- **mixture M-step** (linetype + point shape): `poisbug` = additive
+  `g_mus_pert1 = g_mus_pert0 + gamma` vs `poisfix` = multiplicative
+  `g_mus_pert1 = g_mus_pert0 * exp(gamma)`.
+
+The `glmpois` methods come from run `run_bugfix_sims`; the `glmpoisallgrnafix`
+methods from `run_grnafix_sims_compare_bug`.
+
+Ground truth per guide = cells that are perturbed (`true_pert_matrix == 1`) AND
+observed nonzero (`grna_matrix > 0`). We score per-guide precision / recall /
+jaccard against that, then average over guides at each perturbation strength.
+
+Plot layout mirrors `plot_sim_bugfix_metrics` from the thesis helpers: one row per
+simulation (dataset x noise-tail `np`), one column per metric, a line per method
+across `mu_pert` (log2 x-axis; rows keep independent x-scales since `mu_pert`
+ranges differ by orders of magnitude across datasets).
+
+**The plot chunk depends ONLY on the `setup` chunk.** Run `setup` plus the plot.
+
+```{r setup, message=FALSE, warning=FALSE}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(Matrix)
+})
+
+## --- config --------------------------------------------------------------
+BM  <- "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment"
+IN  <- file.path(BM, "input_data")
+
+# Every (offset x mixture) method, its script name, and the run it lives in.
+#   offset:  glmpois            = shared-X offset, has the grna_n_umis circularity
+#            glmpoisallgrnafix  = circularity-corrected grna covars (+ response covars)
+#   mixture: poisbug            = additive (bugged) M-step
+#            poisfix            = multiplicative (fixed) M-step
+# colour  = offset choice; linetype + point shape = mixture choice.
+METHOD_SPECS <- tribble(
+  ~method,                      ~run,                          ~offset,                        ~mixture,
+  "glmpois_poisbug",            "run_bugfix_sims",             "glmpois (circularity)",        "poisbug (additive)",
+  "glmpois_poisfix",            "run_bugfix_sims",             "glmpois (circularity)",        "poisfix (multiplicative)",
+  "glmpoisallgrnafix_poisbug",  "run_grnafix_sims_compare_bug","glmpoisallgrnafix (no circ.)", "poisbug (additive)",
+  "glmpoisallgrnafix_poisfix",  "run_grnafix_sims_compare_bug","glmpoisallgrnafix (no circ.)", "poisfix (multiplicative)"
+)
+OFFSET_LEVELS  <- c("glmpois (circularity)", "glmpoisallgrnafix (no circ.)")
+MIXTURE_LEVELS <- c("poisbug (additive)", "poisfix (multiplicative)")
+
+# Each dataset's P-label -> mu_pert (perturbation strength) mapping, and the order
+# rows should appear in. (Same maps used in bugfix-sims-metrics.R / thesis.)
+DATASETS <- list(
+  sims_sum_2np_3p = tibble(
+    p = c("P1", "P2", "P3"), mu_pert = c(500, 750, 1000)
+  ),
+  sims_sum_1np_3p_disp = tibble(
+    p = c("Plowdisp", "Pmeddisp", "Phighdisp"), mu_pert = c(101000, 1001000, 10001000)
+  ),
+  sims_sum_repeat_old = tibble(
+    p = c("Psmall", "Pmed", "Plarge"), mu_pert = c(970 / 8, 970 / 4, 970)
+  )
+)
+
+## --- metric helpers ------------------------------------------------------
+set_metrics <- function(pred, truth) {
+  pred <- unique(pred); truth <- unique(truth)
+  n_inter <- length(intersect(pred, truth))
+  n_pred  <- length(pred); n_truth <- length(truth)
+  n_union <- length(union(pred, truth))
+  tibble(
+    precision = if (n_pred  == 0) NA_real_ else n_inter / n_pred,
+    recall    = if (n_truth == 0) NA_real_ else n_inter / n_truth,
+    jaccard   = if (n_union == 0) NA_real_ else n_inter / n_union
+  )
+}
+part_k     <- function(x, k) vapply(strsplit(x, "_", fixed = TRUE),
+                                    function(z) if (length(z) >= k) z[[k]] else NA_character_,
+                                    character(1))
+mean_or_na <- function(x) if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
+sd_or_na   <- function(x) if (sum(!is.na(x)) <= 1) NA_real_ else sd(x, na.rm = TRUE)
+
+## --- per-guide metrics for one dataset x method --------------------------
+# assignment matrix: outputs/<run>/assignment_matrix_script_<method>_<dataset>.rds
+# ground truth: perturbed (true_pert_matrix == 1) AND observed nonzero (grna > 0).
+metrics_for <- function(dataset, method, run) {
+  in_ds       <- file.path(IN, dataset)
+  grna_matrix <- readRDS(file.path(in_ds, "sceptre", "grna_matrix.rds"))
+  true_perts  <- readRDS(file.path(in_ds, "true_pert_matrix.rds"))
+  guide_names <- rownames(grna_matrix)
+
+  assn <- readRDS(file.path(BM, "outputs", run,
+                            paste0("assignment_matrix_script_", method, "_", dataset, ".rds")))
+  stopifnot(all(guide_names == rownames(assn)))
+
+  pred_assns <- lapply(guide_names, function(g) as.integer(which(assn[g, ])))
+  true_assns <- lapply(guide_names, function(g)
+    as.integer(which(true_perts[g, ] == 1 & grna_matrix[g, ] > 0)))
+  names(pred_assns) <- names(true_assns) <- guide_names
+
+  map_dfr(guide_names, function(g)
+    set_metrics(pred_assns[[g]], true_assns[[g]]) |>
+      mutate(dataset = dataset, method = method, grna_id = g,
+             np = part_k(g, 2), p = part_k(g, 3), .before = 1))
+}
+
+## --- load & score all datasets x methods, average per (np, mu_pert) ------
+sim_metrics <- imap_dfr(DATASETS, function(p_to_mean, dataset) {
+  pmap_dfr(METHOD_SPECS, function(method, run, offset, mixture)
+    metrics_for(dataset, method, run)) |>
+    left_join(p_to_mean, by = "p")
+}) |>
+  left_join(select(METHOD_SPECS, method, offset, mixture), by = "method") |>
+  pivot_longer(c(precision, recall, jaccard), names_to = "metric", values_to = "value") |>
+  group_by(dataset, np, p, mu_pert, method, offset, mixture, metric) |>
+  summarize(mean = mean_or_na(value), sd = sd_or_na(value),
+            n = sum(!is.na(value)), .groups = "drop") |>
+  mutate(
+    ci   = 2 * sd / sqrt(n),
+    ymin = pmax(0, mean - ci), ymax = pmin(1, mean + ci),
+    # row key: one simulation = dataset x noise-tail; column = metric
+    sim_label = paste(dataset, np, sep = " | "),
+    offset    = factor(offset,  levels = OFFSET_LEVELS),
+    mixture   = factor(mixture, levels = MIXTURE_LEVELS),
+    metric    = factor(metric, levels = c("jaccard", "precision", "recall"))
+  )
+
+# order sim_label rows by dataset order in DATASETS, then np within dataset
+sim_lab_levels <- sim_metrics |>
+  distinct(dataset, np, sim_label) |>
+  mutate(dataset = factor(dataset, levels = names(DATASETS))) |>
+  arrange(dataset, np) |>
+  pull(sim_label)
+sim_metrics$sim_label <- factor(sim_metrics$sim_label, levels = sim_lab_levels)
+
+print(sim_metrics)
+```
+
+## Precision / recall / jaccard vs ground truth across simulations
+
+Rows = simulation (dataset x noise-tail `np`); columns = metric; line per method
+across `mu_pert`. Error bars are ±2 SE. Each row is its own plot (independent
+log2 x-scale, since `mu_pert` ranges differ by orders of magnitude), stacked with
+patchwork and sharing one legend — same layout as `plot_sim_bugfix_metrics`.
+
+```{r plot-metrics, fig.width=9, fig.height=7}
+library(patchwork)
+
+# Zoom the (shared) y-axis to where the data actually live, with a little padding,
+# instead of the full [0, 1]. Covers the error bars (ymin/ymax), not just means.
+y_lo <- max(0, min(sim_metrics$ymin, na.rm = TRUE) - 0.02)
+y_hi <- min(1, max(sim_metrics$ymax, na.rm = TRUE) + 0.02)
+
+sims <- levels(sim_metrics$sim_label)
+row_plot <- function(s, is_top, is_bottom) {
+  d <- filter(sim_metrics, sim_label == s)
+  ggplot(d, aes(mu_pert, mean, colour = offset, shape = mixture,
+                linetype = mixture, group = interaction(offset, mixture))) +
+    geom_line(linewidth = 0.5) +
+    geom_errorbar(aes(ymin = ymin, ymax = ymax), width = 0.04, alpha = 0.7,
+                  linetype = "solid") +
+    geom_point(size = 1.9) +
+    facet_grid(sim_label ~ metric) +
+    scale_x_continuous(trans = "log2", breaks = sort(unique(d$mu_pert))) +
+    coord_cartesian(ylim = c(y_lo, y_hi)) +
+    labs(x = if (is_bottom) expression(mu[pert]) else NULL, y = NULL,
+         colour = "offset", shape = "mixture", linetype = "mixture") +
+    theme_bw() +
+    theme(legend.position = "bottom") +
+    (if (!is_top) theme(strip.text.x = element_blank()) else NULL)  # metric labels once
+}
+
+rows <- imap(sims, function(s, i)
+  row_plot(s, is_top = i == 1, is_bottom = i == length(sims)))
+
+pm <- wrap_plots(rows, ncol = 1, guides = "collect") +
+  plot_annotation(
+    title = "poisbug vs poisfix, circularity vs no circularity, on simulations"
+  ) &
+  theme(legend.position = "bottom")
+print(pm)
+```
+
+ok so even with the circularity removed, we still have the bug essentially dominating
+
+## Replogle 800-guide subsample: #assignments vs upper-tail mean, all 4 models
+
+Real-data view of the same 2x2. For each guide: x = upper-tail mean
+`mean(y | y >= 10)`, y = number of cells that method assigned it to. Facets are
+rows = offset, cols = mixture. y-scales are shared, so the circularity + poisbug
+overprediction (many guides assigned to 1000s of cells) is directly visible
+against the other three. Depends only on the `setup` chunk.
+
+```{r plot-replogle-assign, fig.width=8.5, fig.height=7}
+DS_REPL <- "replogle-rd7_assign_nguides=800_ncells=100k"
+
+# Where each model's assignments for this dataset live (different runs).
+REPL_SPECS <- tribble(
+  ~method,                      ~run,                          ~offset,                        ~mixture,
+  "glmpois_poisbug",            "script_real_data",            "glmpois (circularity)",        "poisbug (additive)",
+  "glmpois_poisfix",            "script_real_data",            "glmpois (circularity)",        "poisfix (multiplicative)",
+  "glmpoisallgrnafix_poisbug",  "run_grnafix_sceptre",         "glmpoisallgrnafix (no circ.)", "poisbug (additive)",
+  "glmpoisallgrnafix_poisfix",  "run_grnafix_bugfix_sceptre",  "glmpoisallgrnafix (no circ.)", "poisfix (multiplicative)"
+)
+
+grna_repl        <- readRDS(file.path(IN, DS_REPL, "sceptre", "grna_matrix.rds"))
+guide_names_repl <- rownames(grna_repl)
+tail_mean_repl   <- apply(grna_repl, 1, function(y) {
+  y <- as.numeric(y); t <- y[y >= 10]; if (length(t) == 0) NA_real_ else mean(t)
+})
+
+repl_assign <- pmap_dfr(REPL_SPECS, function(method, run, offset, mixture) {
+  assn <- readRDS(file.path(BM, "outputs", run,
+                            paste0("assignment_matrix_script_", method, "_", DS_REPL, ".rds")))
+  stopifnot(all(guide_names_repl == rownames(assn)))
+  tibble(grna_id = guide_names_repl, tail_mean = tail_mean_repl,
+         n_assign = as.numeric(Matrix::rowSums(assn)),
+         offset = offset, mixture = mixture)
+}) |>
+  mutate(offset  = factor(offset,  levels = OFFSET_LEVELS),
+         mixture = factor(mixture, levels = MIXTURE_LEVELS))
+
+pr <- ggplot(repl_assign, aes(tail_mean, n_assign)) +
+  geom_point(colour = "grey25", alpha = 0.5, size = 1.1) +
+  facet_grid(offset ~ mixture) +
+  labs(x = "upper-tail mean  mean(y | y >= 10)", y = "# assignments",
+       title = "Replogle 800-guide subsample: #assignments vs upper-tail mean",
+       subtitle = "rows = offset choice, cols = mixture M-step") +
+  theme_bw()
+print(pr)
+```
+
+## Pairwise assignment agreement per guide (Jaccard)
+
+For every pair of the 4 methods and every guide `g`, compute the Jaccard overlap
+of the two cell-sets each method assigns to `g`:
+`|A_i ∩ A_j| / |A_i ∪ A_j|`. One histogram per pair (`choose(4,2) = 6`), over the
+800 guides. Guides where **both** methods assign zero cells have an empty union
+(Jaccard undefined) and are dropped; the per-pair count is printed at the end.
+Depends only on the `setup` chunk.
+
+```{r plot-replogle-pair-jaccard, fig.width=10, fig.height=6}
+DS_REPL <- "replogle-rd7_assign_nguides=800_ncells=100k"
+REPL_SPECS <- tribble(
+  ~method,                      ~run,                          ~offset,                        ~mixture,
+  "glmpois_poisbug",            "script_real_data",            "glmpois (circularity)",        "poisbug (additive)",
+  "glmpois_poisfix",            "script_real_data",            "glmpois (circularity)",        "poisfix (multiplicative)",
+  "glmpoisallgrnafix_poisbug",  "run_grnafix_sceptre",         "glmpoisallgrnafix (no circ.)", "poisbug (additive)",
+  "glmpoisallgrnafix_poisfix",  "run_grnafix_bugfix_sceptre",  "glmpoisallgrnafix (no circ.)", "poisfix (multiplicative)"
+)
+
+grna_repl        <- readRDS(file.path(IN, DS_REPL, "sceptre", "grna_matrix.rds"))
+guide_names_repl <- rownames(grna_repl)
+
+# compact per-method label: <circ|nocirc>+<bug|fix>
+mlab <- setNames(
+  paste0(ifelse(grepl("allgrnafix", REPL_SPECS$method), "nocirc", "circ"), "+",
+         ifelse(grepl("poisfix",    REPL_SPECS$method), "fix",    "bug")),
+  REPL_SPECS$method)
+
+# per method: guide -> integer vector of assigned cell indices
+method_assign <- pmap(REPL_SPECS, function(method, run, offset, mixture) {
+  assn <- readRDS(file.path(BM, "outputs", run,
+                            paste0("assignment_matrix_script_", method, "_", DS_REPL, ".rds")))
+  stopifnot(all(guide_names_repl == rownames(assn)))
+  lapply(guide_names_repl, function(g) as.integer(which(assn[g, ]))) |> setNames(guide_names_repl)
+})
+names(method_assign) <- REPL_SPECS$method
+
+jac <- function(a, b) {
+  u <- length(union(a, b)); if (u == 0) NA_real_ else length(intersect(a, b)) / u
+}
+
+pairs      <- combn(REPL_SPECS$method, 2, simplify = FALSE)
+pair_levels <- vapply(pairs, function(pr) paste(mlab[pr[1]], "vs", mlab[pr[2]]), character(1))
+pair_df <- map_dfr(pairs, function(pr) {
+  mi <- pr[1]; mj <- pr[2]
+  tibble(grna_id = guide_names_repl,
+         pair    = paste(mlab[mi], "vs", mlab[mj]),
+         jaccard = vapply(guide_names_repl,
+                          function(g) jac(method_assign[[mi]][[g]], method_assign[[mj]][[g]]),
+                          numeric(1)))
+}) |>
+  mutate(pair = factor(pair, levels = pair_levels))
+
+pj <- ggplot(pair_df, aes(jaccard)) +
+  geom_histogram(bins = 40, boundary = 0, fill = "steelblue", colour = "white") +
+  facet_wrap(~ pair, ncol = 3) +
+  labs(x = "per-guide Jaccard of assigned cell-sets",
+       y = "# guides",
+       title = "Replogle 800-guide subsample: pairwise assignment agreement",
+       subtitle = "one panel per method pair; Jaccard over each guide's assigned cells") +
+  theme_bw()
+
+pair_summary <- pair_df |>
+  group_by(pair) |>
+  summarize(n_defined      = sum(!is.na(jaccard)),
+            n_both_empty   = sum(is.na(jaccard)),
+            median_jaccard = median(jaccard, na.rm = TRUE),
+            mean_jaccard   = mean(jaccard,   na.rm = TRUE),
+            .groups = "drop")
+
+print(pj)
+print(pair_summary)
+```
+
+## Bug-vs-fix agreement vs upper-tail mean (within each offset)
+
+Scatter of per-guide Jaccard against the guide's upper-tail mean
+`mean(y | y >= 10)`, for just the two **within-offset** bug-vs-fix comparisons:
+`circ+bug vs circ+fix` and `nocirc+bug vs nocirc+fix`. Colour distinguishes the
+two. Shows how the additive-vs-multiplicative M-step disagreement scales with the
+guide's tail heaviness, with vs without the offset circularity. Depends only on
+the `setup` chunk.
+
+```{r plot-replogle-bugfix-jaccard-vs-tail, fig.width=8, fig.height=5.5}
+DS_REPL <- "replogle-rd7_assign_nguides=800_ncells=100k"
+REPL_SPECS <- tribble(
+  ~method,                      ~run,                          ~offset,                        ~mixture,
+  "glmpois_poisbug",            "script_real_data",            "glmpois (circularity)",        "poisbug (additive)",
+  "glmpois_poisfix",            "script_real_data",            "glmpois (circularity)",        "poisfix (multiplicative)",
+  "glmpoisallgrnafix_poisbug",  "run_grnafix_sceptre",         "glmpoisallgrnafix (no circ.)", "poisbug (additive)",
+  "glmpoisallgrnafix_poisfix",  "run_grnafix_bugfix_sceptre",  "glmpoisallgrnafix (no circ.)", "poisfix (multiplicative)"
+)
+
+grna_repl        <- readRDS(file.path(IN, DS_REPL, "sceptre", "grna_matrix.rds"))
+guide_names_repl <- rownames(grna_repl)
+tail_mean_repl   <- apply(grna_repl, 1, function(y) {
+  y <- as.numeric(y); t <- y[y >= 10]; if (length(t) == 0) NA_real_ else mean(t)
+})
+
+# per method: guide -> integer vector of assigned cell indices
+method_assign <- pmap(REPL_SPECS, function(method, run, offset, mixture) {
+  assn <- readRDS(file.path(BM, "outputs", run,
+                            paste0("assignment_matrix_script_", method, "_", DS_REPL, ".rds")))
+  stopifnot(all(guide_names_repl == rownames(assn)))
+  lapply(guide_names_repl, function(g) as.integer(which(assn[g, ]))) |> setNames(guide_names_repl)
+})
+names(method_assign) <- REPL_SPECS$method
+
+jac <- function(a, b) {
+  u <- length(union(a, b)); if (u == 0) NA_real_ else length(intersect(a, b)) / u
+}
+
+# just the two within-offset bug-vs-fix comparisons
+COMPARISONS <- tribble(
+  ~label,               ~mi,                          ~mj,
+  "circ: bug vs fix",   "glmpois_poisbug",            "glmpois_poisfix",
+  "nocirc: bug vs fix", "glmpoisallgrnafix_poisbug",  "glmpoisallgrnafix_poisfix"
+)
+
+bugfix_df <- pmap_dfr(COMPARISONS, function(label, mi, mj) {
+  tibble(grna_id   = guide_names_repl,
+         tail_mean = tail_mean_repl,
+         comparison = label,
+         jaccard = vapply(guide_names_repl,
+                          function(g) jac(method_assign[[mi]][[g]], method_assign[[mj]][[g]]),
+                          numeric(1)))
+}) |>
+  mutate(comparison = factor(comparison, levels = COMPARISONS$label))
+
+pbf <- ggplot(bugfix_df, aes(tail_mean, jaccard, colour = comparison)) +
+  geom_point(alpha = 0.55, size = 1.3) +
+  scale_colour_manual(values = c("circ: bug vs fix"   = "firebrick",
+                                 "nocirc: bug vs fix" = "steelblue")) +
+  labs(x = "upper-tail mean  mean(y | y >= 10)",
+       y = "per-guide Jaccard (bug vs fix)", colour = NULL,
+       title = "Replogle 800-guide subsample: bug-vs-fix agreement vs upper-tail mean",
+       subtitle = "within-offset poisbug-vs-poisfix Jaccard, with vs without circularity") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+print(pbf)
+```
+
+ok so this confirms what i've basically known: there is a lot less agreement in the assignments made to the heavy tailed guides for the circular methods, than for the decirc methods.
+
+
+ok. so what story am i building?
+- the biggest failing we observed in sceptre is actually due to the circular feature messing with the offsets, not due to the bug.
+- we haven't actually pinned down the exact failings of the bug itself!
+
+can i still make some argument about how the bug guards us against bad offsets? what do i need to do to make this claim?
+- this would be a comparison between circ poisbug and poisfix, since that's where the degenerate offsets come in. Both feature overprediction though. so the bug does not actually help us with the biggest observed consequence of bad offsets.
+
+i need to find differences between how poisbug and poisfix behave, separate from the offsets. so this would be patterns that are apparent regardless of the offset choice. and maybe i should also find these things in gasperini, as a way to also do this when the offset consequences are less.
+
+in `plot-metrics`, i observe that the bug generally does better in either case. and this experiment accidentally mitigates the overprediction due to circularity, to some extent, so this is closer to what i want to do now.
+
+
+on these data, the bug generally leads to better recall, while precision is high across the board. so better recall means lower dec boundary. Can we say that poisfix leads to an excessively large decision boundary?
+
+## Where nocirc poisbug & poisfix disagree: UMI histograms, by poisbug's call
+
+The 16 guides from the offsets notebook (`overprediction-offsets.Rmd`): the 8
+heavy-tail overpredictors and the 8 modest-tail controls, selected by the same
+reference method (`glmpois_poisbug`). For each guide, take the cells where the two
+**nocirc** methods disagree (assigned by exactly one of
+`glmpoisallgrnafix_poisbug` / `glmpoisallgrnafix_poisfix`) and histogram their gRNA
+UMI counts. Binning is the linear-then-log2 mixed scheme from thesis fig-2a
+(exact bins `0..10`, then doubling-width tail bins), drawn as stacked bars on a
+`log10(count+1)` y-axis. Bars are conditioned on **poisbug's** call — `poisbug
+pert` vs `poisbug NP` — which is enough, since on the disagreement set poisfix is
+always the opposite. Top 8 panels = heavy tail, bottom 8 = modest tail. Depends
+only on the `setup` chunk.
+
+```{r plot-nocirc-disagree-umi, fig.width=13, fig.height=8}
+DS_REPL <- "replogle-rd7_assign_nguides=800_ncells=100k"
+
+NOCIRC_BUG <- list(method = "glmpoisallgrnafix_poisbug", run = "run_grnafix_sceptre")
+NOCIRC_FIX <- list(method = "glmpoisallgrnafix_poisfix", run = "run_grnafix_bugfix_sceptre")
+REF_BUG    <- list(method = "glmpois_poisbug",           run = "script_real_data")
+
+read_assn <- function(spec)
+  readRDS(file.path(BM, "outputs", spec$run,
+                    paste0("assignment_matrix_script_", spec$method, "_", DS_REPL, ".rds")))
+
+grna_repl   <- readRDS(file.path(IN, DS_REPL, "sceptre", "grna_matrix.rds"))
+guide_names <- rownames(grna_repl)
+genes       <- vapply(strsplit(guide_names, "_", fixed = TRUE), function(z) z[[2]], character(1))
+tail_mean   <- apply(grna_repl, 1, function(y) {
+  y <- as.numeric(y); t <- y[y >= 10]; if (length(t) == 0) NA_real_ else mean(t)
+})
+
+## --- reproduce the 16-guide selection from overprediction-offsets.Rmd -----
+## (reference = glmpois_poisbug: top-quartile tail -> top 8 by #assign;
+##  low-quartile (and < 1000) tail -> bottom 8 by #assign)
+ref_assn <- read_assn(REF_BUG)
+stopifnot(all(guide_names == rownames(ref_assn)))
+ref_df   <- tibble(grna_id = guide_names, tail_mean = tail_mean,
+                   n_assign = as.numeric(Matrix::rowSums(ref_assn)))
+q_tail       <- quantile(ref_df$tail_mean, 0.75, na.rm = TRUE)
+overpred_ids <- ref_df |> filter(tail_mean >= q_tail) |>
+  slice_max(n_assign, n = 8, with_ties = FALSE) |> pull(grna_id)
+q1_tail      <- min(quantile(ref_df$tail_mean, 0.25, na.rm = TRUE), 1000)
+control_ids  <- ref_df |> filter(tail_mean <= q1_tail, tail_mean < 1000) |>
+  slice_min(n_assign, n = 8, with_ties = FALSE) |> pull(grna_id)
+hist_ids <- c(overpred_ids, control_ids)
+
+## --- disagreement cells + poisbug's call ----------------------------------
+assn_bug <- read_assn(NOCIRC_BUG); assn_fix <- read_assn(NOCIRC_FIX)
+stopifnot(all(guide_names == rownames(assn_bug)), all(guide_names == rownames(assn_fix)))
+
+facet_lab <- setNames(
+  sprintf("%s\n(tail %.0f, #assign %d)",
+          genes[match(hist_ids, guide_names)],
+          tail_mean[match(hist_ids, guide_names)],
+          ref_df$n_assign[match(hist_ids, guide_names)]),
+  hist_ids)
+
+df_dis <- map_dfr(hist_ids, function(g) {
+  b <- as.logical(assn_bug[g, ]); f <- as.logical(assn_fix[g, ])
+  disagree <- xor(b, f)
+  tibble(umi    = as.integer(grna_repl[g, disagree]),
+         status = factor(ifelse(b[disagree], "poisbug pert", "poisbug NP"),
+                         levels = c("poisbug NP", "poisbug pert")),
+         panel  = facet_lab[[g]])
+}) |>
+  mutate(panel = factor(panel, levels = facet_lab[hist_ids]))
+
+## --- mixed linear-then-log2 binning (inlined from thesis fig-2a) ----------
+logp1 <- function(x, base = 10) log(x + 1, base = base)
+make_mixed_bin_info <- function(max_x, k_exact = 10L) {
+  upper <- 0:k_exact; width <- 2L
+  while (tail(upper, 1L) < max_x) { upper <- c(upper, tail(upper, 1L) + width); width <- width * 2L }
+  lower <- c(0L, head(upper, -1L) + 1L)
+  label <- ifelse(lower == upper, as.character(upper), paste0(lower, "-", upper))
+  data.frame(bin_id = seq_along(label), lower = lower, upper = upper, label = label,
+             xmin = seq_along(label) - 0.45, xmax = seq_along(label) + 0.45,
+             stringsAsFactors = FALSE)
+}
+bin_with_info    <- function(x, bi) cut(x, breaks = c(-1, bi$upper), labels = bi$label, right = TRUE)
+make_y_breaks_umi <- function(mx) { b <- c(0,1,5,10,50,100,500,1e3,5e3,1e4,5e4,1e5,5e5); b[b <= mx] }
+make_x_axis_spec <- function(bi, k_exact, exact_every = 2L, tail_every = 2L) {
+  is_exact <- bi$lower == bi$upper & bi$upper <= k_exact
+  ei <- which(is_exact); ti <- which(!is_exact); keep <- rep(FALSE, nrow(bi))
+  if (length(ei)) { keep[ei[seq(1, length(ei), by = exact_every)]] <- TRUE; keep[max(ei)] <- TRUE }
+  if (length(ti)) { keep[ti[seq(1, length(ti), by = tail_every)]] <- TRUE; keep[max(ti)] <- TRUE }
+  list(breaks = bi$bin_id[keep], labels = bi$label[keep])
+}
+
+k_exact  <- 10L
+bin_info <- make_mixed_bin_info(max(df_dis$umi), k_exact = k_exact)
+counts <- df_dis |>
+  mutate(bin = factor(bin_with_info(umi, bin_info), levels = bin_info$label)) |>
+  group_by(panel, bin, status, .drop = FALSE) |>
+  summarise(count = n(), .groups = "drop") |>
+  arrange(panel, bin, status) |>
+  group_by(panel, bin) |>
+  mutate(y1 = cumsum(count), y0 = lag(y1, default = 0)) |>
+  ungroup() |>
+  mutate(bin = as.character(bin)) |>
+  left_join(bin_info, by = c("bin" = "label"))
+
+x_axis   <- make_x_axis_spec(bin_info, k_exact)
+y_breaks <- make_y_breaks_umi(max(counts$y1))
+
+pdis <- ggplot(counts) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = logp1(y0), ymax = logp1(y1),
+                fill = status), colour = "black", linewidth = 0.1) +
+  # shared bins (one global bin_info) AND shared x/y scales -> every panel directly comparable
+  facet_wrap(~ panel, ncol = 4) +
+  scale_fill_manual(values = c("poisbug NP" = "#00BFC4", "poisbug pert" = "#F8766D")) +
+  scale_x_continuous(breaks = x_axis$breaks, labels = x_axis$labels,
+                     expand = expansion(add = 0.6)) +
+  scale_y_continuous(breaks = logp1(y_breaks), labels = scales::label_comma()(y_breaks),
+                     expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "Nocirc poisbug vs poisfix: gRNA UMIs where they disagree",
+       subtitle = "16 selected guides (top 2 rows heavy tail, bottom 2 modest); stacked by poisbug's call",
+       x = "gRNA UMI count (linear-then-log2 bins)", y = "number of cells", fill = NULL) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6),
+        legend.position = "bottom", strip.text = element_text(size = 7))
+print(pdis)
+```
+
+## Nocirc poisbug vs poisfix: per-guide 2x2 confusion matrix
+
+For the same 16 guides, the full cross-tabulation of the two **nocirc** methods'
+per-cell calls over all cells: #cells both call NP, poisbug P / poisfix NP,
+poisbug NP / poisfix P, and both P. One 2x2 panel per guide (poisbug on the
+y-axis, poisfix on the x-axis); tiles are filled on a `log10(count+1)` scale and
+labelled with the exact count. The both-NP cell dominates (≈all 100k cells), so
+the log fill is what makes the off-diagonal disagreement cells legible. Depends
+only on the `setup` chunk.
+
+```{r plot-nocirc-confusion, fig.width=13, fig.height=9}
+DS_REPL <- "replogle-rd7_assign_nguides=800_ncells=100k"
+
+NOCIRC_BUG <- list(method = "glmpoisallgrnafix_poisbug", run = "run_grnafix_sceptre")
+NOCIRC_FIX <- list(method = "glmpoisallgrnafix_poisfix", run = "run_grnafix_bugfix_sceptre")
+REF_BUG    <- list(method = "glmpois_poisbug",           run = "script_real_data")
+
+read_assn <- function(spec)
+  readRDS(file.path(BM, "outputs", spec$run,
+                    paste0("assignment_matrix_script_", spec$method, "_", DS_REPL, ".rds")))
+
+grna_repl   <- readRDS(file.path(IN, DS_REPL, "sceptre", "grna_matrix.rds"))
+guide_names <- rownames(grna_repl)
+genes       <- vapply(strsplit(guide_names, "_", fixed = TRUE), function(z) z[[2]], character(1))
+tail_mean   <- apply(grna_repl, 1, function(y) {
+  y <- as.numeric(y); t <- y[y >= 10]; if (length(t) == 0) NA_real_ else mean(t)
+})
+
+## --- reproduce the 16-guide selection from overprediction-offsets.Rmd -----
+ref_assn <- read_assn(REF_BUG)
+stopifnot(all(guide_names == rownames(ref_assn)))
+ref_df   <- tibble(grna_id = guide_names, tail_mean = tail_mean,
+                   n_assign = as.numeric(Matrix::rowSums(ref_assn)))
+q_tail       <- quantile(ref_df$tail_mean, 0.75, na.rm = TRUE)
+overpred_ids <- ref_df |> filter(tail_mean >= q_tail) |>
+  slice_max(n_assign, n = 8, with_ties = FALSE) |> pull(grna_id)
+q1_tail      <- min(quantile(ref_df$tail_mean, 0.25, na.rm = TRUE), 1000)
+control_ids  <- ref_df |> filter(tail_mean <= q1_tail, tail_mean < 1000) |>
+  slice_min(n_assign, n = 8, with_ties = FALSE) |> pull(grna_id)
+hist_ids <- c(overpred_ids, control_ids)
+
+## --- per-guide 2x2 counts over all cells ----------------------------------
+assn_bug <- read_assn(NOCIRC_BUG); assn_fix <- read_assn(NOCIRC_FIX)
+stopifnot(all(guide_names == rownames(assn_bug)), all(guide_names == rownames(assn_fix)))
+
+facet_lab <- setNames(
+  sprintf("%s\n(tail %.0f, #assign %d)",
+          genes[match(hist_ids, guide_names)],
+          tail_mean[match(hist_ids, guide_names)],
+          ref_df$n_assign[match(hist_ids, guide_names)]),
+  hist_ids)
+
+conf_df <- map_dfr(hist_ids, function(g) {
+  b <- as.logical(assn_bug[g, ]); f <- as.logical(assn_fix[g, ])
+  tibble(
+    poisbug = factor(c("NP", "NP", "P", "P"),  levels = c("NP", "P")),
+    poisfix = factor(c("NP", "P", "NP", "P"),  levels = c("NP", "P")),
+    count   = c(sum(!b & !f), sum(!b & f), sum(b & !f), sum(b & f)),
+    panel   = facet_lab[[g]])
+}) |>
+  mutate(panel = factor(panel, levels = facet_lab[hist_ids]))
+
+pconf <- ggplot(conf_df, aes(poisfix, poisbug, fill = log10(count + 1))) +
+  geom_tile(colour = "grey40") +
+  geom_text(aes(label = formatC(count, format = "d", big.mark = ",")), size = 2.8) +
+  facet_wrap(~ panel, ncol = 4) +
+  scale_fill_viridis_c(name = expression(log[10](count + 1))) +
+  labs(x = "poisfix call", y = "poisbug call",
+       title = "Nocirc poisbug vs poisfix: per-guide 2x2 assignment confusion",
+       subtitle = "counts over all cells; top 2 rows heavy tail, bottom 2 modest. Fill = log10(count+1).") +
+  theme_bw() +
+  theme(legend.position = "bottom", strip.text = element_text(size = 7),
+        panel.grid = element_blank())
+print(pconf)
+```
+
+
+ok so we're getting this picture that we do indeed make more assignments with poisbug than poisfix. on the sims, that's a good thing, and we get more recall. do we think these are good assignments to be making in general? that's where the UMI histograms come into play. do those seem like cells that should be pert? some of them definitely, others are borderline. 
+
+this is getting pretty close to a good enough explanation of the difference on Replogle. a plot like this can give a quantitative sense of whether we like the extra cells we're generally including or not. But also there's CRNKL1 which is totally different!
+
+I need to look at more guides.
+
+## Nocirc poisbug vs poisfix: per-guide disagreement counts, all 800 guides
+
+Across all 800 Replogle guides, the joint distribution of the two off-diagonal
+confusion counts from the previous plot: for each guide, x = #cells poisbug calls
+P while poisfix calls NP (poisbug-only), y = #cells poisbug calls NP while poisfix
+calls P (poisfix-only). Points above the dashed `y = x` are guides where poisfix
+adds more than poisbug; points below (the bulk, expected) are where poisbug adds
+more. Depends only on the `setup` chunk.
+
+```{r plot-nocirc-disagree-hexbin, fig.width=7.5, fig.height=6}
+DS_REPL <- "replogle-rd7_assign_nguides=800_ncells=100k"
+
+NOCIRC_BUG <- list(method = "glmpoisallgrnafix_poisbug", run = "run_grnafix_sceptre")
+NOCIRC_FIX <- list(method = "glmpoisallgrnafix_poisfix", run = "run_grnafix_bugfix_sceptre")
+
+read_assn <- function(spec)
+  readRDS(file.path(BM, "outputs", spec$run,
+                    paste0("assignment_matrix_script_", spec$method, "_", DS_REPL, ".rds")))
+
+assn_bug <- read_assn(NOCIRC_BUG); assn_fix <- read_assn(NOCIRC_FIX)
+stopifnot(all(rownames(assn_bug) == rownames(assn_fix)))
+
+# per-guide off-diagonal counts over all cells (vectorised over the 800 rows)
+bug_only <- Matrix::rowSums(assn_bug & !assn_fix)   # poisbug P, poisfix NP
+fix_only <- Matrix::rowSums(!assn_bug & assn_fix)   # poisbug NP, poisfix P
+disagree_df <- tibble(grna_id = rownames(assn_bug),
+                      bug_only = as.numeric(bug_only),
+                      fix_only = as.numeric(fix_only))
+
+# log1p axes (handles the many zero-disagreement guides); hexes bin in log1p space
+log1p_breaks <- c(0, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000)
+ph <- ggplot(disagree_df, aes(bug_only, fix_only)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey40") +
+  geom_hex(bins = 40) +
+  scale_fill_viridis_c(trans = "log10", name = "# guides") +
+  scale_x_continuous(trans = "log1p", breaks = log1p_breaks,
+                     labels = scales::label_comma()(log1p_breaks)) +
+  scale_y_continuous(trans = "log1p", breaks = log1p_breaks,
+                     labels = scales::label_comma()(log1p_breaks)) +
+  coord_fixed() +
+  labs(x = "# cells poisbug P & poisfix NP  (poisbug-only)",
+       y = "# cells poisbug NP & poisfix P  (poisfix-only)",
+       title = "Nocirc poisbug vs poisfix: per-guide disagreement counts",
+       subtitle = "all 800 Replogle guides; log1p axes, dashed = y = x") +
+  theme_bw()
+print(ph)
+```
+
+## The poisfix-heavy guides: UMI histograms (fix_only > 10)
+
+The handful of guides from the hexbin above where poisfix adds many more cells
+than poisbug (`fix_only > 10`). One panel per such guide, showing the full gRNA
+UMI-count distribution over all cells with the same linear-then-log2 mixed binning
+as fig-2a, shared bins and shared x/y axes across panels. Each cell is coloured by
+**which of the two nocirc methods assigns it** (neither / poisbug only / poisfix
+only / both), stacked per bin. Depends only on the `setup` chunk.
+
+```{r plot-poisfix-heavy-umi, fig.width=12, fig.height=5}
+DS_REPL <- "replogle-rd7_assign_nguides=800_ncells=100k"
+
+NOCIRC_BUG <- list(method = "glmpoisallgrnafix_poisbug", run = "run_grnafix_sceptre")
+NOCIRC_FIX <- list(method = "glmpoisallgrnafix_poisfix", run = "run_grnafix_bugfix_sceptre")
+
+read_assn <- function(spec)
+  readRDS(file.path(BM, "outputs", spec$run,
+                    paste0("assignment_matrix_script_", spec$method, "_", DS_REPL, ".rds")))
+
+grna_repl   <- readRDS(file.path(IN, DS_REPL, "sceptre", "grna_matrix.rds"))
+guide_names <- rownames(grna_repl)
+genes       <- vapply(strsplit(guide_names, "_", fixed = TRUE), function(z) z[[2]], character(1))
+
+## --- pick the poisfix-heavy guides: fix_only > 10 -------------------------
+assn_bug <- read_assn(NOCIRC_BUG); assn_fix <- read_assn(NOCIRC_FIX)
+stopifnot(all(guide_names == rownames(assn_bug)), all(guide_names == rownames(assn_fix)))
+bug_only <- as.numeric(Matrix::rowSums(assn_bug & !assn_fix))
+fix_only <- as.numeric(Matrix::rowSums(!assn_bug & assn_fix))
+sel <- guide_names[fix_only > 10]
+message(length(sel), " guides with fix_only > 10: ", paste(genes[match(sel, guide_names)], collapse = ", "))
+
+facet_lab <- setNames(
+  sprintf("%s\n(poisfix-only %d, poisbug-only %d)",
+          genes[match(sel, guide_names)],
+          as.integer(fix_only[match(sel, guide_names)]),
+          as.integer(bug_only[match(sel, guide_names)])),
+  sel)
+
+## umi over ALL cells for each selected guide, tagged by which method assigns it
+STATUS_LEVELS <- c("neither", "poisbug only", "poisfix only", "both")
+df_umi <- map_dfr(sel, function(g) {
+  b <- as.logical(assn_bug[g, ]); f <- as.logical(assn_fix[g, ])
+  status <- ifelse(b & f, "both",
+            ifelse(b & !f, "poisbug only",
+            ifelse(!b & f, "poisfix only", "neither")))
+  tibble(umi    = as.integer(grna_repl[g, ]),
+         status = factor(status, levels = STATUS_LEVELS),
+         panel  = facet_lab[[g]])
+}) |>
+  mutate(panel = factor(panel, levels = facet_lab[sel]))
+
+## --- mixed linear-then-log2 binning (inlined from thesis fig-2a) ----------
+logp1 <- function(x, base = 10) log(x + 1, base = base)
+make_mixed_bin_info <- function(max_x, k_exact = 10L) {
+  upper <- 0:k_exact; width <- 2L
+  while (tail(upper, 1L) < max_x) { upper <- c(upper, tail(upper, 1L) + width); width <- width * 2L }
+  lower <- c(0L, head(upper, -1L) + 1L)
+  label <- ifelse(lower == upper, as.character(upper), paste0(lower, "-", upper))
+  data.frame(bin_id = seq_along(label), lower = lower, upper = upper, label = label,
+             xmin = seq_along(label) - 0.45, xmax = seq_along(label) + 0.45,
+             stringsAsFactors = FALSE)
+}
+bin_with_info    <- function(x, bi) cut(x, breaks = c(-1, bi$upper), labels = bi$label, right = TRUE)
+make_y_breaks_umi <- function(mx) { b <- c(0,1,5,10,50,100,500,1e3,5e3,1e4,5e4,1e5,5e5); b[b <= mx] }
+make_x_axis_spec <- function(bi, k_exact, exact_every = 2L, tail_every = 2L) {
+  is_exact <- bi$lower == bi$upper & bi$upper <= k_exact
+  ei <- which(is_exact); ti <- which(!is_exact); keep <- rep(FALSE, nrow(bi))
+  if (length(ei)) { keep[ei[seq(1, length(ei), by = exact_every)]] <- TRUE; keep[max(ei)] <- TRUE }
+  if (length(ti)) { keep[ti[seq(1, length(ti), by = tail_every)]] <- TRUE; keep[max(ti)] <- TRUE }
+  list(breaks = bi$bin_id[keep], labels = bi$label[keep])
+}
+
+k_exact  <- 10L
+bin_info <- make_mixed_bin_info(max(df_umi$umi), k_exact = k_exact)
+counts <- df_umi |>
+  mutate(bin = factor(bin_with_info(umi, bin_info), levels = bin_info$label)) |>
+  group_by(panel, bin, status, .drop = FALSE) |>
+  summarise(count = n(), .groups = "drop") |>
+  arrange(panel, bin, status) |>
+  group_by(panel, bin) |>
+  mutate(y1 = cumsum(count), y0 = lag(y1, default = 0)) |>
+  ungroup() |>
+  mutate(bin = as.character(bin)) |>
+  left_join(bin_info, by = c("bin" = "label"))
+
+x_axis   <- make_x_axis_spec(bin_info, k_exact)
+y_breaks <- make_y_breaks_umi(max(counts$y1))
+
+pfh <- ggplot(counts) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = logp1(y0), ymax = logp1(y1),
+                fill = status), colour = "black", linewidth = 0.1) +
+  facet_wrap(~ panel, ncol = 4) +   # shared bins + shared x/y across panels
+  scale_fill_manual(values = c("neither" = "grey85", "poisbug only" = "#F8766D",
+                               "poisfix only" = "#00BFC4", "both" = "#9467BD")) +
+  scale_x_continuous(breaks = x_axis$breaks, labels = x_axis$labels,
+                     expand = expansion(add = 0.6)) +
+  scale_y_continuous(breaks = logp1(y_breaks), labels = scales::label_comma()(y_breaks),
+                     expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "poisfix-heavy guides (fix_only > 10): gRNA UMI distributions",
+       subtitle = "all cells, stacked by which nocirc method assigns the cell; linear-then-log2 bins, shared axes",
+       x = "gRNA UMI count (linear-then-log2 bins)", y = "number of cells", fill = NULL) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6),
+        legend.position = "bottom", strip.text = element_text(size = 7))
+print(pfh)
+```
+
+## Guides whose nocirc offset GLM diverged (CRNKL1-type failures)
+
+Flag the guides where the `glmpoisallgrnafix` offset Poisson-GLM did **not**
+converge. The failure mode (see CRNKL1): a guide that is spiky **and** dominates
+its own cells' gRNA totals, so leave-one-out strips `other_grna_n_umis ≈ 0` off
+exactly the high-count cells, forcing the fit onto the near-collinear response
+covariates until `mu0` explodes. Diagnostics per flagged guide: `max_y`, the
+gRNA total and leftover `other_umis` at that top cell (how self-dominated it is),
+the offset deviance and largest |coef|, plus whether each mixture converged and
+how many cells it assigned. The offset is shared by poisbug/poisfix, so
+`offset_converged` is identical across them. Table printed at the end. Depends
+only on the `setup` chunk.
+
+```{r flag-offset-diverged}
+DS_REPL <- "replogle-rd7_assign_nguides=800_ncells=100k"
+NOCIRC_BUG <- list(method = "glmpoisallgrnafix_poisbug", run = "run_grnafix_sceptre")
+NOCIRC_FIX <- list(method = "glmpoisallgrnafix_poisfix", run = "run_grnafix_bugfix_sceptre")
+
+read_extras <- function(spec)
+  readRDS(file.path(BM, "outputs", spec$run,
+                    paste0("assignment_extras_script_", spec$method, "_", DS_REPL, ".rds")))
+
+grna_repl   <- readRDS(file.path(IN, DS_REPL, "sceptre", "grna_matrix.rds"))
+guide_names <- rownames(grna_repl)
+genes       <- vapply(strsplit(guide_names, "_", fixed = TRUE), function(z) z[[2]], character(1))
+gtot_umis   <- Matrix::colSums(grna_repl)
+
+# guide-level: at each guide's max-count cell, how self-dominated is it?
+top_info <- map_dfr(guide_names, function(g) {
+  y <- as.numeric(grna_repl[g, ]); j <- which.max(y)
+  tibble(grna_id = g, max_y = y[j], gtot_at_top = gtot_umis[j],
+         other_umis_at_top = gtot_umis[j] - y[j],
+         self_frac_at_top = if (gtot_umis[j] > 0) y[j] / gtot_umis[j] else NA_real_)
+})
+
+# per-guide offset + EM diagnostics for one method
+diag_method <- function(spec) {
+  ex <- read_extras(spec); pg <- ex$per_guide
+  tibble(
+    grna_id          = names(pg),
+    offset_converged = vapply(pg, function(r) isTRUE(r$offset_model_summary$converged), logical(1)),
+    offset_deviance  = vapply(pg, function(r) as.numeric(r$offset_model_summary$deviance %||% NA), numeric(1)),
+    max_abs_coef     = vapply(pg, function(r) max(abs(r$offset_model_summary$coefficients)), numeric(1)),
+    em_converged     = vapply(pg, function(r) isTRUE(r$em_converged), logical(1)),
+    n_assigned       = vapply(pg, function(r) as.integer(r$n_assigned), integer(1)))
+}
+
+d_bug <- diag_method(NOCIRC_BUG)
+d_fix <- diag_method(NOCIRC_FIX)
+
+flagged <- d_bug |>
+  transmute(grna_id, gene = genes[match(grna_id, guide_names)],
+            offset_converged, offset_deviance, max_abs_coef,
+            em_conv_bug = em_converged, n_assn_bug = n_assigned) |>
+  left_join(transmute(d_fix, grna_id, em_conv_fix = em_converged, n_assn_fix = n_assigned),
+            by = "grna_id") |>
+  left_join(top_info, by = "grna_id") |>
+  filter(!offset_converged) |>
+  arrange(desc(max_y)) |>
+  select(gene, max_y, gtot_at_top, other_umis_at_top, self_frac_at_top,
+         offset_deviance, max_abs_coef, em_conv_bug, n_assn_bug, em_conv_fix, n_assn_fix)
+
+message(nrow(flagged), " of ", nrow(d_bug), " guides have a non-converged nocirc offset GLM")
+print(flagged, n = nrow(flagged))
+```
+
+
