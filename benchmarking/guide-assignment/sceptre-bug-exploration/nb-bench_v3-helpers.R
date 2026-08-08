@@ -696,3 +696,392 @@ plot_avg_n_assignments_by_group <- function(all_assns, grna_matrix,
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
 }
+
+
+## this block is for seeing how a guide's UMIs vary with covariates ~~~~~~~~~~~~
+
+# For ONE guide, show how its UMI counts vary across the levels of each covariate.
+# Each ROW is a covariate (a column of `covariate_matrix`); within a row, the
+# covariate is cut into `k` bins and each COLUMN is one bin, holding a histogram
+# of the guide's log1p(UMI) over the cells in that bin. So you read down a row to
+# see whether the guide's count distribution shifts as that covariate increases.
+#
+#   covariate_matrix : cells x covariates (e.g. the design matrix, or a raw
+#                      covariate matrix with columns grna_n_nonzero, grna_n_umis,
+#                      ...). Rows must align with `guide_umis`.
+#   guide_umis       : the guide's per-cell UMI count vector (length = n_cells =
+#                      nrow(covariate_matrix)).
+#   label            : optional guide name for the plot title.
+#   k                : number of covariate bins per row (default 4).
+#   covariates       : which covariate columns to use (names); default = all
+#                      non-constant columns (so a model.matrix intercept is
+#                      dropped automatically).
+#   group_method     : "quantile" (equal-count bins, default) or "interval"
+#                      (equal-width bins, i.e. base cut(x, k)). Quantile breaks
+#                      are de-duplicated, so heavily-tied covariates may yield
+#                      fewer than k bins.
+#   bins             : histogram bins (default 40).
+#   x_breaks         : raw-UMI tick positions (placed on the log1p scale).
+#   facet_scales     : facet_grid scales (default "free_y"; y frees per row).
+#   log_y            : log10 the count axis (default FALSE).
+#
+# Each panel is annotated with that bin's covariate range and its cell count n.
+plot_umi_by_covariate_bins <- function(covariate_matrix, guide_umis,
+                                       label        = NULL,
+                                       k            = 4L,
+                                       covariates   = NULL,
+                                       group_method = c("quantile", "interval"),
+                                       bins         = 40,
+                                       x_breaks     = c(0, 1, 2, 5, 10, 20, 50,
+                                                        100, 200, 500, 1000, 2000,
+                                                        5000, 10000, 20000, 50000,
+                                                        100000),
+                                       facet_scales = "free_y",
+                                       log_y        = FALSE) {
+  group_method <- match.arg(group_method)
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("plot_umi_by_covariate_bins requires the ggplot2 package.")
+  }
+  # Accept a data.frame or a matrix. We pull columns individually rather than
+  # as.matrix()-ing the whole thing, so mixed-type data frames (e.g. a batch
+  # factor alongside numeric covariates) don't get coerced to a character matrix.
+  n_cells <- nrow(covariate_matrix)
+  guide_umis <- as.numeric(guide_umis)
+  if (length(guide_umis) != n_cells) {
+    stop("length(guide_umis) (", length(guide_umis), ") != nrow(covariate_matrix) (",
+         n_cells, "); cells must align.")
+  }
+
+  is_df    <- is.data.frame(covariate_matrix)
+  all_cols <- colnames(covariate_matrix)
+  getcol   <- function(cv) if (is_df) covariate_matrix[[cv]] else covariate_matrix[, cv]
+
+  # default: every numeric, non-constant column (drops a model.matrix intercept
+  # and any non-numeric columns such as a batch factor).
+  if (is.null(covariates)) {
+    keep <- vapply(all_cols, function(cv) {
+      col <- getcol(cv)
+      is.numeric(col) && length(unique(col[is.finite(col)])) > 1L
+    }, logical(1))
+    covariates <- all_cols[keep]
+    dropped <- setdiff(all_cols, covariates)
+    if (length(dropped)) {
+      message("Using numeric, non-constant covariates; dropping: ",
+              paste(dropped, collapse = ", "))
+    }
+  } else {
+    missing_cols <- setdiff(covariates, all_cols)
+    if (length(missing_cols)) {
+      stop("Covariate column(s) not found: ", paste(missing_cols, collapse = ", "))
+    }
+    nonnum <- covariates[!vapply(covariates, function(cv) is.numeric(getcol(cv)),
+                                 logical(1))]
+    if (length(nonnum)) {
+      stop("Covariate column(s) not numeric (cannot bin): ",
+           paste(nonnum, collapse = ", "))
+    }
+  }
+  if (length(covariates) == 0L) stop("No numeric, non-constant covariate columns to bin.")
+
+  y      <- guide_umis
+  logumi <- log1p(y)
+
+  make_groups <- function(x) {
+    if (group_method == "interval") {
+      cut(x, breaks = k, include.lowest = TRUE)
+    } else {
+      qs <- stats::quantile(x, probs = seq(0, 1, length.out = k + 1), na.rm = TRUE)
+      qs <- unique(qs)
+      if (length(qs) < 2L) return(factor(rep(NA_character_, length(x))))
+      cut(x, breaks = qs, include.lowest = TRUE)
+    }
+  }
+
+  parts <- lapply(covariates, function(cv) {
+    f  <- make_groups(as.numeric(getcol(cv)))
+    data.frame(
+      covariate   = cv,
+      group_idx   = as.integer(f),
+      range_label = as.character(f),
+      logumi      = logumi,
+      row.names   = NULL,
+      stringsAsFactors = FALSE
+    )
+  })
+  df <- do.call(rbind, parts)
+  df <- df[!is.na(df$group_idx), , drop = FALSE]
+
+  df$covariate <- factor(df$covariate, levels = covariates)
+  lvls <- sort(unique(df$group_idx))
+  df$group_idx <- factor(df$group_idx, levels = lvls,
+                         labels = paste0("bin ", lvls))
+
+  # per-panel annotation: that bin's covariate range + cell count.
+  ann <- df %>%
+    dplyr::group_by(covariate, group_idx, range_label) %>%
+    dplyr::summarize(n = dplyr::n(), .groups = "drop")
+
+  # keep only UMI breaks inside the observed range.
+  max_count <- max(y, na.rm = TRUE)
+  x_breaks  <- x_breaks[x_breaks <= max_count]
+  if (!0 %in% x_breaks) x_breaks <- c(0, x_breaks)
+
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = logumi)) +
+    ggplot2::geom_histogram(bins = bins) +
+    ggplot2::geom_text(
+      data = ann,
+      ggplot2::aes(x = -Inf, y = Inf, label = paste0(range_label, "\nn = ", n)),
+      hjust = -0.04, vjust = 1.15, size = 2.6, lineheight = 0.9,
+      inherit.aes = FALSE
+    ) +
+    ggplot2::facet_grid(covariate ~ group_idx, scales = facet_scales) +
+    ggplot2::scale_x_continuous(
+      breaks = log1p(x_breaks),
+      labels = scales::label_number()(x_breaks),
+      name   = "UMI count"
+    ) +
+    ggplot2::labs(
+      y     = "number of cells",
+      title = sprintf("UMI distribution of %s by covariate bin (%s, k = %d)",
+                      label %||% "guide", group_method, k)
+    ) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      strip.text.y = ggplot2::element_text(angle = 0),
+      axis.text.x  = ggplot2::element_text(size = 7, angle = 90,
+                                           vjust = 0.5, hjust = 1)
+    )
+
+  if (log_y) {
+    p <- p + ggplot2::scale_y_log10(name = "number of cells")
+  }
+  p
+}
+
+
+# For a "middling" UMI range, see what the covariates look like. Each ROW is a
+# guide (from `grna_ids`). The FIRST panel of a row is that guide's full UMI
+# histogram, exactly as plot_umi_histogram() draws it (no filtering -- the whole
+# guide). Each SUBSEQUENT panel is a log-log histogram of one provided covariate,
+# restricted to the cells whose UMI count y_i falls in `y_interval`. So you scan
+# left (the whole count distribution, to pick/confirm the middling band) then
+# right (what those middling cells' covariates look like). Returns a cowplot.
+#
+#   covariate_matrix : cells x covariates (data.frame or matrix); rows align with
+#                      the columns of grna_matrix.
+#   grna_matrix      : gRNAs x cells count matrix (rownames = grna_ids).
+#   grna_ids         : guides to show (one row each).
+#   covariates       : covariate column names (one covariate panel each).
+#   y_interval       : length-2 c(lo, hi); covariate panels use cells with
+#                      lo <= y_i <= hi (inclusive).
+#   bins             : UMI-histogram bins for the first panel (default 80).
+#   cov_bins         : covariate-histogram bins (default 40).
+#   x_breaks         : raw-UMI tick positions for the first panel (log1p scale).
+#   rel_widths       : optional cowplot rel_widths for the panels in a row
+#                      (length 1 + length(covariates)); default equal widths.
+plot_covariates_for_middling_y <- function(covariate_matrix, grna_matrix, grna_ids,
+                                           covariates, y_interval,
+                                           bins       = 80,
+                                           cov_bins   = 40,
+                                           x_breaks   = c(0, 1, 2, 5, 10, 20, 50,
+                                                          100, 200, 500, 1000, 2000,
+                                                          5000, 10000, 20000, 50000,
+                                                          100000),
+                                           rel_widths = NULL) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("plot_covariates_for_middling_y requires the ggplot2 package.")
+  }
+  if (!requireNamespace("cowplot", quietly = TRUE)) {
+    stop("plot_covariates_for_middling_y requires the cowplot package.")
+  }
+  stopifnot(length(y_interval) == 2L, y_interval[1] <= y_interval[2])
+  lo <- y_interval[1]; hi <- y_interval[2]
+
+  is_df    <- is.data.frame(covariate_matrix)
+  n_cells  <- nrow(covariate_matrix)
+  all_cols <- colnames(covariate_matrix)
+  getcol   <- function(cv) if (is_df) covariate_matrix[[cv]] else covariate_matrix[, cv]
+
+  if (ncol(grna_matrix) != n_cells) {
+    stop("ncol(grna_matrix) (", ncol(grna_matrix), ") != nrow(covariate_matrix) (",
+         n_cells, "); cells must align.")
+  }
+  miss_g <- setdiff(grna_ids, rownames(grna_matrix))
+  if (length(miss_g)) stop("grna_ids not in grna_matrix: ", paste(miss_g, collapse = ", "))
+  miss_c <- setdiff(covariates, all_cols)
+  if (length(miss_c)) stop("covariate column(s) not found: ", paste(miss_c, collapse = ", "))
+  nonnum <- covariates[!vapply(covariates, function(cv) is.numeric(getcol(cv)), logical(1))]
+  if (length(nonnum)) stop("covariate column(s) not numeric: ", paste(nonnum, collapse = ", "))
+
+  if (is.null(rel_widths)) rel_widths <- rep(1, 1L + length(covariates))
+
+  # log-log histogram of a positive numeric vector (manual bars from 1, like
+  # plot_umi_histogram, so the log10 y-axis has no log(0) trouble).
+  loglog_hist <- function(v, title, n_sel) {
+    v <- v[is.finite(v) & v > 0]
+    if (length(v) == 0L) {
+      # text-only placeholder: an empty ggplot would train scales on no data
+      # (non-finite viewport / min-max warnings), so draw a label instead.
+      return(cowplot::ggdraw() +
+               cowplot::draw_label(sprintf("%s\nn = %d (no cells > 0)", title, n_sel),
+                                   size = 10))
+    }
+    h <- hist(log10(v), breaks = cov_bins, plot = FALSE)
+    d <- data.frame(xmin  = 10^head(h$breaks, -1),
+                    xmax  = 10^tail(h$breaks, -1),
+                    count = h$counts)
+    d <- d[d$count > 0, , drop = FALSE]
+    ggplot2::ggplot(d) +
+      ggplot2::geom_rect(ggplot2::aes(xmin = xmin, xmax = xmax, ymin = 1, ymax = count)) +
+      ggplot2::scale_x_log10(name = title) +
+      ggplot2::scale_y_log10(labels = scales::label_number(), name = "number of cells") +
+      ggplot2::labs(subtitle = sprintf("n = %d cells", n_sel)) +
+      ggplot2::theme_classic()
+  }
+
+  grna_rownames <- rownames(grna_matrix)
+  rows <- lapply(grna_ids, function(id) {
+    # Extract by INTEGER row index, one whole row at a time: ondisc ODM objects
+    # only support single whole-row access, and character-rowname indexing can
+    # silently return nothing -- match() to an integer index sidesteps that.
+    ri <- match(id, grna_rownames)
+    y  <- as.numeric(grna_matrix[ri, ])
+    if (length(y) != n_cells) {
+      stop("Guide '", id, "' (row ", ri, ") returned ", length(y),
+           " counts but there are ", n_cells, " cells; row extraction failed.")
+    }
+    umi   <- plot_umi_histogram(counts = y, bins = bins, title = id, x_breaks = x_breaks)
+    sel   <- which(y >= lo & y <= hi)
+    n_sel <- length(sel)
+    cov_panels <- lapply(covariates, function(cv) {
+      loglog_hist(as.numeric(getcol(cv))[sel], title = cv, n_sel = n_sel)
+    })
+    cowplot::plot_grid(plotlist = c(list(umi), cov_panels), nrow = 1,
+                       rel_widths = rel_widths)
+  })
+
+  cowplot::plot_grid(plotlist = rows, ncol = 1,
+                     rel_heights = rep(1, length(rows)))
+}
+
+
+# Like plot_covariates_for_middling_y, but each covariate panel OVERLAYS two
+# histograms split by a UMI threshold: the covariate values for cells with
+# y_min <= y_i <= y_thresh (the "middling" band) vs. for cells with y_i >
+# y_thresh (the "high" cells). Lets you see whether a covariate distinguishes
+# middling-count cells from clearly-perturbed ones. The first panel of each row
+# is still the guide's full UMI histogram (plot_umi_histogram). Returns a cowplot.
+#
+#   covariate_matrix : cells x covariates (data.frame or matrix); rows align with
+#                      the columns of grna_matrix.
+#   grna_matrix      : gRNAs x cells count matrix (rownames = grna_ids).
+#   grna_ids         : guides to show (one row each).
+#   covariates       : covariate column names (one overlay panel each).
+#   y_min, y_thresh  : the band is y_min <= y_i <= y_thresh; "high" is y_i >
+#                      y_thresh (defaults y_min = 1, y_thresh = 50).
+#   bins             : UMI-histogram bins for the first panel (default 80).
+#   cov_bins         : covariate-histogram bins (default 40).
+#   x_breaks         : raw-UMI tick positions for the first panel (log1p scale).
+#   rel_widths       : optional cowplot rel_widths for the panels in a row.
+plot_covariates_split_by_y <- function(covariate_matrix, grna_matrix, grna_ids,
+                                       covariates,
+                                       y_min      = 1,
+                                       y_thresh   = 50,
+                                       bins       = 80,
+                                       cov_bins   = 40,
+                                       x_breaks   = c(0, 1, 2, 5, 10, 20, 50,
+                                                      100, 200, 500, 1000, 2000,
+                                                      5000, 10000, 20000, 50000,
+                                                      100000),
+                                       rel_widths = NULL) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("plot_covariates_split_by_y requires the ggplot2 package.")
+  }
+  if (!requireNamespace("cowplot", quietly = TRUE)) {
+    stop("plot_covariates_split_by_y requires the cowplot package.")
+  }
+  stopifnot(length(y_min) == 1L, length(y_thresh) == 1L, y_min <= y_thresh)
+
+  is_df    <- is.data.frame(covariate_matrix)
+  n_cells  <- nrow(covariate_matrix)
+  all_cols <- colnames(covariate_matrix)
+  getcol   <- function(cv) if (is_df) covariate_matrix[[cv]] else covariate_matrix[, cv]
+
+  if (ncol(grna_matrix) != n_cells) {
+    stop("ncol(grna_matrix) (", ncol(grna_matrix), ") != nrow(covariate_matrix) (",
+         n_cells, "); cells must align.")
+  }
+  miss_g <- setdiff(grna_ids, rownames(grna_matrix))
+  if (length(miss_g)) stop("grna_ids not in grna_matrix: ", paste(miss_g, collapse = ", "))
+  miss_c <- setdiff(covariates, all_cols)
+  if (length(miss_c)) stop("covariate column(s) not found: ", paste(miss_c, collapse = ", "))
+  nonnum <- covariates[!vapply(covariates, function(cv) is.numeric(getcol(cv)), logical(1))]
+  if (length(nonnum)) stop("covariate column(s) not numeric: ", paste(nonnum, collapse = ", "))
+
+  if (is.null(rel_widths)) rel_widths <- rep(1, 1L + length(covariates))
+
+  lab_lo <- sprintf("%g <= y <= %g", y_min, y_thresh)
+  lab_hi <- sprintf("y > %g", y_thresh)
+  fills  <- stats::setNames(c("#4C72B0", "#DD8452"), c(lab_lo, lab_hi))
+
+  # Two overlaid log-log histograms (manual bars from 1, shared breaks so the two
+  # groups align). `v_lo` / `v_hi` are the covariate values for the band / high
+  # cells; n_lo / n_hi are the group sizes (pre >0 filter) for the subtitle.
+  overlap_hist <- function(v_lo, v_hi, title, n_lo, n_hi, show_legend) {
+    d <- rbind(
+      if (length(v_lo)) data.frame(v = v_lo, grp = lab_lo) else NULL,
+      if (length(v_hi)) data.frame(v = v_hi, grp = lab_hi) else NULL
+    )
+    if (is.null(d)) d <- d[0, , drop = FALSE]
+    d <- d[is.finite(d$v) & d$v > 0, , drop = FALSE]
+    if (nrow(d) == 0L) {
+      return(cowplot::ggdraw() +
+               cowplot::draw_label(sprintf("%s\nno cells > 0", title), size = 10))
+    }
+    shared <- hist(log10(d$v), breaks = cov_bins, plot = FALSE)$breaks
+    d$bin  <- cut(log10(d$v), breaks = shared, include.lowest = TRUE, labels = FALSE)
+    rects  <- d %>%
+      dplyr::group_by(grp, bin) %>%
+      dplyr::summarize(count = dplyr::n(), .groups = "drop")
+    rects$xmin <- 10^shared[rects$bin]
+    rects$xmax <- 10^shared[rects$bin + 1L]
+    rects$grp  <- factor(rects$grp, levels = c(lab_lo, lab_hi))
+
+    p <- ggplot2::ggplot(rects) +
+      ggplot2::geom_rect(
+        ggplot2::aes(xmin = xmin, xmax = xmax, ymin = 1, ymax = count, fill = grp),
+        alpha = 0.5) +
+      ggplot2::scale_x_log10(name = title) +
+      ggplot2::scale_y_log10(labels = scales::label_number(), name = "number of cells") +
+      ggplot2::scale_fill_manual(values = fills, drop = FALSE, name = NULL) +
+      ggplot2::labs(subtitle = sprintf("n: %d / %d", n_lo, n_hi)) +
+      ggplot2::theme_classic() +
+      ggplot2::theme(legend.position = if (show_legend) "bottom" else "none")
+    p
+  }
+
+  grna_rownames <- rownames(grna_matrix)
+  rows <- lapply(grna_ids, function(id) {
+    ri <- match(id, grna_rownames)
+    y  <- as.numeric(grna_matrix[ri, ])
+    if (length(y) != n_cells) {
+      stop("Guide '", id, "' (row ", ri, ") returned ", length(y),
+           " counts but there are ", n_cells, " cells; row extraction failed.")
+    }
+    umi    <- plot_umi_histogram(counts = y, bins = bins, title = id, x_breaks = x_breaks)
+    sel_lo <- which(y >= y_min & y <= y_thresh)
+    sel_hi <- which(y > y_thresh)
+    cov_panels <- lapply(seq_along(covariates), function(j) {
+      cv <- covariates[[j]]
+      x  <- as.numeric(getcol(cv))
+      overlap_hist(x[sel_lo], x[sel_hi], title = cv,
+                   n_lo = length(sel_lo), n_hi = length(sel_hi),
+                   show_legend = (j == 1L))
+    })
+    cowplot::plot_grid(plotlist = c(list(umi), cov_panels), nrow = 1,
+                       rel_widths = rel_widths)
+  })
+
+  cowplot::plot_grid(plotlist = rows, ncol = 1,
+                     rel_heights = rep(1, length(rows)))
+}
