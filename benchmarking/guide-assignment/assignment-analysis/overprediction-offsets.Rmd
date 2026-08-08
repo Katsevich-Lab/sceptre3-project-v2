@@ -30,7 +30,8 @@ suppressPackageStartupMessages({
 })
 
 ## --- config --------------------------------------------------------------
-BM     <- "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment"
+source("~/.Rprofile")
+BM     <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment")
 DS     <- "replogle-rd7_assign_nguides=800_ncells=100k"
 IN     <- file.path(BM, "input_data", DS, "sceptre")
 TAIL_THRESH <- 10   # "upper tail" = counts >= this

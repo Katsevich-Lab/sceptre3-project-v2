@@ -34,7 +34,8 @@ suppressPackageStartupMessages({
 })
 
 ## --- config --------------------------------------------------------------
-BM  <- "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment"
+source("~/.Rprofile")
+BM  <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment")
 IN  <- file.path(BM, "input_data")
 
 # Every (offset x mixture) method, its script name, and the run it lives in.
