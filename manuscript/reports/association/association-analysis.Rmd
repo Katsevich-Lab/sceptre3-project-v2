@@ -29,7 +29,8 @@ suppressPackageStartupMessages({
 })
 
 source("~/.Rprofile")
-source("association-analysis-functions.R")
+# source("association-analysis-functions.R")
+source("~/katsevich-lab/code/sceptre3-project-v2/manuscript/reports/association/association-analysis-functions.R")
 ```
 
 # REPLOGLE
@@ -213,6 +214,132 @@ plot_memory(trace_repl, "Replogle: memory")
 
 
 TODO: sceptre-pipeline extras
+
+
+
+
+reran with ntargets on the x-axis and ncells induced, not independently varied
+
+```{r}
+run_name = c("run_repl_ngenes=1000_3targets")
+path_inmem = file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "association/computational/outputs", run_name)
+
+trace_inmem = read_tsv(
+  file.path(path_inmem, "trace.txt"), show_col_types = FALSE
+) |>
+  tidyr::extract(
+      tag,
+      into = c("ngenes", "ntargets"),
+      regex = "ngenes=([0-9]+)_ntargets=([0-9]+)",
+      remove = FALSE,
+      convert = TRUE
+    ) |>
+    transmute(
+      method = gsub("_computational", "", process, ignore.case = TRUE) |> tolower(),
+      peak_rss, realtime,
+      ngenes, ntargets
+    ) |>
+    mutate(
+      peak_rss_gb = case_when(
+        str_detect(peak_rss, regex("\\bGB\\b", ignore_case = TRUE)) ~ parse_number(peak_rss),
+        str_detect(peak_rss, regex("\\bMB\\b", ignore_case = TRUE)) ~ parse_number(peak_rss) / 1024,
+        TRUE ~ NA_real_
+      )
+    ) |>
+    mutate(
+      h = parse_number(str_extract(realtime, "\\d+(?=h)")),
+      m = parse_number(str_extract(realtime, "\\d+(?=m)")),
+      s = parse_number(str_extract(realtime, "\\d+(?=s)")),
+      h = coalesce(h, 0),
+      m = coalesce(m, 0),
+      s = coalesce(s, 0),
+      realtime_sec = 3600*h + 60*m + s,
+      realtime_min = realtime_sec / 60
+    ) %>%
+    select(-h, -m, -s) 
+
+
+# temporary plot
+fmt_hms <- function(x) {
+  x <- round(x)
+  sprintf("%d:%02d:%02d", x %/% 3600, (x %% 3600) %/% 60, x %% 60)
+}
+
+
+time_breaks <- c(
+  60,      # 1 min
+  120,     # 2 min
+  300,     # 5 min
+  600,     # 10 min
+  1800,    # 30 min
+  3600,    # 1 hr
+  7200,    # 2 hr
+  14400    # 4 hr
+)
+
+ntargets_to_ncells <- c("50"="50k", "100"="70k", "200"="110k")
+trace_inmem |>
+  mutate(npairs = ngenes * ntargets, num_cells= ntargets_to_ncells[as.character(ntargets)] |> factor(levels = ntargets_to_ncells) ) |>
+  ggplot(
+    aes(
+      x = ntargets,
+      y = realtime_sec,
+      color = method
+    )
+  ) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_y_continuous(
+
+    labels = fmt_hms
+  ) +
+  labs(
+    x = "Number of targets",
+    y = "Runtime",
+    color = "Method",
+    linetype = NULL,
+    title = "Replogle: in-memory runtime using all relevant cells"
+  ) +
+  theme_bw()
+```
+
+```{r}
+trace_inmem |>
+  mutate(
+    npairs = ngenes * ntargets,
+    num_cells = ntargets_to_ncells[as.character(ntargets)] |>
+      factor(levels = ntargets_to_ncells)
+  ) |>
+  ggplot(
+    aes(
+      x = ntargets,
+      y = realtime_sec,
+      color = method,
+      group = method
+    )
+  ) +
+  geom_line() +
+  geom_point(aes(shape = num_cells), size = 2) +
+  scale_y_continuous(labels = fmt_hms) +
+  labs(
+    x = "Number of targets",
+    y = "Runtime",
+    color = "Method",
+    shape = "Number of cells",
+    title = "Replogle: in-memory runtime using all relevant cells"
+  ) +
+  theme_bw()
+```
+
+
+
+
+
+
+
+
+
+
 
 
 # 2. GASPERINI
