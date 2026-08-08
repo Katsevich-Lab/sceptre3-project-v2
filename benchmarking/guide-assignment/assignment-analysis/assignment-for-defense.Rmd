@@ -14,6 +14,32 @@ library(data.table)
 rm(list=ls())
 source("~/.Rprofile")
 
+theme_presentation <- function(base_size = 16) {
+  theme_bw(base_size = base_size) %+replace% 
+    theme(
+      # Increase title sizes
+      plot.title = element_text(size = rel(1.4), face = "bold", margin = margin(b = 10)),
+      plot.subtitle = element_text(size = rel(1.1), margin = margin(b = 10)),
+      
+      # Axis text and titles
+      axis.title = element_text(size = rel(1.1)),
+      axis.text = element_text(size = rel(0.9), color = "black"),
+      
+      # Legend positioning and size
+      legend.position = "bottom",
+      legend.text = element_text(size = rel(0.9)),
+      legend.title = element_text(size = rel(1.0), face = "bold"),
+      
+      # Facet label (strip) sizes - critical for your multi-panel plots
+      strip.text = element_text(size = rel(1.1), face = "bold", margin = margin(5, 5, 5, 5)),
+      strip.background = element_rect(fill = "gray95", color = "black"),
+      
+      # Clean up gridlines for projection
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "gray90", linewidth = 0.3)
+    )
+}
+
 get_all_guides_per_dataset <- function(dataset_name) {
   curr_path_to_data = file.path(
     .get_config_path("LOCAL_BENCHMARKING_DIR"),
@@ -130,7 +156,9 @@ load_assns <- function(path_to_assns, method_name, all_guides, cell_names_in_ord
     load_assns_pertpy(path_to_assns = path_to_assns, all_guides = all_guides)
   } else if(method_name == "cleanser") {
     load_assns_cleanser(path_to_assns = path_to_assns, all_guides = all_guides, cell_names_in_order = cell_names_in_order)
-  } else {
+  # }  else if(method_name == "scepnb") {
+  #   load_assns_scepnb(path_to_assns = path_to_assns, all_guides = all_guides, cell_names_in_order = cell_names_in_order)
+  }   else {
     stop("method '", method_name, "' not recognized.")
   }
 }
@@ -149,9 +177,19 @@ load_assns_sceptre <- function(path_to_assns, all_guides, cell_names_in_order) {
   guide_to_assns
 }
 
+# load_assns_scepnb <- function(path_to_assns, all_guides, cell_names_in_order) {
+#   scep_assn_mat = read_rds(path_to_assns)
+#   guide_to_assns = vector("list", length(all_guides)) |>
+#     setNames(all_guides)
+#   for(guide in all_guides) {
+#     guide_to_assns[[guide]] = cell_names_in_order[which(scep_assn_mat[guide,] == 1)]
+#   }
+#   guide_to_assns
+# }
+
 # path_to_crispat = "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/outputs/run_all_3guides_100k/assignments_crispat_replogle-rd7_assign_nguides=100_ncells=100k.csv"
-all_guides = rownames(read_rds("/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7_assign_nguides=100_ncells=100k/sceptre/grna_matrix.rds"))
-cell_names_in_order  = colnames(read_rds("/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7_assign_nguides=100_ncells=100k/sceptre/grna_matrix.rds"))
+# all_guides = rownames(read_rds("/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7_assign_nguides=100_ncells=100k/sceptre/grna_matrix.rds"))
+# cell_names_in_order  = colnames(read_rds("/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7_assign_nguides=100_ncells=100k/sceptre/grna_matrix.rds"))
 
 # RETURNS NAMES
 load_assns_crispat <- function(path_to_assns, all_guides) {
@@ -199,8 +237,8 @@ load_assns_pertpy <- function(path_to_assns, all_guides) {
     
     guide_to_assns
 }
-
-path_to_assns = "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/outputs/run_all_3guides_100k/assignments_cleanser_replogle-rd7_assign_nguides=100_ncells=100k.csv"
+# 
+# path_to_assns = "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/outputs/run_all_3guides_100k/assignments_cleanser_replogle-rd7_assign_nguides=100_ncells=100k.csv"
 load_assns_cleanser <- function(path_to_assns, all_guides, cell_names_in_order, posterior_thresh = 0.8) {
   # print(all_guides)
   clns_assign_raw <- read_csv(path_to_assns, show_col_types = FALSE) |> as.data.frame()
@@ -253,31 +291,34 @@ load_assns_cleanser <- function(path_to_assns, all_guides, cell_names_in_order, 
 
 
 ```{r, echo=FALSE}
-run_names <- c("run_all_3guides_100k")
+run_names <- c("run_all_3guides_100k", "run_all_nguides=800_100k", "rerun_pertpy_more_samples")
 
 dataset_names_repl <- c(
   ng100 = "replogle-rd7_assign_nguides=100_ncells=100k",
   ng200 = "replogle-rd7_assign_nguides=200_ncells=100k",
-  ng400 = "replogle-rd7_assign_nguides=400_ncells=100k"
+  ng400 = "replogle-rd7_assign_nguides=400_ncells=100k",
+  ng800 = "replogle-rd7_assign_nguides=800_ncells=100k"
 )
 dataset_names_gasp <- c(
   ng100 = "gasperini_assign_nguides=100_ncells=100k",
   ng200 = "gasperini_assign_nguides=200_ncells=100k",
-  ng400 = "gasperini_assign_nguides=400_ncells=100k"
+  ng400 = "gasperini_assign_nguides=400_ncells=100k",
+  ng800 = "gasperini_assign_nguides=800_ncells=100k"
 )
 methods = c("sceptre", "crispat", "cleanser", "pertpy")
 
 method_renamer = c(
   sceptre="SCEPTRE",
   cleanser="CLEANSER",
-  crispat="Crispat",
-  pertpy="Pertpy"
+  crispat="crispat",
+  pertpy="pertpy"
 )
 
 dataset_renamer = c(
   ng100="100 guides",
   ng200="200 guides",
-  ng400="400 guides"
+  ng400="400 guides",
+    ng800="800 guides"
 )
 
 sparsity_repl = file.path(
@@ -680,7 +721,7 @@ plot_method_comparisons_by_sparsity <- function(
     geom_split_violin(trim = TRUE, alpha = 0.7, scale = "width", adjust = 1.5) +
     labs(
       title    = paste(source_data_name, "Pairwise Agreement:", metric_title_name),
-      subtitle = "Split violins: Low (Left) vs High (Right) Sparsity",
+      subtitle = "Split by guide sparsity: low or high",
       y        = metric_y_axis_name,
       x        = "Method Comparison",
       fill     = "Sparsity Group"
@@ -699,7 +740,289 @@ plot_method_comparisons_by_sparsity <- function(
 ```
 
 
+first, let's get summary statistics
+
+use biggest
+```{r}
+dataset = "ng800"
+
+# get_summaries = function(assns_list, dataset, return_all=FALSE) {
+#   # avg num cells per guide
+# 
+#   
+#   cell_counts <- assns_list[[dataset]] |>
+#   # 1. Convert nested list to a long data frame
+#   enframe(name = "method", value = "guides") |>
+#   unnest_longer(guides, indices_to = "guide_id") |>
+#   unnest_longer(guides, values_to = "cell_id") |>
+#   
+#   # 2. Group by method and cell to count guides per cell
+#   group_by(method, cell_id) |>
+#   summarise(num_guides = n(), .groups = "drop") |>
+#   
+#   # 3. Pivot wider to see all methods side-by-side
+#   pivot_wider(names_from = method, values_from = num_guides, values_fill = 0)
+#   
+#   out = list(
+#     cells_per_guide = lapply(assns_list[[dataset]], function(assns) {
+#   sapply(assns, length) |> mean()
+# }),
+# guides_per_cell = dplyr::select(cell_counts, -cell_id) |> colMeans()
+# )
+#   if(return_all) {
+#     out[["cell_counts"]] = cell_counts
+#   }
+#   out
+# }
+
+# get_summaries(repl_assns, "ng800")
+# oo = get_summaries(gasp_assns, "ng800", T)
+# oo$cell_counts |>
+#   select(-cell_id) |>
+#   colMeans()
+
+
+
+
+
+# need all cells
+# cell_names = file.path(
+#   .get_config_path("LOCAL_BENCHMARKING_DIR"),
+#   "guide_assignment/input_data",
+#   dataset_names_repl[[dataset]],
+#   "sceptre/grna_matrix.rds"
+# ) |> read_rds() |>
+#   colnames()
+
+
+
+
+grna_mat_repl = file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data",
+  dataset_names_repl[[dataset]],
+  "sceptre/grna_matrix.rds"
+) |> read_rds() 
+
+grna_mat_gasp = file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data",
+  dataset_names_gasp[[dataset]],
+  "sceptre/grna_matrix.rds"
+) |> read_rds() 
+
+
+# grna_mat = grna_mat_gasp
+# assns_list = gasp_assns[[dataset]]
+grna_mat = grna_mat_repl
+assns_list = repl_assns[[dataset]]
+
+thresh <- 10 # Example threshold
+tail_heaviness <- sapply(rownames(grna_mat), function(guide) {
+  counts <- grna_mat[guide, ]
+  tail_counts <- counts[counts >= thresh]
+  if(length(tail_counts) == 0) return(0)
+  mean(tail_counts)
+})
+
+
+
+# 2. Get Number of Assignments per Guide for each method
+# This assumes your assns_list is: List of Methods -> List of Guides -> Vector of Cells
+n_assns_per_method <- lapply(assns_list, function(method_assns) {
+  sapply(method_assns, length)
+})
+
+# 3. Correlation Check
+# Compare each method's assignment counts to the tail heaviness
+cor_results <- sapply(n_assns_per_method, function(n_assn) {
+  # Align by guide names
+  common_guides <- intersect(names(n_assn), names(tail_heaviness))
+  cor((n_assn[common_guides]), tail_heaviness[common_guides], method = "pearson")
+})
+
+print(cor_results)
+
+plot_df <- do.call(rbind, lapply(names(n_assns_per_method), function(mname) {
+  data.frame(
+    guide = names(n_assns_per_method[[mname]]),
+    n_assn = n_assns_per_method[[mname]],
+    tail_heavy = tail_heaviness[names(n_assns_per_method[[mname]])],
+    method = mname
+  )
+}))
+
+
+
+plot_df |>
+  mutate(
+    method = factor(method_renamer[method], levels = method_renamer)
+  ) |>
+ggplot( aes(x = (tail_heavy), y = (n_assn), color = method)) +
+  geom_point(alpha = 0.4) +
+  # geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~method) +
+  theme_bw() +
+  scale_y_continuous(
+    trans = "log1p", 
+    breaks = c(0, 1, 10, 100, 1000)
+  ) +
+  labs(title = "Replogle: Sensitivity to Tail Heaviness",
+       x = paste0("Mean of UMIs above ", thresh),
+       y = "Num. assignments / guide") +
+  theme_presentation()
+
+ggsave("~/thesis-defense-figures/assign-tail-sensitivity.png", width = 10, height = 7, dpi = 300)
+
+
+```
+
+
 plot 1: metrics as a function of guide
+
+```{r}
+# 1. Function to calculate mean Jaccard between two methods
+get_mean_jaccard <- function(m1_list, m2_list) {
+  # Align guides present in both methods
+  common_guides <- intersect(names(m1_list), names(m2_list))
+  
+  scores <- sapply(common_guides, function(g) {
+    set_a <- m1_list[[g]]
+    set_b <- m2_list[[g]]
+    
+    inter <- length(intersect(set_a, set_b))
+    uni   <- length(union(set_a, set_b))
+    
+    # Logic: If both methods agree a guide has 0 cells, that's a perfect match (1)
+    if (uni == 0) return(1) 
+    return(inter / uni)
+  })
+  
+  return(mean(scores))
+}
+
+# assns_list = repl_assns[["ng800"]]
+assns_list = gasp_assns[["ng800"]]
+# 2. Build the Matrix
+method_names <- names(assns_list)
+per_guide_matrix <- sapply(method_names, function(m1) {
+  sapply(method_names, function(m2) {
+    get_mean_jaccard(assns_list[[m1]], assns_list[[m2]])
+  })
+})
+
+print(round(per_guide_matrix, 3))
+```
+
+```{r}
+# library(corrplot)
+# library(RColorBrewer)
+# 
+# # 1. Define the methods and initialize an asymmetric matrix
+# methods <- c("SCEPTRE", "crispat", "CLEANSER", "pertpy")
+# n <- length(methods)
+# comb_mat <- matrix(NA, nrow = n, ncol = n)
+# colnames(comb_mat) <- rownames(comb_mat) <- methods
+# 
+# # 2. Fill Replogle Data (Upper Triangle)
+# # Values: (s,cr)=0.86, (s,cl)=0.80, (s,p)=0.79, (cr,cl)=0.91, (cr,p)=0.81, (cl,p)=0.76
+# comb_mat[1, 2] <- 0.86; comb_mat[1, 3] <- 0.80; comb_mat[1, 4] <- 0.79
+# comb_mat[2, 3] <- 0.91; comb_mat[2, 4] <- 0.81
+# comb_mat[3, 4] <- 0.76
+# 
+# # 3. Fill Gasperini Data (Lower Triangle)
+# # Values: (cr,s)=0.98, (cl,s)=0.94, (p,s)=0.39, (cl,cr)=0.94, (p,cr)=0.40, (p,cl)=0.38
+# comb_mat[2, 1] <- 0.98; comb_mat[3, 1] <- 0.94; comb_mat[4, 1] <- 0.39
+# comb_mat[3, 2] <- 0.94; comb_mat[4, 2] <- 0.40
+# comb_mat[4, 3] <- 0.38
+# 
+# # 4. Define a warm color palette (Yellow -> Orange -> Red)
+# warm_palette <- colorRampPalette(brewer.pal(9, "YlOrRd"))(200)
+# 
+# # 5. Plotting
+# # We use two calls to corrplot to handle the labels for each triangle
+# # Call 1: Upper Triangle (Replogle)
+# corrplot(comb_mat, 
+#          method = "color", 
+#          type = "upper", 
+#          col = warm_palette,
+#          addCoef.col = "black",   # Add text labels
+#          number.digits = 2,       # Round to 2 decimal places
+#          diag = FALSE,            # Remove diagonal
+#          tl.col = "black",        # Text label color
+#          cl.pos = "n",            # Remove color legend (scale on side)
+#          mar = c(0, 0, 2, 0),     # Adjust margins for title
+#          title = "Average per-guide Jaccard: Replogle (Upper) vs Gasperini (Lower)")
+# 
+# # Call 2: Lower Triangle (Gasperini)
+# corrplot(comb_mat, 
+#          method = "color", 
+#          type = "lower", 
+#          col = warm_palette,
+#          addCoef.col = "black", 
+#          number.digits = 2, 
+#          diag = FALSE, 
+#          add = TRUE,              # Add to the existing plot
+#          tl.pos = "n",            # Don't redraw axis labels
+#          cl.pos = "n")            # Ensure no scale on side
+```
+
+```{r}
+# 1. Update naming to your exact specifications
+methods_ <- c("SCEPTRE", "crispat", "CLEANSER", "pertpy")
+plot_data <- expand.grid(Row = methods_, Col = methods_)
+plot_data$value <- NA
+
+# Replogle (Upper)
+plot_data$value[plot_data$Row == "SCEPTRE"  & plot_data$Col == "crispat"]  <- 0.86
+plot_data$value[plot_data$Row == "SCEPTRE"  & plot_data$Col == "CLEANSER"] <- 0.80
+plot_data$value[plot_data$Row == "SCEPTRE"  & plot_data$Col == "pertpy"]   <- 0.79
+plot_data$value[plot_data$Row == "crispat"  & plot_data$Col == "CLEANSER"] <- 0.91
+plot_data$value[plot_data$Row == "crispat"  & plot_data$Col == "pertpy"]   <- 0.81
+plot_data$value[plot_data$Row == "CLEANSER" & plot_data$Col == "pertpy"]   <- 0.76
+
+# Gasperini (Lower)
+plot_data$value[plot_data$Row == "crispat"  & plot_data$Col == "SCEPTRE"]  <- 0.98
+plot_data$value[plot_data$Row == "CLEANSER" & plot_data$Col == "SCEPTRE"]  <- 0.94
+plot_data$value[plot_data$Row == "pertpy"   & plot_data$Col == "SCEPTRE"]  <- 0.39
+plot_data$value[plot_data$Row == "CLEANSER" & plot_data$Col == "crispat"]  <- 0.94
+plot_data$value[plot_data$Row == "pertpy"   & plot_data$Col == "crispat"]  <- 0.40
+plot_data$value[plot_data$Row == "pertpy"   & plot_data$Col == "CLEANSER"] <- 0.38
+
+# 2. Factorize - Reverse Row to put SCEPTRE at the top
+plot_data$Row <- factor(plot_data$Row, levels = rev(methods_))
+plot_data$Col <- factor(plot_data$Col, levels = methods_)
+
+# 3. Final Plotting
+ggplot(plot_data, aes(x = Col, y = Row, fill = value)) +
+  geom_tile(color = "white", linewidth = 1.2) +
+  # Custom Gradient: Beige (#F5F5DC) to ggplot-Red (#F8766D)
+  scale_fill_gradient(low = "#F5F5DC", high = "#F8766D", 
+                      na.value = "white", limits = c(0, 1)) +
+  # High-contrast bold numbers
+  geom_text(aes(label = ifelse(is.na(value), "", sprintf("%.2f", value))), 
+            color = "black", size = 6.5, fontface = "bold") +
+  coord_fixed() +
+  theme_minimal() +
+  theme(
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    legend.position = "none",
+    axis.text = element_text(size = 14, face = "bold", color = "black"),
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", margin = margin(b=20))
+  ) +
+  # Place labels in the diagonal gaps
+  # Row 4, Col 1 is SCEPTRE/SCEPTRE slot (Gasperini side)
+  # Row 1, Col 4 is pertpy/pertpy slot (Replogle side)
+  annotate("text", x = 1, y = 4, label = "Gasperini\n(Lower)", 
+           size = 5.5, fontface = "bold.italic", color = "grey25", lineheight = 0.85) +
+  annotate("text", x = 4, y = 1, label = "Replogle\n(Upper)", 
+           size = 5.5, fontface = "bold.italic", color = "grey25", lineheight = 0.85) +
+  labs(title = "Average per-guide Jaccard")
+
+ggsave("~/thesis-defense-figures/assign-avg-jaccard.png", width = 10, height = 7, dpi = 300)
+
+```
 
 ```{r, echo=FALSE}
 
@@ -710,9 +1033,9 @@ plot 1: metrics as a function of guide
 # plot_method_comparisons(gasp_assns, "precision")
 # plot_method_comparisons(repl_assns, "recall")
 # plot_method_comparisons(gasp_assns, "recall")
-plot_method_comparisons(repl_assns, "jaccard", metric_y_axis_name = "Jaccard similarity", source_data = "Replogle",
+plot_method_comparisons(repl_assns["ng800"], "jaccard", metric_y_axis_name = "Jaccard similarity", source_data = "Replogle",
                     method_renamer = method_renamer, dataset_renamer = dataset_renamer)
-plot_method_comparisons(gasp_assns, "jaccard", metric_y_axis_name = "Jaccard similarity", source_data = "Gasperini",
+plot_method_comparisons(gasp_assns["ng800"], "jaccard", metric_y_axis_name = "Jaccard similarity", source_data = "Gasperini",
                     method_renamer = method_renamer, dataset_renamer = dataset_renamer)
 ```
 
@@ -817,6 +1140,13 @@ plot_method_comparisons_by_sparsity(
 )
 
 ```
+
+
+
+does var correlate? can i find my simu findings here?
+
+
+
 
 
 
@@ -967,95 +1297,187 @@ trace_all = rbind(
 
 ```
 
-```{r, echo=FALSE}
-plot_runtime <- function(trace_file, title, source_data) {
+
+```{r}
+plot_runtime <- function(df, title_text, source_tag) {
+  
+  # 1. Master Palette definition (Internal or Global)
+  method_cols_ <- c(
+    "SCEPTRE"  = "#F8766D",
+    "crispat"  = "#7CAE00",
+    "CLEANSER" = "#00BFC4",
+    "pertpy"   = "#C77CFF",
+    "pipeline" = "#FF0000"
+  )
+  
+  # 2. Helper for H:M:S formatting
   fmt_hms <- function(x) {
     x <- round(x)
     sprintf("%d:%02d:%02d", x %/% 3600, (x %% 3600) %/% 60, x %% 60)
   }
   
+  # 3. Dynamic Time Breaks
+  all_breaks <- c(30, 60, 120, 300, 600, 1800, 3600, 7200, 14400, 28800)
+  current_max <- max(df$realtime_sec, na.rm = TRUE)
   
-  time_breaks <- c(
-    30,
-    60,      # 1 min
-    120,     # 2 min
-    300,     # 5 min
-    600,     # 10 min
-    1800,    # 30 min
-    3600,    # 1 hr
-    7200,    # 2 hr
-    14400    # 4 hr
-  )
-  trace_file |>
-    filter(source_data == !!source_data) |>
-  ggplot(
-    aes(
-      x = nguides,
-      y = realtime_sec,
-      color = method,
-      group = method
-    )
-  ) +
-    geom_line() +
-    geom_point(size = 2) +
-    # facet_wrap(
-    #   ~ npairs,
-    #   labeller = labeller(npairs = function(x) paste0("num. pairs = ", x, "k"))
-    # ) +
-    scale_y_log10(
-      breaks = time_breaks[time_breaks <= max(trace_file$realtime_sec)],
-      labels = fmt_hms
-    ) +
+  # 4. The Plot Pipeline
+  df |>
+    dplyr::filter(source_data == !!source_tag) |>
+    ggplot(aes(x = nguides, y = realtime_sec, 
+               color = method, group = method)) +
+    geom_line(linewidth = 0.8, alpha = 0.7) +
+    geom_point(size = 4) +
+    # Scale logic
+    scale_y_log10(breaks = all_breaks[all_breaks <= current_max * 1.2], 
+                  labels = fmt_hms) +
     scale_x_log10() +
+    # Manual Scales (Built-in)
+    scale_color_manual(values = method_cols_) +
+    # scale_shape_manual(values = c("TRUE" = 17, "FALSE" = 1), guide = "none") +
+    # Formatting
     labs(
       x = "Number of guides (log scale)",
-      y = "Runtime (log scale)",
+      y = "Runtime (H:M:S, log scale)",
       color = "Method",
-      # linetype = NULL,
-      title = title
+      title = title_text
     ) +
-    theme_bw()
+    theme_bw() +
+    theme_presentation() + # Assumes this is defined in your environment
+    theme(
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank()
+    )
 }
-plot_runtime(trace_all, title = "Runtime for Replogle", source_data = "replogle")
-plot_runtime(trace_all, title = "Runtime for Gasperini", source_data = "gasperini")
+method_renamer_comp <- method_renamer
+method_renamer_comp["pipeline"] <- "pipeline"
+trace_all |>
+  mutate(
+    method = factor(method_renamer_comp[method], levels = method_renamer_comp),
+    scep = method %in% c("SCEPTRE", "pipeline")
+  ) |>
+plot_runtime(title = "Assignment: runtime for Replogle", source_tag = "replogle")
+ggsave("~/thesis-defense-figures/repl-assign-runtime.png", width = 10, height = 7, dpi = 300)
+
+
+trace_all |>
+  mutate(
+    method = factor(method_renamer_comp[method], levels = method_renamer_comp),
+    scep = method %in% c("SCEPTRE", "pipeline")
+  ) |>
+plot_runtime(title = "Assignment: runtime for Gasperini", source_tag = "gasperini")
+ggsave("~/thesis-defense-figures/gasp-assign-runtime.png", width = 10, height = 7, dpi = 300)
+
 ```
 
 
 ```{r, echo=FALSE}
-plot_memory <- function(trace_file, title, source_data) {
-  trace_file |>
-    filter(source_data == !!source_data) |>
-  ggplot(
-    aes(
-      x = nguides,
-      y = peak_rss_gb,
-      color = method
-      # group = interaction(method, npairs)
-    )
-  ) +
-    geom_line() +
-    geom_point(size = 2) +
-    # facet_wrap(
-    #   ~ npairs,
-    #   labeller = labeller(npairs = function(x) paste0("num. pairs = ", x, "k"))
-    # ) +
+plot_memory <- function(df, title_text, source_tag) {
+  
+  # 1. Master Palette (Ensuring consistency across all slide types)
+  method_cols_ <- c(
+    "SCEPTRE"  = "#F8766D",
+    "crispat"  = "#7CAE00",
+    "CLEANSER" = "#00BFC4",
+    "pertpy"   = "#C77CFF",
+    "pipeline" = "#FF0000" # Logical Orange
+  )
+  
+  # 2. Filter and Plot
+  df |>
+    dplyr::filter(source_data == !!source_tag) |>
+    ggplot(aes(x = nguides, y = peak_rss_gb, 
+               color = method, group = method)) +
+    geom_line(linewidth = 0.8, alpha = 0.7) +
+    geom_point(size = 4) +
+    
+    # 3. Log Scales
     scale_y_log10(
       breaks = c(0.5, 1, 2, 4, 8, 16, 32, 64, 128),
-      labels = scales::label_number()
+      labels = scales::label_number(suffix = " GB") # Adds "GB" directly to axis
     ) +
-        scale_x_log10() +
+    scale_x_log10() +
+    
+    # 4. Manual Scales (Synced with Runtime plot)
+    scale_color_manual(values = method_cols_) +
+    # scale_shape_manual(values = c("TRUE" = 17, "FALSE" = 1), guide = "none") +
+    
+    # 5. Formatting
     labs(
-      x = "Number of guides (log)",
-      y = "Peak memory (GB, log scale)",
+      x = "Number of guides (log scale)",
+      y = "Peak memory (log scale)",
       color = "Method",
-      title = title,
-      linetype = NULL
+      title = title_text
     ) +
-    theme_bw()
+    theme_bw() +
+    theme_presentation() + 
+    theme(
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank()
+    )
 }
+trace_all |>
+  mutate(
+    method = factor(method_renamer_comp[method], levels = method_renamer_comp),
+    scep = method %in% c("SCEPTRE", "pipeline")
+  ) |>
+plot_memory(title = "Assignment: memory for Replogle", source_tag = "replogle")
+ggsave("~/thesis-defense-figures/repl-assign-mem.png", width = 10, height = 7, dpi = 300)
 
-plot_memory(trace_all, title = "Memory for Replogle", source_data = "replogle")
-plot_memory(trace_all, title = "Memory for Gasperini", source_data = "gasperini")
+trace_all |>
+  mutate(
+    method = factor(method_renamer_comp[method], levels = method_renamer_comp),
+    scep = method %in% c("SCEPTRE", "pipeline")
+  ) |>
+  plot_memory( title = "Assignment: memory for Gasperini", source_tag = "gasperini")
+ggsave("~/thesis-defense-figures/gasp-assign-mem.png", width = 10, height = 7, dpi = 300)
+
+```
+
+
+
+can i make an extra nextflow worker usage plot?
+
+```{r}
+
+# 1. Load the data
+# Nextflow trace files use '\t' and usually don't have quotes
+curr_trace_raw <- read_delim("~/data/projects/sceptre3/benchmarking/association/computational/outputs/sceptre-pipeline/replogle-rd7_comp_ngenes=10000_ntargets=1600_gene_thresh=7/tracing/trace.tsv", delim = "\t")
+
+# 2. Filter and Prepare the Timeline
+# We need to know when each process started and when it finished
+concurrency_data <- curr_trace_raw %>%
+  filter(grepl("run_association_analysis", process)) %>%
+  # Convert character timestamps to actual Date-Time objects
+  mutate(
+    start_time = as.POSIXct(start, format="%Y-%m-%d %H:%M:%OS"),
+    end_time   = as.POSIXct(complete, format="%Y-%m-%d %H:%M:%OS")
+  ) %>%
+  # Create a "long" format: one row for 'start' (+1) and one for 'end' (-1)
+  select(start_time, end_time) %>%
+  pivot_longer(cols = everything(), names_to = "event_type", values_to = "time") %>%
+  mutate(change = ifelse(event_type == "start_time", 1, -1)) %>%
+  # Sort by time to calculate the running sum
+  arrange(time) %>%
+  mutate(active_processes = cumsum(change))
+
+# 3. Plotting
+ggplot(concurrency_data, aes(x = time, y = active_processes)) +
+  geom_step(color = "#00BFC4", linewidth = 1) +  # geom_step is best for discrete changes
+  # geom_area(fill = "#00BFC4", alpha = 0.2) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Worker Usage Over Time",
+    subtitle = "Process: run_association_analysis",
+    x = "Time (Wall Clock)",
+    y = "Number of Concurrent Workers"
+  ) +
+  scale_x_datetime(date_labels = "%H:%M", date_breaks = "1 hour") +
+  theme_presentation(base_size = 25)
+
+ggsave("~/thesis-defense-figures/worker-usage.png", width = 10, height = 7, dpi = 300)
+
 ```
 
 
@@ -1109,14 +1531,14 @@ umis <- do.call(rbind, umis_list) |>
   mutate(Expression = ifelse(Expression == "dense", "high", "low"),
          data_source = ifelse(data_source == "replogle-rd7", "Replogle", "Gasperini"))
 
-plot_umis <- function(umis) {
+plot_guides <- function(umis, title) {
   max_val <- max(umis[["UMI count"]], na.rm = TRUE)
   max_break <- floor(log10(max(1, max_val))) + 1
 
-  my_breaks <- c(0, 10^(0:max_break))#, (10^(2:max_break)) / 2) |> sort()
+  my_breaks <- c(0, 10^(1:max_break))#, (10^(2:max_break)) / 2) |> sort()
   
   umis |>
-    ggplot(aes(x = `UMI count`, fill = Expression)) +
+    ggplot(aes(x = `UMI count`, fill = data_source)) +
     geom_histogram(bins=50) +
     # facet_wrap(data_source ~ Expression, labeller = label_bquote(cols = "Data: " * .(data_source)))+
     facet_wrap(~data_source + Expression, 
@@ -1134,26 +1556,1092 @@ plot_umis <- function(umis) {
       trans  = "log1p",
       breaks = my_breaks,
       labels = scales::label_comma()
+    ) +
+    labs(title=title)
+}
+plot_guides(umis, title="Example guide RNA distributions") +
+  theme_presentation() +
+  theme(legend.position = "none") 
+ggsave("~/thesis-defense-figures/guide-dist.png", width = 10, height = 7, dpi = 300)
+
+```
+
+```{r}
+rm(list=ls())
+source("~/.Rprofile")
+library(tidyverse)
+
+data_sources <- c("replogle-rd7", "gasperini")
+
+cell_umis_list <- list()
+# cell_metadata <- list()
+for(i in seq_along(data_sources)) {
+  data_source = data_sources[i]
+  path_to_data <- file.path(
+    .get_config_path("LOCAL_BENCHMARKING_DIR"),
+    "guide_assignment/input_data", data_source,
+    "sceptre-pipeline"
+  )
+  
+  scep <- sceptre::read_ondisc_backed_sceptre_object(
+    sceptre_object_fp = file.path(path_to_data, "sceptre_object.rds"),
+    response_odm_file_fp = file.path(path_to_data, "response.odm"),
+    grna_odm_file_fp = file.path(path_to_data, "grna.odm")
+  )
+  
+  cell_stats <- data.frame(
+    grna_n_nonzero = scep@covariate_data_frame$grna_n_nonzero,
+        grna_n_umis = scep@covariate_data_frame$grna_n_umis,
+    cell_idx = 1:nrow(scep@covariate_data_frame)
+  ) |>
+    arrange(grna_n_nonzero)
+  
+  idx_to_keep <- c(cell_stats$cell_idx[10000], tail(cell_stats$cell_idx, 1000)[1])
+  # scep@covariate_data_frame[idx_to_keep,]
+  
+  grna_odm <- ondisc::initialize_odm_from_backing_file(
+    file.path(path_to_data, "grna.odm")
+  )
+  
+  low_ <- high_ <- integer(nrow(grna_odm))
+  for(j in 1:nrow(grna_odm)) {
+    curr_ <- grna_odm[j,]
+    low_[j] = curr_[idx_to_keep[1]]
+    high_[j] = curr_[idx_to_keep[2]]
+  }
+  cell_umis_list[[i]] <- data.frame(low = low_, high=high_, low_idx = idx_to_keep[1], high_idx = idx_to_keep[2], data_source=  data_source)
+}
+
+
+
+
+cell_umis <- do.call(rbind, cell_umis_list) |>
+  dplyr::select(-low_idx, -high_idx) |>
+  pivot_longer(cols = !data_source, names_to = "Expression", values_to = "UMI count") |>
+  mutate(data_source = ifelse(data_source == "replogle-rd7", "Replogle", "Gasperini"))
+
+plot_cells <- function(umis, title) {
+  max_val <- max(umis[["UMI count"]], na.rm = TRUE)
+  max_break <- floor(log10(max(1, max_val))) + 1
+
+  my_breaks_x <- c(0, 5, 10^(0:max_break)) |> sort()#, (10^(2:max_break)) / 2) |> sort()
+  my_breaks_y <- c(0,  10^(1:max_break)) |> sort()
+  umis |>
+    ggplot(aes(x = `UMI count`, fill = data_source)) +
+    geom_histogram(bins=50) +
+    # facet_wrap(data_source ~ Expression, labeller = label_bquote(cols = "Data: " * .(data_source)))+
+    facet_wrap(~data_source + Expression, 
+             labeller = labeller(
+               Expression = label_both,
+               data_source = label_value
+             ), scales="free_x") +
+    theme_bw() +
+    scale_y_continuous(
+      trans  = "log1p",
+      breaks = my_breaks_y,
+      labels = scales::label_comma()
+    ) +
+        scale_x_continuous(
+      trans  = "log1p",
+      breaks = my_breaks_x,
+      labels = scales::label_comma()
+    ) +
+    labs(title=title)
+}
+plot_cells(cell_umis, title="gRNA UMI counts for 4 example cells") +
+   theme_presentation() +
+  theme(legend.position = "none") 
+ggsave("~/thesis-defense-figures/cell-dist.png", width = 10, height = 7, dpi = 300)
+
+```
+
+
+
+
+
+
+## SIMULATIONS
+
+```{r}
+
+# i copied the pertpy from this one "rerun_pertpy_sims_4mu_50k_cleanser_params" to the one i'm using
+run_names_sims <- c("run_sims_4mu_50k_cleanser_params")
+
+
+# i manually renamed from   sims = "replogle-rd7_sims_from_cleanser_50k_4_mu"
+# because having a method name in the dataset name broke my code
+dataset_names_sims <- c(
+  sims = "replogle-rd7_sims_from_clns_50k_4_mu"
+)
+
+methods = c("sceptre", "crispat", "cleanser", "pertpy")
+
+method_renamer = c(
+  sceptre="SCEPTRE",
+    crispat="crispat",
+  cleanser="CLEANSER",
+  pertpy="pertpy"
+)
+stopifnot((methods) == names(method_renamer))  # these need to agree for factor making!
+
+# dataset_renamer = c(
+#   ng100="100 guides",
+#   ng200="200 guides",
+#   ng400="400 guides",
+#     ng800="800 guides"
+# )
+
+# gotta process this one a bit more
+sims_assns <- load_all_assns(run_names=run_names_sims, dataset_names=dataset_names_sims, methods=methods)
+
+
+
+```
+
+
+```{r}
+# plot_method_comparisons(sims_assns, "jaccard", metric_y_axis_name = "Jaccard similarity", source_data = "sims",
+#                     method_renamer = method_renamer)
+```
+
+
+ok let's get ground truth comparison
+```{r}
+
+true_perts = read_rds(
+  "~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7_sims_from_clns_50k_4_mu/true_pert_matrix.rds"
+)
+sim_data = read_rds(
+  "~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7_sims_from_clns_50k_4_mu/sceptre/grna_matrix.rds"
+)
+
+
+make_sim_df <- function(sims_assns, methods, true_perts, sim_data, mupow_seq = 0:3, nguides_per = 100, metric_func) {
+  
+  results <- list()
+  for(mupow in mupow_seq) {
+    
+    guide_id = 1:nguides_per
+    guides_to_consider = paste0("params_cleanser_mupow=", mupow, "_grna_", guide_id)
+    
+    curr_dataset_metrics = vector("list", length(methods)) |> setNames(methods)
+    
+    for(method_ in methods) {
+      curr_dataset_metrics[[method_]] = vector("list", length(guides_to_consider)) |> setNames(guides_to_consider)
+      
+      for(guide_ in guides_to_consider) {
+        
+        true_pos = true_perts[guide_,] == 1
+        pos_umi = sim_data[guide_,] > 0
+        
+        metric_val  = metric_func(
+          sims_assns$sims[[method_]][[guide_]], 
+          colnames(true_perts)[true_pos & pos_umi]
+        )
+        
+        curr_dataset_metrics[[method_]][[guide_]] = metric_val # ifelse(is.na(jacc), 0, jacc)
+      }
+    }
+    curr_results = data.frame(
+      guide = guides_to_consider,
+      mupow = mupow,
+      guide_id
+    )
+    
+    for(method_ in methods) {
+      curr_results[[paste0(method_)]] = curr_dataset_metrics[[method_]][curr_results$guide] |> unlist()
+    }
+    results <- c(results, list(curr_results))
+  }
+  do.call(rbind, results)
+}
+
+
+
+
+
+sim_results_jacc = make_sim_df(sims_assns = sims_assns, methods = methods, true_perts = true_perts, sim_data = sim_data, mupow_seq = 0:3, nguides_per = 100, metric_func = jaccard)
+
+sim_results_jacc |>
+  dplyr::select(-guide) |>
+  pivot_longer(cols=!mupow & !guide_id, names_to="method", values_to="jaccard") |>
+  ggplot(aes(x = jaccard, fill = method)) +
+  geom_histogram(bins=50) +
+  facet_wrap(~mupow) +
+  theme_bw() +
+  coord_cartesian(xlim = c(0, 1))
+
+sim_results_prec = make_sim_df(sims_assns = sims_assns, methods = methods, true_perts = true_perts, sim_data = sim_data, mupow_seq = 0:3, nguides_per = 100, metric_func = precision)
+
+sim_results_prec |>
+  dplyr::select(-guide) |>
+  pivot_longer(cols=!mupow & !guide_id, names_to="method", values_to="precision") |>
+  ggplot(aes(x = precision, fill = method)) +
+  geom_histogram(bins=50) +
+  facet_wrap(~mupow) +
+  theme_bw() +
+  coord_cartesian(xlim = c(0, 1))
+
+
+sim_results_recall = make_sim_df(sims_assns = sims_assns, methods = methods, true_perts = true_perts, sim_data = sim_data, mupow_seq = 0:3, nguides_per = 100, metric_func = recall)
+
+sim_results_recall |>
+  dplyr::select(-guide) |>
+  pivot_longer(cols=!mupow & !guide_id, names_to="method", values_to="recall") |>
+  ggplot(aes(x = recall, fill = method)) +
+  geom_histogram(bins=50) +
+  facet_wrap(~mupow) +
+  theme_bw() +
+  coord_cartesian(xlim = c(0, 1))
+
+
+```
+
+
+
+
+let's get a nice front-page visualization
+INCLUDED IN DEFENSE
+```{r}
+combine_all_sim_results <- function(sim_results_jacc, sim_results_prec, sim_results_recall) {
+  avg_metric_df <- sim_results_jacc |>
+  group_by(mupow) |>
+  summarize(sceptre = mean(sceptre), pertpy = mean(pertpy),
+            cleanser = mean(cleanser), crispat = mean(crispat)) |>
+  pivot_longer(!mupow, values_to="jacc", names_to  ="method") |>
+  left_join(
+    sim_results_prec |>
+  group_by(mupow) |>
+  summarize(sceptre = mean(sceptre), pertpy = mean(pertpy),
+            cleanser = mean(cleanser, na.rm=TRUE), crispat = mean(crispat)) |>
+  pivot_longer(!mupow, values_to="prec", names_to  ="method"),
+  by = c("mupow", "method")
+    
+  ) |>
+  left_join(
+    sim_results_recall |>
+  group_by(mupow) |>
+  summarize(sceptre = mean(sceptre), pertpy = mean(pertpy),
+            cleanser = mean(cleanser, na.rm=TRUE), crispat = mean(crispat)) |>
+  pivot_longer(!mupow, values_to="recall", names_to  ="method"),
+  by = c("mupow", "method")
+  )
+  
+  avg_metric_df
+}
+
+
+avg_metric_df <- combine_all_sim_results(sim_results_jacc, sim_results_prec, sim_results_recall)
+
+
+
+
+
+mu_breaks = c(100,200,400,800,1600)
+metric_renamer <- c(jacc="Jaccard", prec="Precision", recall="Recall")
+avg_metric_df |>
+  pivot_longer(!mupow & !method, names_to = "metric", values_to = "value") |>
+  mutate(
+    method = factor(method_renamer[method], levels = method_renamer),
+    metric = metric_renamer[metric],
+    mu_pert = 971 / (2^mupow)
+  ) |>
+  ggplot(aes(x = mu_pert, y = value, group = method, color = method)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~metric) +
+  # theme_bw() +
+  scale_x_log10(
+    breaks = mu_breaks
+  ) +
+  # theme(legend.position = "bottom") +
+  labs(
+    x = "Average NegBin mean for perturbed cells",
+    y = "Metric value",
+    title = "Simulation metrics summary"
+  ) +
+  theme_presentation()
+
+ggsave("~/thesis-defense-figures/assign-sims-avg-metrics.png", width = 10, height = 7, dpi = 300)
+
+
+sim_results_jacc |>
+  dplyr::select(-guide) |>
+  pivot_longer(cols=!mupow & !guide_id, names_to="method", values_to="jaccard") |>
+  filter(mupow %in% c(0,3)) |>
+  mutate(
+    method = factor(method_renamer[method], levels = method_renamer),
+    mu_pert = round(971 / (2^mupow) / 10)*10
+  ) |>
+  # filter(method != "Crispat") |>
+  ggplot(aes(x = jaccard, fill = method)) +
+  geom_histogram(bins=50) +
+  # geom_density(alpha = 0.3, linewidth = 0.8) +
+  facet_wrap(~mu_pert, labeller = label_bquote(cols = "Perturbed mean" == .(mu_pert))) +
+  theme_bw() +
+  coord_cartesian(xlim = c(0, 1)) +
+  labs(
+    x = "Jaccard similarity to ground truth",
+    title = "Individual simulation results"
+  ) +
+  theme_presentation()
+ggsave("~/thesis-defense-figures/assign-sims-hists.png", width = 10, height = 7, dpi = 300)
+
+```
+
+
+investigations to back up my key points in "~/thesis-defense-figures/assign-sims-avg-metrics.png"
+
+1. pertpy's poor precision for small $\mu_1$
+- is it making too many predictions? yes
+- if that happens, it's because gaussian absorbs too many
+
+2. sceptre's poor precision for large $\mu_1$
+
+3. cleanser's failures. does it not assign anything? or just all wrong?
+```{r}
+sims_assns$sims$pertpy[paste0("params_cleanser_mupow=3_grna_",1:100)] |> sapply(length) |> hist()
+sims_assns$sims$crispat[paste0("params_cleanser_mupow=3_grna_",1:100)] |> sapply(length) |> hist()
+
+
+```
+
+
+let's try to get example data that shows this
+- i want the one sceptre does badly on, the really flat one
+- i want to show a really "nice" large one
+- a really nice "small" one
+- and maybe the real guide?
+
+
+
+
+ok i want a table showing the correlation between 
+(1) log(# assigned) and jacc
+(2) mean(y[z==1]) and jacc
+
+```{r}
+cor_df = data.frame(
+  pert_means = Matrix::rowSums(sim_data * true_perts) / Matrix::rowSums(true_perts),
+  guide = rownames(true_perts)
+)
+
+for(method_name in methods) {
+  cor_df[[paste0(method_name, "_num_assns_log1p")]] = sims_assns$sims[[method_name]][rownames(true_perts)] |> sapply(length) |> log1p()
+}
+
+cor_df <- cor_df |>
+  left_join(
+    sim_results_jacc, by = "guide"
+  )
+
+
+cors_jacc_and_num_assn = sapply(methods, function(method_) {
+  (dplyr::select(cor_df, starts_with(method_)) |> cor())[1,2]
+})
+
+
+cors_jacc_and_pert_means = sapply(methods, function(method_) {
+  cor(cor_df[[method_]], pert_means)
+})
+
+
+table_df <- data.frame(
+  cors_jacc_and_num_assn, cors_jacc_and_pert_means
+)
+
+plot(cor_df$sceptre ~ cor_df$pert_means)
+plot(cor_df$pertpy ~ cor_df$pert_means)
+
+lm(sceptre ~ sceptre_num_assns_log1p + log1p(pert_means), data=cor_df) |> summary()
+lm(crispat ~ crispat_num_assns_log1p + pert_means, data=cor_df) |> summary()
+
+
+```
+
+
+
+
+
+```{r}
+sim_results_jacc |>
+  filter(mupow == 2) |>
+  arrange(sceptre) |>
+  head()
+
+
+
+guides_to_plot <- c(
+  scep_bad = "params_cleanser_mupow=0_grna_46",
+  scep_good = "params_cleanser_mupow=0_grna_40",
+  pertpy_bad = "params_cleanser_mupow=3_grna_54",
+  sceptre_meh = "params_cleanser_mupow=2_grna_78"
+)
+
+sims_assns$sims$sceptre[[guides_to_plot[["sceptre_meh"]]]] |> length()
+
+true_perts[guides_to_plot[["scep_good"]],] |> table()
+(sim_data[guides_to_plot[["scep_bad"]],] == 0) |> table()
+
+sum(sim_data[guides_to_plot[["scep_good"]],] <= 3 &
+      true_perts[guides_to_plot[["scep_good"]],] == 1)
+sum(true_perts[guides_to_plot[["scep_good"]],] == 1)
+
+# let's compute the fraction of true perts that got <= 3
+fracs = sapply(seq_len(nrow(true_perts)), function(i) {
+  mean(sim_data[i,][true_perts[i,] == 1] <= 3)
+})
+
+pert_sds = sapply(seq_len(nrow(true_perts)), function(i) {
+  sd(sim_data[i,][true_perts[i,] == 1])
+})
+pert_means = sapply(seq_len(nrow(true_perts)), function(i) {
+  mean(sim_data[i,][true_perts[i,] == 1])
+})
+
+num_scep_preds = sims_assns$sims$sceptre[rownames(true_perts)] |> sapply(length)
+
+ss = sim_results_jacc |>
+  left_join(
+    data.frame(fracs=fracs, pert_sds=pert_sds, pert_means=pert_means, num_scep_preds = num_scep_preds, guide=rownames(true_perts)), by="guide"
+  ) |>
+  mutate(
+    overdisp = pert_means^2/(pert_sds^2 - pert_means)
+  )
+
+ss |>
+  dplyr::select()
+
+ss |>
+  ggplot(aes(x = pert_means, y = log(num_scep_preds))) +
+  geom_point()
+
+
+umi_df_list <- lapply(seq_along(guides_to_plot), function(i) {
+  guide_ = guides_to_plot[i]
+  data.frame(
+    grna_sim = sim_data[guide_,],
+    is_pert = true_perts[guide_,],
+    group = names(guides_to_plot)[i]
+  )
+})
+  # do.call(what=rbind)
+
+
+
+# ok let's get correlation between log(num preds) and jaccard
+num_assign_dat <- lapply(seq_along(sims_assns$sims), function(i) {
+  data.frame(
+    num_assigns = sims_assns$sims[[i]][rownames(true_perts)] |> sapply(length),
+    method = names(sims_assns$sims)[i]
+  ) %>%
+    mutate(guide_id = rownames(.))
+}) |>
+  do.call(what=rbind) |>
+  pivot_wider(names_from = method, values_from = num_assigns, id_cols = guide_id)
+
+
+aa = left_join(
+  sim_results_jacc, num_assign_dat, by = join_by(guide == guide_id)
+) 
+
+cor(aa$sceptre.x, log(aa$sceptre.y))
+cor(aa$crispat.x, log(aa$crispat.y))
+cor(aa$pertpy.x, log(aa$pertpy.y))
+cor(aa$cleanser.x, log1p(aa$cleanser.y))
+
+plot(aa$cleanser.x[aa$cleanser.y > 0], log1p(aa$cleanser.y[aa$cleanser.y > 0]))
+plot(aa$cleanser.x ~ log1p(aa$cleanser.y))
+plot(aa$crispat.x~  log1p(aa$crispat.y))
+plot(aa$pertpy.x~  log1p(aa$pertpy.y))
+plot(aa$sceptre.x~  log1p(aa$sceptre.y))
+
+
+
+
+pltlist = lapply(umi_df_list, function(df) {
+  make_umi_hist_of_sims(
+  grna_sim = df$grna_sim,
+  is_pert = df$is_pert,
+  title_sim =df$group[1]
+)
+})
+
+
+cowplot::plot_grid(plotlist=pltlist)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ok now let's visualize each one
+
+
+```{r}
+
+
+# helper: log1p transform in base 10
+logp1 <- function(x, base = 10) {
+  log(x + 1, base = base)
+}
+
+# helper: build mixed exact / exponentially growing bins
+# bins are:
+#   0, 1, ..., k_exact as singleton bins
+# then widths 2, 4, 8, 16, ...
+make_mixed_bin_info <- function(max_x, k_exact = 10L) {
+  stopifnot(length(max_x) == 1, is.finite(max_x), max_x >= 0)
+  
+  upper <- 0:k_exact
+  
+  width <- 2L
+  while (tail(upper, 1L) < max_x) {
+    upper <- c(upper, tail(upper, 1L) + width)
+    width <- width * 2L
+  }
+  
+  lower <- c(0L, head(upper, -1L) + 1L)
+  
+  label <- ifelse(
+    lower == upper,
+    as.character(upper),
+    paste0(lower, "-", upper)
+  )
+  
+  data.frame(
+    bin_id = seq_along(label),
+    lower = lower,
+    upper = upper,
+    label = label,
+    xmin = seq_along(label) - 0.45,
+    xmax = seq_along(label) + 0.45,
+    stringsAsFactors = FALSE
+  )
+}
+
+# helper: assign each count to one mixed bin
+bin_with_info <- function(x, bin_info) {
+  cut(
+    x,
+    breaks = c(-1, bin_info$upper),
+    labels = bin_info$label,
+    right = TRUE
+  )
+}
+
+# helper: choose readable y-axis breaks on the original count scale
+make_y_breaks <- function(max_count) {
+  breaks <- c(
+    0, 1, 2, 3, 5,
+    10, 20, 30, 50,
+    100, 200, 300, 500,
+    1000, 2000, 3000, 5000,
+    10000, 20000, 30000, 50000,
+    100000, 200000, 300000, 500000,
+    1000000, 2000000, 3000000, 5000000,
+    10000000
+  )
+  breaks[breaks <= max_count]
+}
+
+# helper: exact binned counts for one vector
+make_binned_counts <- function(x, bin_info) {
+  stopifnot(all(is.finite(x)), all(x >= 0), all(x == floor(x)))
+  
+  bin <- factor(
+    bin_with_info(x, bin_info),
+    levels = bin_info$label
+  )
+  
+  out <- data.frame(bin = bin) |>
+    dplyr::count(bin, .drop = FALSE, name = "count") |>
+    dplyr::mutate(bin = as.character(bin)) |>
+    dplyr::left_join(bin_info, by = c("bin" = "label")) |>
+    dplyr::arrange(bin_id)
+  
+  stopifnot(sum(out$count) == length(x))
+  out
+}
+
+# helper: declutter x-axis labels
+# label all singleton bins up to k_exact, then every `tail_every`-th tail bin, plus the last bin
+# make_x_axis_spec <- function(bin_info, k_exact, tail_every = 2L) {
+#   is_exact <- bin_info$lower == bin_info$upper & bin_info$upper <= k_exact
+#   tail_idx <- which(!is_exact)
+#   
+#   keep <- is_exact
+#   if (length(tail_idx) > 0) {
+#     keep[tail_idx[seq(1, length(tail_idx), by = tail_every)]] <- TRUE
+#     keep[max(tail_idx)] <- TRUE
+#   }
+#   
+#   list(
+#     breaks = bin_info$bin_id[keep],
+#     labels = bin_info$label[keep]
+#   )
+# }
+# helper: declutter x-axis labels
+# exact_every: keep every n-th label in the 0:k_exact range
+# tail_every: keep every n-th label in the exponentially growing range
+make_x_axis_spec <- function(bin_info, k_exact, exact_every = 1L, tail_every = 2L) {
+  is_exact <- bin_info$lower == bin_info$upper & bin_info$upper <= k_exact
+  exact_idx <- which(is_exact)
+  tail_idx <- which(!is_exact)
+  
+  # Initialize keep vector as all FALSE
+  keep <- rep(FALSE, nrow(bin_info))
+  
+  # 1. Thin out the exact bins (e.g., 0, 1, 2, 3...)
+  if (length(exact_idx) > 0) {
+    keep[exact_idx[seq(1, length(exact_idx), by = exact_every)]] <- TRUE
+    # Optional: always keep the last exact bin (k_exact)
+    keep[max(exact_idx)] <- TRUE
+  }
+  
+  # 2. Thin out the tail bins (e.g., 11-12, 13-16...)
+  if (length(tail_idx) > 0) {
+    keep[tail_idx[seq(1, length(tail_idx), by = tail_every)]] <- TRUE
+    # Always keep the very last bin
+    keep[max(tail_idx)] <- TRUE
+  }
+  
+  list(
+    breaks = bin_info$bin_id[keep],
+    labels = bin_info$label[keep]
+  )
+}
+# real-data plot
+make_plt1a <- function(grna_real, bin_info, k_exact = 10L, tail_every = 2L, title = "real") {
+  real_counts <- make_binned_counts(grna_real, bin_info)
+  
+  y_breaks <- make_y_breaks(max(real_counts$count))
+  y_breaks_t <- logp1(y_breaks)
+  x_axis <- make_x_axis_spec(bin_info, k_exact = k_exact, tail_every = tail_every)
+  
+  plot_df <- real_counts |>
+    dplyr::mutate(
+      ymin = 0,
+      ymax = logp1(count)
+    )
+  
+  ggplot2::ggplot(plot_df) +
+    ggplot2::geom_rect(
+      ggplot2::aes(
+        xmin = xmin, xmax = xmax,
+        ymin = ymin, ymax = ymax
+      ),
+      fill = "grey70",
+      color = "black"
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = x_axis$breaks,
+      labels = x_axis$labels,
+      expand = ggplot2::expansion(add = 0.6)
+    ) +
+    ggplot2::scale_y_continuous(
+      breaks = y_breaks_t,
+      labels = scales::label_number(big.mark = ",")(y_breaks),
+      expand = ggplot2::expansion(mult = c(0, 0.05))
+    ) +
+    ggplot2::labs(
+      title = title,
+      x = "gRNA count bin",
+      y = "cell count"
+    ) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1)
     )
 }
-plot_umis(umis)
 
+make_plt1b <- function(grna_sim, is_pert, bin_info, k_exact = 10L, tail_every = 2L, title = "sim") {
+  stopifnot(length(grna_sim) == length(is_pert))
+  stopifnot(all(is.finite(grna_sim)), all(grna_sim >= 0), all(grna_sim == floor(grna_sim)))
+  
+  sim_df <- data.frame(
+    umi = grna_sim,
+    pert_status = factor(
+      ifelse(is_pert == 1, "pert", "not pert"),
+      levels = c("not pert", "pert")
+    )
+  )
+  
+  sim_df$bin <- factor(
+    bin_with_info(sim_df$umi, bin_info),
+    levels = bin_info$label
+  )
+  
+  sim_counts <- sim_df |>
+    dplyr::count(bin, pert_status, .drop = FALSE, name = "count") |>
+    dplyr::mutate(bin = as.character(bin)) |>
+    dplyr::left_join(bin_info, by = c("bin" = "label")) |>
+    dplyr::arrange(bin_id, pert_status) |>
+    dplyr::group_by(bin, bin_id, lower, upper, xmin, xmax) |>
+    dplyr::mutate(
+      y0 = dplyr::lag(cumsum(count), default = 0),
+      y1 = cumsum(count),
+      ymin = logp1(y0),
+      ymax = logp1(y1)
+    ) |>
+    dplyr::ungroup()
+  
+  stopifnot(sum(sim_counts$count) == length(grna_sim))
+  if ("0" %in% sim_counts$bin) {
+    stopifnot(
+      sum(sim_counts$count[sim_counts$bin == "0"]) == sum(grna_sim == 0)
+    )
+  }
+  
+  y_breaks <- make_y_breaks(max(sim_counts$y1))
+  y_breaks_t <- logp1(y_breaks)
+  x_axis <- make_x_axis_spec(bin_info, k_exact = k_exact, tail_every = tail_every)
+  
+  ggplot2::ggplot(sim_counts) +
+    ggplot2::geom_rect(
+      ggplot2::aes(
+        xmin = xmin, xmax = xmax,
+        ymin = ymin, ymax = ymax,
+        fill = pert_status
+      ),
+      color = "black"
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = x_axis$breaks,
+      labels = x_axis$labels,
+      expand = ggplot2::expansion(add = 0.6)
+    ) +
+    ggplot2::scale_y_continuous(
+      breaks = y_breaks_t,
+      labels = scales::label_number(big.mark = ",")(y_breaks),
+      expand = ggplot2::expansion(mult = c(0, 0.05))
+    ) +
+    ggplot2::labs(
+      title = title,
+      x = "gRNA count bin",
+      y = NULL,
+      fill = NULL
+    ) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1),
+      axis.title.y = ggplot2::element_blank(),
+      legend.position = c(0.98, 0.98),
+      legend.justification = c(1, 1),
+      legend.background = ggplot2::element_rect(fill = "white", color = "black"),
+      legend.key = ggplot2::element_rect(fill = "white", color = NA)
+    )
+}
+# wrapper: build shared bins from both datasets and return both plots
+make_umi_hist_of_sims <- function(grna_sim, is_pert, k_exact = 10L, tail_every = 2L, title_sim = "sim") {
+  stopifnot(length(grna_sim) == length(is_pert))
+  stopifnot(all(grna_sim >= 0))
+  stopifnot(all(grna_sim == floor(grna_sim)))
+  
+  bin_info <- make_mixed_bin_info(
+    max_x = max(grna_sim),
+    k_exact = k_exact
+  )
+  
+  plt1b <- make_plt1b(
+    grna_sim = grna_sim,
+    is_pert = is_pert,
+    bin_info = bin_info,
+    k_exact = k_exact,
+    tail_every = tail_every,
+    title = title_sim
+  )
+  
+  plt1b
+
+}
+
+
+
+```
+
+INCLUDED IN THESIS
+```{r}
+
+make_plt1b_for_defense <- function(grna_sim, is_pert, bin_info, k_exact = 10L, tail_every = 2L, title = "sim", make_y_breaks=NULL) {
+  stopifnot(length(grna_sim) == length(is_pert))
+  stopifnot(all(is.finite(grna_sim)), all(grna_sim >= 0), all(grna_sim == floor(grna_sim)))
+  
+  sim_df <- data.frame(
+    umi = grna_sim,
+    pert_status = factor(
+      ifelse(is_pert == 1, "Pert.", "Ambient"),
+      levels = c("Ambient", "Pert.")
+    )
+  )
+  
+  sim_df$bin <- factor(
+    bin_with_info(sim_df$umi, bin_info),
+    levels = bin_info$label
+  )
+  
+  sim_counts <- sim_df |>
+    dplyr::count(bin, pert_status, .drop = FALSE, name = "count") |>
+    dplyr::mutate(bin = as.character(bin)) |>
+    dplyr::left_join(bin_info, by = c("bin" = "label")) |>
+    dplyr::arrange(bin_id, pert_status) |>
+    dplyr::group_by(bin, bin_id, lower, upper, xmin, xmax) |>
+    dplyr::mutate(
+      y0 = dplyr::lag(cumsum(count), default = 0),
+      y1 = cumsum(count),
+      ymin = logp1(y0),
+      ymax = logp1(y1)
+    ) |>
+    dplyr::ungroup()
+  
+  stopifnot(sum(sim_counts$count) == length(grna_sim))
+  if ("0" %in% sim_counts$bin) {
+    stopifnot(
+      sum(sim_counts$count[sim_counts$bin == "0"]) == sum(grna_sim == 0)
+    )
+  }
+  
+  if(is.null(make_y_breaks)) {
+    make_y_breaks = function(max_count) {
+  breaks <- c(
+    0, 1, 2,  5,
+    10, 20, 30, 50,
+    100, 200, 300, 500,
+    1000, 2000, 3000, 5000,
+    10000, 20000, 30000, 50000,
+    100000, 200000, 300000, 500000,
+    1000000, 2000000, 3000000, 5000000,
+    10000000
+  )
+  breaks[breaks <= max_count]
+}
+  }
+
+  
+  y_breaks <- make_y_breaks(max(sim_counts$y1))
+  y_breaks_t <- logp1(y_breaks)
+  x_axis <- make_x_axis_spec(bin_info, k_exact = k_exact, tail_every = tail_every, exact_every = 2L)
+  
+  ggplot2::ggplot(sim_counts) +
+    ggplot2::geom_rect(
+      ggplot2::aes(
+        xmin = xmin, xmax = xmax,
+        ymin = ymin, ymax = ymax,
+        fill = pert_status
+      ),
+      color = "black"
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = x_axis$breaks,
+      labels = x_axis$labels,
+      expand = ggplot2::expansion(add = 0.6)
+    ) +
+    ggplot2::scale_y_continuous(
+      breaks = y_breaks_t,
+      labels = scales::label_number(big.mark = ",")(y_breaks),
+      expand = ggplot2::expansion(mult = c(0, 0.05))
+    ) +
+    ggplot2::labs(
+      title = title,
+      x = "gRNA count bin",
+      y = NULL,
+      fill = NULL
+    ) +
+    ggplot2::theme_bw() +
+    theme_presentation() +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1),
+      axis.title.y = ggplot2::element_blank(),
+      legend.position = c(0.98, 0.98),
+      legend.justification = c(1, 1),
+      legend.background = ggplot2::element_rect(fill = "white", color = "black"),
+      legend.key = ggplot2::element_rect(fill = "white", color = NA)
+    )
+}
+# make_umi_hist_of_sims_for_defense <- function(grna_sim, is_pert, k_exact = 10L, tail_every = 2L, title_sim = "sim", make_y_breaks=NULL) {
+#   stopifnot(length(grna_sim) == length(is_pert))
+#   stopifnot(all(grna_sim >= 0))
+#   stopifnot(all(grna_sim == floor(grna_sim)))
+#   
+#   bin_info <- make_mixed_bin_info(
+#     max_x = max(grna_sim),
+#     k_exact = k_exact
+#   )
+#   
+#   plt1b <- make_plt1b_for_defense(
+#     grna_sim = grna_sim,
+#     is_pert = is_pert,
+#     bin_info = bin_info,
+#     k_exact = k_exact,
+#     tail_every = tail_every,
+#     title = title_sim,
+#     make_y_breaks=make_y_breaks
+#   )
+#   
+#   plt1b
 # 
-# path_to_data <- file.path(
-#   .get_config_path("LOCAL_BENCHMARKING_DIR"),
-#   "guide_assignment/input_data", source_data,
-#   "sceptre-pipeline"
-# )
-# cat("Using", source_data, "\n")
-# grna_odm <- ondisc::initialize_odm_from_backing_file(
-#   file.path(path_to_data, "grna.odm")
-# )
-# cat("grna.odm :", nrow(grna_odm), "guides ;", ncol(grna_odm), "cells.\n")
-# 
-# scep <- sceptre::read_ondisc_backed_sceptre_object(
-#   sceptre_object_fp = file.path(path_to_data, "sceptre_object.rds"),
-#   response_odm_file_fp = file.path(path_to_data, "response.odm"),
-#   grna_odm_file_fp = file.path(path_to_data, "grna.odm")
-# )
+# }
+make_umi_hist_of_sims_for_defense <- function(grna_sim, is_pert, k_exact = 10L, 
+                                              tail_every = 2L, title_sim = "sim", 
+                                              make_y_breaks = NULL, 
+                                              force_max_x = NULL) {
+  stopifnot(length(grna_sim) == length(is_pert))
+  stopifnot(all(grna_sim >= 0))
+  stopifnot(all(grna_sim == floor(grna_sim)))
+  
+  # Determine the upper bound for bins
+  # If force_max_x is provided, use that; otherwise, use the data max
+  actual_max <- max(grna_sim)
+  bin_limit <- if (!is.null(force_max_x)) max(force_max_x, actual_max) else actual_max
+  
+  bin_info <- make_mixed_bin_info(
+    max_x = bin_limit,
+    k_exact = k_exact
+  )
+  
+  plt1b <- make_plt1b_for_defense(
+    grna_sim = grna_sim,
+    is_pert = is_pert,
+    bin_info = bin_info, # Uses the shared/forced bin structure
+    k_exact = k_exact,
+    tail_every = tail_every,
+    title = title_sim,
+    make_y_breaks = make_y_breaks
+  )
+  
+  plt1b
+}
+make_umi_hist_of_sims_for_defense(
+  sim_data[1,], true_perts[1,], title_sim = "Simulated gRNA UMI counts"
+) 
+ggsave("~/thesis-defense-figures/grna-dist-with-components.png", width = 10, height = 7, dpi = 300)
+
+
+
+```
+
+
+next i want to show how it behaves 
+```{r}
+
+make_y_breaks = function(max_count) {
+  breaks <- c(
+    0, 
+    10, 
+    100, 
+    1000, 
+    10000, 
+    100000, 
+    1000000, 
+    10000000
+  )
+  breaks[breaks <= max_count]
+}
+mupows=c(0,3)
+pert_mean = c(970,120)
+guides_to_plot = paste0("params_cleanser_mupow=", mupows, "_grna_", 5)
+pltlist = list()
+for(i in seq_along(mupows)) {
+  pltlist[[i]] = make_umi_hist_of_sims_for_defense(
+  sim_data[guides_to_plot[i],], true_perts[guides_to_plot[i],], title_sim = paste0("Pert mean = ", pert_mean[i]),
+  make_y_breaks=make_y_breaks, force_max_x = 15000
+) 
+}
+cowplot::plot_grid(plotlist = pltlist)
+ggsave("~/thesis-defense-figures/example-sims.png", width = 10, height = 7, dpi = 300)
+
+```
+
+
+
+```{r}
+
+
+mupow_seq = 0:3
+guide_id = 1
+# guides_to_plot = paste0("params_cleanser_mupow=", mupow_seq, "_grna_", 1)
+
+df_list = list()
+for(i in seq_along(mupow_seq)) {
+  guide_ = paste0("params_cleanser_mupow=", mupow_seq[i], "_grna_", guide_id)
+  df_list <- c(df_list, list(data.frame(
+    ysim = sim_data[guide_,],
+    z = true_perts[guide_,],
+    mupow = mupow_seq[i]
+  )))
+  
+}
+
+pltlist <- lapply(df_list, function(sim_df) {
+  
+  if(sim_df$mupow[1] == 0) {
+    title_ = "CLEANSER posterior"
+  } else {
+    title_ = bquote(mu[pert] ~ "/" ~ 2^.(sim_df$mupow[1]))
+  }
+  make_umi_hist_of_sims(
+  grna_sim = sim_df$ysim,
+  is_pert = sim_df$z,
+  title_sim =title_
+)
+})
+
+cowplot::plot_grid(plotlist=pltlist)
+
+
+
+```
+
+
+what goes wrong for the sceptre ones that don't do well with mupow=0?
+
+
+```{r}
+# sim_results |>
+#   filter(mupow == 0) |>
+#   filter(sceptre == min(sceptre))
+
+curr_sims_sorted = sim_results |>
+  filter(mupow == 0) |>
+  arrange(sceptre)
+
+# let's plot for 1,50,100
+
+guides_ = curr_sims_sorted$guide[c(1,25, 75, 100)]
+
+pltlist = lapply(seq_along(guides_), function(i) {
+  guide_ = guides_[i]
+      make_umi_hist_of_sims(
+  grna_sim = sim_data[guide_,],
+  is_pert = true_perts[guide_, ],
+  title_sim = paste0("Jacc. rank: ", c(1,25, 75, 100)[i])
+      )
+})
+
+cowplot::plot_grid(plotlist = pltlist)
+
+print(guides_)
+sim_results_jacc |>
+  filter(guide %in% guides_)
+sim_results_prec |>
+  filter(guide %in% guides_)
+sim_results_recall |>
+  filter(guide %in% guides_)
+
+# i think sceptre 
+
 ```
 
