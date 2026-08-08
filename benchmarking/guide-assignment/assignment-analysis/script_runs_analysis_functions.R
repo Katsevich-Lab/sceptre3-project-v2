@@ -1103,6 +1103,459 @@ plot_groups_log1py_vs_o <- function(extras_x, extras_y,
 }
 
 
+# ---- per-cell zero-truncated upper-tail non-perturbed score t_i (Poisson) ----
+#
+# For a guide g, score each cell i by how far into the upper tail of the
+# NON-PERTURBED Poisson law its observed count y_i sits, conditioned on being a
+# detected (>= 1) count:
+#
+#   t_i := -log P_nonpert(Y_i >= max(y_i, 1) | Y_i >= 1)
+#        = -log [ P(Pois(lambda_i) >= max(y_i, 1)) / (1 - dpois(0, lambda_i)) ],
+#
+# lambda_i = mu_{0i} = exp(o_i), the per-cell non-pert Poisson mean; o_i is the
+# offset (GLM linear predictor) reconstructed from the stored offset coefficients
+# via reconstruct_offset_logmu0 (correct for the log-link GLM and log1p-OLS
+# offsets alike). Dividing by 1 - dpois(0, .) = 1 - e^{-lambda_i} renormalizes
+# onto the zero-truncated law P(. | Y >= 1); max(y_i, 1) maps zero-count cells
+# onto the y = 1 boundary, where t_i = 0 (as it is for any y_i in {0, 1}). t_i is
+# monotone increasing in y_i for fixed lambda_i; larger t_i = deeper in the tail
+# = stronger univariate evidence of perturbation. t_i >= 0 always.
+#
+# In R, P(Y >= k) = ppois(k - 1, lambda, lower.tail = FALSE).
+#
+# Returns a named list (grna_id -> numeric length n_cells), one t_i per cell, in
+# covariate_matrix / grna_matrix column (cell) order -- mirroring
+# reconstruct_offset_eta. Guides with no reconstructable offset (below the
+# n_nonzero cutoff) are dropped. glmrob offsets (fit on standardized X) are not
+# reconstructable and error out rather than return silently-wrong scores.
+compute_nonpert_score_pois <- function(extras, grna_matrix,
+                                       input_dir        = NULL,
+                                       covariate_matrix = NULL,
+                                       grna_ids         = NULL) {
+  if (is.null(covariate_matrix)) {
+    if (is.null(input_dir)) stop("Provide `covariate_matrix`, or `input_dir` to build it from.")
+    covariate_matrix <- build_covariate_matrix(input_dir)
+  }
+
+  # glmrob fits on a standardized X, so X %*% coef does NOT reconstruct o_i.
+  nm <- offset_fit_name(extras)
+  if (!is.na(nm) && grepl("glmrob", nm)) {
+    stop("Offset model '", nm, "' was fit on standardized covariates; o_i is not ",
+         "reconstructable from the stored coefficients, so t_i is undefined.")
+  }
+
+  # o_i = log(mu_{0i}) on the common log-mean scale; lambda_i = exp(o_i).
+  log_mu0 <- reconstruct_offset_logmu0(extras, covariate_matrix)
+
+  ids <- names(log_mu0)
+  if (!is.null(grna_ids)) {
+    ids <- intersect(grna_ids, ids)
+    if (length(ids) == 0L) stop("None of the requested grna_ids have a reconstructable offset.")
+  }
+
+  # log(1 - e^{-lambda}) = log(1 - dpois(0, lambda)), stable for all lambda > 0
+  # (Machler's log1mexp split at log 2).
+  log1m_p0 <- function(lambda) {
+    ifelse(lambda <= log(2), log(-expm1(-lambda)), log1p(-exp(-lambda)))
+  }
+
+  out <- list()
+  for (id in ids) {
+    lambda <- exp(log_mu0[[id]])
+    y      <- as.numeric(grna_matrix[id, ])
+    if (length(y) != length(lambda)) {
+      warning("Guide '", id, "': grna_matrix has ", length(y),
+              " cells but offset has ", length(lambda), "; skipping.")
+      next
+    }
+    k        <- pmax(y, 1)
+    log_surv <- stats::ppois(k - 1, lambda, lower.tail = FALSE, log.p = TRUE)  # log P(Y >= k)
+    out[[id]] <- -(log_surv - log1m_p0(lambda))                               # t_i
+  }
+  out
+}
+
+
+# ---- per-cell non-pert tail score t_i vs observed count y_i -----------------
+#
+# For a selection of guides, scatter the per-cell non-perturbed upper-tail score
+#   t_i = -log P_nonpert(Y_i >= max(y_i, 1) | Y_i >= 1)
+# (see compute_nonpert_score_pois) on the y-axis against the observed guide count
+# y_i on the x-axis, one facet per guide. Each point is COLOURED by the cell's
+# TRUE perturbation status (true_perts[g, i] == 1) and SHAPED by the run's
+# ASSIGNED status (whether the cell is in per_guide[[g]]$assignments). t_i is the
+# single-run analog of the offset scatter, so it works on real data too: omit
+# `true_perts` and the colour aesthetic is dropped, leaving shape = assigned.
+#
+#   extras                 : a loaded extras object
+#   grna_matrix            : sparse gRNA count matrix (y_i source; rownames = grna_ids)
+#   true_perts             : optional latent perturbation matrix [gRNA x cell];
+#                            NULL (default) => no ground truth, no colour aesthetic
+#   input_dir              : dataset dir (builds X for o_i if covariate_matrix NULL)
+#   covariate_matrix       : optional precomputed X (skips that reload)
+#   grna_ids / n_guides    : which / how many guides (facets); default first n_guides
+#   max_points_per_panel   : subsample cap per guide facet
+#   name_                  : run label for the title (default run_label())
+#   cap_y                  : optional cap on y_i (counts pmin()'d before plotting)
+#   show_true              : restrict cells by TRUE status: "both" (default) keeps
+#                            all; "np" only truly non-perturbed; "p" only truly
+#                            perturbed. "np"/"p" require `true_perts`.
+#   show_est               : restrict cells by ASSIGNED status (the run's own
+#                            assignments), same values as `show_true`: "both"
+#                            (default), "np" only assigned non-pert, "p" only
+#                            assigned pert. Always available (no ground truth needed).
+#   show_pos               : if TRUE, plot only cells with y_i > 0 (drop the
+#                            zero-count cells); default FALSE. Applied on top of
+#                            `show_true` / `show_est`, on the uncapped count.
+#   log_x                  : log1p x-axis (counts include zeros); default TRUE
+#   facet_scales           : passed to facet_wrap (default "free")
+#   seed                   : RNG seed for subsampling
+plot_t_score_vs_y <- function(extras,
+                              grna_matrix,
+                              true_perts           = NULL,
+                              input_dir            = NULL,
+                              covariate_matrix     = NULL,
+                              grna_ids             = NULL,
+                              n_guides             = 6L,
+                              max_points_per_panel = 2000L,
+                              name_                = NULL,
+                              cap_y                = NULL,
+                              show_true            = c("both", "np", "p"),
+                              show_est             = c("both", "np", "p"),
+                              show_pos             = FALSE,
+                              log_x                = TRUE,
+                              facet_scales         = "free",
+                              seed                 = 1L) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("plot_t_score_vs_y requires the ggplot2 package.")
+  }
+  show_true <- match.arg(show_true)
+  show_est  <- match.arg(show_est)
+  if (is.null(covariate_matrix)) {
+    if (is.null(input_dir)) {
+      stop("Provide `covariate_matrix`, or `input_dir` to build it from.")
+    }
+    covariate_matrix <- build_covariate_matrix(input_dir)
+  }
+  if (is.null(name_)) name_ <- run_label(extras)
+  has_truth <- !is.null(true_perts)
+  if (show_true != "both" && !has_truth) {
+    stop("show_true = '", show_true, "' filters by true perturbation status, ",
+         "but `true_perts` was not supplied.")
+  }
+
+  # per-cell t_i = -log P_nonpert(Y >= max(y,1) | Y >= 1), one vector per guide.
+  t_list <- compute_nonpert_score_pois(extras, grna_matrix,
+                                       covariate_matrix = covariate_matrix)
+  common <- intersect(names(t_list), rownames(grna_matrix))
+  if (length(common) == 0L) {
+    stop("No guides with reconstructable scores also present in grna_matrix.")
+  }
+  if (is.null(grna_ids)) {
+    grna_ids <- utils::head(common, n_guides)
+  } else {
+    grna_ids <- intersect(grna_ids, common)
+    if (length(grna_ids) == 0L) {
+      stop("None of the requested grna_ids have reconstructable scores / are in grna_matrix.")
+    }
+  }
+
+  # Facet labels carry each guide's converged gamma.
+  g_pert <- extract_em_g_pert(extras)
+  facet_labels <- stats::setNames(
+    sprintf("%s\ng=%.2f", grna_ids, g_pert[grna_ids]),
+    grna_ids
+  )
+
+  n_cells <- nrow(covariate_matrix)
+  set.seed(seed)
+  per_guide_df <- lapply(grna_ids, function(id) {
+    t   <- t_list[[id]]                             # transformed score
+    y   <- as.numeric(grna_matrix[id, ])           # observed guide count
+    est <- logical(n_cells); est[extras$per_guide[[id]]$assignments] <- TRUE
+    tp  <- if (has_truth) as.numeric(true_perts[id, ]) == 1 else NA
+    gdf <- data.frame(grna_id = id, facet_label = facet_labels[[id]],
+                      t = t, y = y, est_pert = est, true_pert = tp,
+                      row.names = NULL)
+    if (show_true == "np") {
+      gdf <- gdf[!gdf$true_pert, , drop = FALSE]
+    } else if (show_true == "p") {
+      gdf <- gdf[gdf$true_pert, , drop = FALSE]
+    }
+    if (show_est == "np") {
+      gdf <- gdf[!gdf$est_pert, , drop = FALSE]
+    } else if (show_est == "p") {
+      gdf <- gdf[gdf$est_pert, , drop = FALSE]
+    }
+    if (show_pos) {
+      gdf <- gdf[gdf$y > 0, , drop = FALSE]
+    }
+    if (nrow(gdf) > max_points_per_panel) {
+      gdf <- gdf[sample.int(nrow(gdf), max_points_per_panel), , drop = FALSE]
+    }
+    gdf
+  })
+  df <- do.call(rbind, per_guide_df)
+  df$facet_label <- factor(df$facet_label, levels = unname(facet_labels))
+  df$est_pert    <- factor(df$est_pert, levels = c(FALSE, TRUE))
+  if (has_truth) df$true_pert <- factor(df$true_pert, levels = c(FALSE, TRUE))
+
+  if (!is.null(cap_y)) df$y <- pmin(cap_y, df$y)
+
+  # colour = true perturbation status (when available); shape = assigned status.
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = y, y = t)) +
+    ggplot2::facet_wrap(~ facet_label, scales = facet_scales) +
+    ggplot2::labs(
+      x     = if (is.null(cap_y)) "observed guide count  y_i"
+              else sprintf("observed guide count  y_i  (capped at %s)", format(cap_y)),
+      y     = "t_i  =  -log P_nonpert(Y_i >= y_i | Y_i >= 1)",
+      title = sprintf("non-pert tail score t_i vs y_i (%s)", name_),
+      subtitle = paste0(length(grna_ids), " guides; up to ",
+                        max_points_per_panel, " cells per panel")
+    ) +
+    ggplot2::theme_bw()
+
+  if (has_truth) {
+    p <- p +
+      ggplot2::geom_point(ggplot2::aes(colour = true_pert, shape = est_pert),
+                          alpha = 0.5) +
+      ggplot2::scale_colour_manual(
+        name   = "true perturbed",
+        values = c(`FALSE` = "#F8766D", `TRUE` = "#00BFC4"),
+        drop   = FALSE
+      ) +
+      ggplot2::scale_shape_manual(
+        name   = "assigned perturbed",
+        values = c(`FALSE` = 1, `TRUE` = 2),
+        drop   = FALSE
+      )
+  } else {
+    p <- p +
+      ggplot2::geom_point(ggplot2::aes(shape = est_pert), alpha = 0.5) +
+      ggplot2::scale_shape_manual(
+        name   = "assigned perturbed",
+        values = c(`FALSE` = 1, `TRUE` = 2),
+        drop   = FALSE
+      )
+  }
+
+  # x axis: observed counts, anchored at 0. log1p breaks (1-3-10 style) when log_x.
+  if (log_x) {
+    cand <- c(0, 1, 3, 10, 30, 100, 300, 1000, 3000,
+              10000, 30000, 1e5, 3e5, 1e6)
+    log1p_breaks <- function(limits) {
+      b <- cand[cand <= max(limits, na.rm = TRUE)]
+      if (length(b) < 2L) c(0, max(limits, na.rm = TRUE)) else b
+    }
+    p <- p + ggplot2::scale_x_continuous(
+      trans  = "log1p",
+      breaks = log1p_breaks,
+      expand = ggplot2::expansion(mult = c(0, 0.02))
+    )
+  }
+  p <- p + ggplot2::expand_limits(x = 0, y = 0)
+  p
+}
+
+
+# ---- per-guide (t_i vs y_i scatter) + (t_i histogram) panels ----------------
+#
+# Same per-cell non-pert tail score t_i and same cell-selection flags as
+# plot_t_score_vs_y, but each guide gets a two-plot panel laid out side by side:
+#   (1) scatter of t_i (y-axis) vs observed count y_i (x-axis), coloured by true
+#       perturbation status and shaped by assigned status (as in plot_t_score_vs_y);
+#   (2) histogram of t_i over the same selected cells.
+# Guides are stacked vertically (one row per guide) and the figure carries a
+# single shared legend at the bottom. Returns a cowplot object.
+#
+# `t_max` caps t_i (pmin) in BOTH the scatter and the histogram, since the tail
+# score can run very large; capped cells pile up at t_max. The scatter is
+# subsampled to `max_points_per_panel`, but the histogram uses ALL selected cells
+# (so its shape is not thinned).
+#
+#   extras                 : a loaded extras object
+#   grna_matrix            : sparse gRNA count matrix (y_i source; rownames = grna_ids)
+#   true_perts             : optional latent perturbation matrix [gRNA x cell];
+#                            NULL (default) => no ground truth, no colour aesthetic
+#   input_dir              : dataset dir (builds X for o_i if covariate_matrix NULL)
+#   covariate_matrix       : optional precomputed X (skips that reload)
+#   grna_ids / n_guides    : which / how many guides (rows); default first n_guides
+#   max_points_per_panel   : subsample cap for the SCATTER (histogram uses all)
+#   name_                  : run label for the title (default run_label())
+#   cap_y                  : optional cap on y_i in the scatter (pmin before plotting)
+#   t_max                  : cap on t_i in BOTH plots (default 500)
+#   bins                   : histogram bin count (default 50)
+#   show_true / show_est / show_pos : cell-selection flags, identical to
+#                            plot_t_score_vs_y
+#   log_x                  : log1p x-axis for the scatter (counts); default TRUE
+#   seed                   : RNG seed for the scatter subsample
+plot_t_score_panels <- function(extras,
+                                grna_matrix,
+                                true_perts           = NULL,
+                                input_dir            = NULL,
+                                covariate_matrix     = NULL,
+                                grna_ids             = NULL,
+                                n_guides             = 6L,
+                                max_points_per_panel = 2000L,
+                                name_                = NULL,
+                                cap_y                = NULL,
+                                t_max                = 500,
+                                bins                 = 50L,
+                                show_true            = c("both", "np", "p"),
+                                show_est             = c("both", "np", "p"),
+                                show_pos             = FALSE,
+                                log_x                = TRUE,
+                                seed                 = 1L) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("plot_t_score_panels requires the ggplot2 package.")
+  }
+  if (!requireNamespace("cowplot", quietly = TRUE)) {
+    stop("plot_t_score_panels requires the cowplot package.")
+  }
+  show_true <- match.arg(show_true)
+  show_est  <- match.arg(show_est)
+  if (is.null(covariate_matrix)) {
+    if (is.null(input_dir)) {
+      stop("Provide `covariate_matrix`, or `input_dir` to build it from.")
+    }
+    covariate_matrix <- build_covariate_matrix(input_dir)
+  }
+  if (is.null(name_)) name_ <- run_label(extras)
+  has_truth <- !is.null(true_perts)
+  if (show_true != "both" && !has_truth) {
+    stop("show_true = '", show_true, "' filters by true perturbation status, ",
+         "but `true_perts` was not supplied.")
+  }
+
+  t_list <- compute_nonpert_score_pois(extras, grna_matrix,
+                                       covariate_matrix = covariate_matrix)
+  common <- intersect(names(t_list), rownames(grna_matrix))
+  if (length(common) == 0L) {
+    stop("No guides with reconstructable scores also present in grna_matrix.")
+  }
+  if (is.null(grna_ids)) {
+    grna_ids <- utils::head(common, n_guides)
+  } else {
+    grna_ids <- intersect(grna_ids, common)
+    if (length(grna_ids) == 0L) {
+      stop("None of the requested grna_ids have reconstructable scores / are in grna_matrix.")
+    }
+  }
+
+  g_pert  <- extract_em_g_pert(extras)
+  n_cells <- nrow(covariate_matrix)
+
+  # log1p x breaks (1-3-10 style) for the count axis of the scatter.
+  cand <- c(0, 1, 3, 10, 30, 100, 300, 1000, 3000,
+            10000, 30000, 1e5, 3e5, 1e6)
+  log1p_breaks <- function(limits) {
+    b <- cand[cand <= max(limits, na.rm = TRUE)]
+    if (length(b) < 2L) c(0, max(limits, na.rm = TRUE)) else b
+  }
+
+  # Selected cells for a guide (flags applied; t_i capped at t_max). No subsample.
+  build_gdf <- function(id) {
+    t   <- pmin(t_max, t_list[[id]])
+    y   <- as.numeric(grna_matrix[id, ])
+    est <- logical(n_cells); est[extras$per_guide[[id]]$assignments] <- TRUE
+    tp  <- if (has_truth) as.numeric(true_perts[id, ]) == 1 else NA
+    gdf <- data.frame(t = t, y = y, est_pert = est, true_pert = tp,
+                      row.names = NULL)
+    if (show_true == "np") {
+      gdf <- gdf[!gdf$true_pert, , drop = FALSE]
+    } else if (show_true == "p") {
+      gdf <- gdf[gdf$true_pert, , drop = FALSE]
+    }
+    if (show_est == "np") {
+      gdf <- gdf[!gdf$est_pert, , drop = FALSE]
+    } else if (show_est == "p") {
+      gdf <- gdf[gdf$est_pert, , drop = FALSE]
+    }
+    if (show_pos) {
+      gdf <- gdf[gdf$y > 0, , drop = FALSE]
+    }
+    gdf$est_pert <- factor(gdf$est_pert, levels = c(FALSE, TRUE))
+    if (has_truth) gdf$true_pert <- factor(gdf$true_pert, levels = c(FALSE, TRUE))
+    gdf
+  }
+
+  make_scatter <- function(id, gdf) {
+    d <- gdf
+    if (nrow(d) > max_points_per_panel) {
+      d <- d[sample.int(nrow(d), max_points_per_panel), , drop = FALSE]
+    }
+    if (!is.null(cap_y)) d$y <- pmin(cap_y, d$y)
+    p <- ggplot2::ggplot(d, ggplot2::aes(x = y, y = t)) +
+      ggplot2::labs(
+        x     = if (is.null(cap_y)) "observed guide count  y_i"
+                else sprintf("y_i  (capped at %s)", format(cap_y)),
+        y     = sprintf("t_i  (capped at %s)", format(t_max)),
+        title = sprintf("%s   g=%.2f", id, g_pert[[id]])
+      ) +
+      ggplot2::theme_bw()
+    if (has_truth) {
+      p <- p +
+        ggplot2::geom_point(ggplot2::aes(colour = true_pert, shape = est_pert),
+                            alpha = 0.5) +
+        ggplot2::scale_colour_manual(
+          name = "true perturbed",
+          values = c(`FALSE` = "#F8766D", `TRUE` = "#00BFC4"), drop = FALSE) +
+        ggplot2::scale_shape_manual(
+          name = "assigned perturbed",
+          values = c(`FALSE` = 1, `TRUE` = 2), drop = FALSE)
+    } else {
+      p <- p +
+        ggplot2::geom_point(ggplot2::aes(shape = est_pert), alpha = 0.5) +
+        ggplot2::scale_shape_manual(
+          name = "assigned perturbed",
+          values = c(`FALSE` = 1, `TRUE` = 2), drop = FALSE)
+    }
+    if (log_x) {
+      p <- p + ggplot2::scale_x_continuous(
+        trans = "log1p", breaks = log1p_breaks,
+        expand = ggplot2::expansion(mult = c(0, 0.02)))
+    }
+    p + ggplot2::expand_limits(x = 0, y = 0)
+  }
+
+  make_hist <- function(id, gdf) {
+    ggplot2::ggplot(gdf, ggplot2::aes(x = t)) +
+      ggplot2::geom_histogram(bins = bins) +
+      ggplot2::labs(
+        x     = sprintf("t_i  (capped at %s)", format(t_max)),
+        y     = "number of cells",
+        title = sprintf("n = %d cells", nrow(gdf))
+      ) +
+      ggplot2::expand_limits(x = 0) +
+      ggplot2::theme_bw()
+  }
+
+  set.seed(seed)
+  rows <- lapply(grna_ids, function(id) {
+    gdf <- build_gdf(id)
+    cowplot::plot_grid(
+      make_scatter(id, gdf) + ggplot2::theme(legend.position = "none"),
+      make_hist(id, gdf),
+      ncol = 2, rel_widths = c(2, 1)
+    )
+  })
+  body <- cowplot::plot_grid(plotlist = rows, ncol = 1)
+
+  # one shared legend pulled from a representative scatter
+  legend <- cowplot::get_legend(
+    make_scatter(grna_ids[[1]], build_gdf(grna_ids[[1]])) +
+      ggplot2::theme(legend.position = "bottom")
+  )
+
+  title <- cowplot::ggdraw() +
+    cowplot::draw_label(sprintf("non-pert tail score t_i (%s)", name_),
+                        fontface = "bold", x = 0.01, hjust = 0)
+
+  cowplot::plot_grid(title, body, legend, ncol = 1,
+                     rel_heights = c(0.04, 1, 0.06))
+}
+
+
 # ---- single-run y vs offset, coloured by estimated perturbation -------------
 
 # For a selection of guides, scatter the observed guide count y_i (y-axis)
@@ -1301,4 +1754,114 @@ plot_y_vs_o_one_run <- function(extras,
   }
   p <- p + ggplot2::expand_limits(y = 0)
   p
+}
+
+
+# ============================================================================
+# Gated logistic / Gamma-Gaussian variant (run_meta$model == "gated-gamma-gauss")
+# ============================================================================
+# These operate on extras from the gated variant, whose per_guide elements carry
+# a $gated sublist (a0, a1, alpha, beta, mu, sigma, mean_pi, mean_gamma, n_fit)
+# instead of an offset model. See guide-assignment-pipeline/bin/script/lib/
+# gated_assign.R for the model.
+
+# Parse the "guide type" (data-generating process) from gRNA ids of the form
+# "<sim details>_<idx>", dropping the trailing _<idx> replicate index, so all
+# iid copies of a setting share a type. E.g.
+#   "sim_NPhighvar_Phighdisp_66" -> "sim_NPhighvar_Phighdisp".
+guide_type_from_id <- function(ids) sub("_[0-9]+$", "", ids)
+
+# Pull the gated-model per-guide parameters into a data frame (one row per
+# guide, names = grna_ids). Columns: the 6 model params (a0, a1, alpha, beta,
+# mu, sigma), plus mean_pi / mean_gamma / n_fit, the derived non-pert log-scale
+# mean gamma_mean = alpha/beta, and em_converged. Guides below the fit cutoff or
+# where EM failed have NA params.
+extract_gated_params <- function(extras) {
+  if (is.null(extras$per_guide)) {
+    stop("`extras` has no $per_guide; is this an assignment_extras_*.rds object?")
+  }
+  get_field <- function(f) {
+    vapply(extras$per_guide, function(r) {
+      v <- r$gated[[f]]
+      if (is.null(v) || length(v) != 1L) NA_real_ else as.numeric(v)
+    }, numeric(1))
+  }
+  df <- data.frame(
+    grna_id    = names(extras$per_guide),
+    a0         = get_field("a0"),
+    a1         = get_field("a1"),
+    alpha      = get_field("alpha"),
+    beta       = get_field("beta"),
+    mu         = get_field("mu"),
+    sigma      = get_field("sigma"),
+    mean_pi    = get_field("mean_pi"),
+    mean_gamma = get_field("mean_gamma"),
+    n_fit      = get_field("n_fit"),
+    stringsAsFactors = FALSE
+  )
+  df$gamma_mean   <- df$alpha / df$beta
+  df$em_converged <- extract_per_guide_scalar(extras, "em_converged")
+  rownames(df) <- NULL
+  df
+}
+
+# Histograms of each gated-model parameter, grouped by guide type. Guide type is
+# parsed from the grna_id (guide_type_from_id), so all iid replicates of a
+# simulation setting are pooled into one distribution.
+#
+#   extras   : gated extras object
+#   params   : which params to plot (default the 6 model params). Any column of
+#              extract_gated_params() is allowed, e.g. "gamma_mean", "mean_pi".
+#   bins     : histogram bins (default 40)
+#   overlay  : FALSE (default) -> facet_grid(guide_type ~ parameter): one
+#              histogram per (type, param) cell, with the x-scale shared down
+#              each parameter column (so types are directly comparable). TRUE ->
+#              facet_wrap(~ parameter) with the types overlaid (fill =
+#              guide_type, semi-transparent) -- compact but can clutter.
+#   drop_na  : drop guides with NA params (below cutoff / EM failed); default TRUE
+#
+# Returns a ggplot object.
+plot_gated_param_histograms <- function(extras,
+                                        params  = c("a0", "a1", "alpha", "beta", "mu", "sigma"),
+                                        bins    = 40,
+                                        overlay = FALSE,
+                                        drop_na = TRUE) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("ggplot2 is required for plot_gated_param_histograms().")
+  }
+  df <- extract_gated_params(extras)
+  unknown <- setdiff(params, names(df))
+  if (length(unknown)) {
+    stop("Unknown param(s): ", paste(unknown, collapse = ", "),
+         ". Available: ", paste(setdiff(names(df), "grna_id"), collapse = ", "))
+  }
+  df$guide_type <- guide_type_from_id(df$grna_id)
+
+  long <- do.call(rbind, lapply(params, function(p) {
+    data.frame(guide_type = df$guide_type, parameter = p, value = df[[p]],
+               stringsAsFactors = FALSE)
+  }))
+  if (drop_na) long <- long[is.finite(long$value), , drop = FALSE]
+  if (!nrow(long)) stop("No finite parameter values to plot (all NA?).")
+  long$parameter <- factor(long$parameter, levels = params)
+
+  p <- ggplot2::ggplot(long, ggplot2::aes(x = value))
+  if (overlay) {
+    p <- p +
+      ggplot2::geom_histogram(ggplot2::aes(fill = guide_type),
+                              bins = bins, position = "identity", alpha = 0.5) +
+      ggplot2::facet_wrap(~ parameter, scales = "free")
+  } else {
+    p <- p +
+      ggplot2::geom_histogram(ggplot2::aes(fill = guide_type),
+                              bins = bins, show.legend = FALSE) +
+      ggplot2::facet_grid(guide_type ~ parameter, scales = "free")
+  }
+  p +
+    ggplot2::labs(
+      title = paste0("Gated-model parameters by guide type (",
+                     extras$run_meta$model %||% "gated", ")"),
+      x = "parameter value", y = "count", fill = "guide type"
+    ) +
+    ggplot2::theme_bw()
 }
