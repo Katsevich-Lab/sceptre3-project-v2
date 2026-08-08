@@ -1,0 +1,1194 @@
+---
+title: "assoc-for-defense"
+output: html_document
+date: "2026-04-15"
+---
+
+```{r}
+rm(list = ls())
+
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+options(scipen=10)
+
+suppressPackageStartupMessages({
+  library(Matrix)
+  
+  library(dplyr)
+  library(stringr)
+  library(ggplot2)
+  library(readr)
+  library(tidyr)
+  library(purrr)
+  
+  library(scales)
+  library(pROC)
+  library(forcats)
+})
+
+source("~/.Rprofile")
+# source("association-analysis-functions.R")
+source("~/katsevich-lab/code/sceptre3-project-v2/manuscript/reports/association/association-analysis-functions.R")
+
+theme_presentation <- function(base_size = 16) {
+  theme_bw(base_size = base_size) %+replace% 
+    theme(
+      # Increase title sizes
+      plot.title = element_text(size = rel(1.4), face = "bold", margin = margin(b = 10)),
+      plot.subtitle = element_text(size = rel(1.1), margin = margin(b = 10)),
+      
+      # Axis text and titles
+      axis.title = element_text(size = rel(1.1)),
+      axis.text = element_text(size = rel(0.9), color = "black"),
+      
+      # Legend positioning and size
+      legend.position = "bottom",
+      legend.text = element_text(size = rel(0.9)),
+      legend.title = element_text(size = rel(1.0), face = "bold"),
+      
+      # Facet label (strip) sizes - critical for your multi-panel plots
+      strip.text = element_text(size = rel(1.1), face = "bold", margin = margin(5, 5, 5, 5)),
+      strip.background = element_rect(fill = "gray95", color = "black"),
+      
+      # Clean up gridlines for projection
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "gray90", linewidth = 0.3)
+    )
+}
+```
+
+
+```{r}
+make_roc_plot <- function(results, qc_col=NULL, dataset_name=NULL) {
+  if(!setequal(results$pair_type, c("positive control", "negative control"))) {
+    stop("'pair_type' contains unexpected values.")
+  }
+  
+  results_clean <- results |>
+    mutate(
+      is_positive = pair_type == "positive control"
+    )
+  if(!is.null(qc_col)) {
+    results_clean <- results_clean %>%
+      dplyr::filter(.data[[qc_col]])
+  }
+  
+  p_val_cols = names(results_clean)[grepl("^p_value_", names(results_clean))]
+  
+  roc_list <- lapply(p_val_cols, function(pval_col) {
+    roc(
+      response = results_clean$is_positive,
+      predictor = -log10(results_clean[,pval_col,drop=TRUE]),
+      levels = c(FALSE, TRUE),
+      direction = "<"
+    )
+  })
+  
+  aucs <- lapply(roc_list, auc)
+  
+  roc_data = Map(
+    function(roc_, auc_, name_) {
+      tibble(
+        method = name_,
+        fpr = 1 - roc_$specificities,
+        tpr = roc_$sensitivities,
+        auc = as.numeric(auc_)  # Convert to numeric
+      )
+    }, 
+    roc_list, aucs, gsub("p_value_", "", p_val_cols)
+  ) |>
+    do.call(what=rbind) |>
+    mutate(
+      method_label = sprintf("%s (AUC = %.3f)", method, auc)
+    )
+  
+  title_ <- "Separation of pos. and neg."
+  if(!is.null(dataset_name)) {
+    title_ <- paste0(dataset_name, ": ", title_)
+  }
+  if(!is.null(qc_col)) {
+    title_ <- paste0(title_, " (QC =", qc_col, ")")
+  }
+  
+  # Plot ROC curves
+  p_roc <- ggplot(roc_data, aes(x = fpr, y = tpr, color = method_label)) +
+    geom_line(linewidth = 1.2) +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") +
+    scale_color_manual(
+      values = c("#C77CFF", "#00BFC4", "#F8766D"),
+      name = NULL
+    ) +
+    scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
+    scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+    labs(
+      title = title_,
+      x = "False Positive Rate",
+      y = "Recall"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      legend.position = c(0.65, 0.25),
+      legend.background = element_rect(fill = "white", color = "gray80"),
+      plot.title = element_text(hjust = 0.5, face = "bold")
+    ) +
+    coord_fixed()
+  p_roc
+}
+plot_multi_method_qq_tail <- function(df, 
+                                      point_size = 0.55, 
+                                      transparency = 0.8, 
+                                      plot_title = "QQ plot (tail) by Method") {
+  # 1. Input Validation
+  if (!all(c("pvalue", "method") %in% colnames(df))) {
+    stop("Data frame must contain 'pvalue' and 'method' columns.")
+  }
+  
+  # 2. Data Cleaning
+  df <- df[!is.na(df$pvalue), ]
+  
+  # 3. Get theme (assuming sceptre is loaded/accessible)
+  my_theme <- sceptre:::get_my_theme()
+  
+  # 4. Create the Plot
+  # We map 'color' to 'method' to separate the p-value distributions
+  p_tail <- ggplot2::ggplot(
+    data = df,
+    mapping = ggplot2::aes(y = pvalue, color = method, group = method)
+  ) +
+    # Points layer (sceptre's specific QQ stat)
+    sceptre:::stat_qq_points(
+      ymin = 1e-8, 
+      size = point_size,
+      alpha = transparency
+    ) +
+    # Confidence band (Usually one band is shown for the null, 
+    # but sceptre's stat will likely draw per group if mapped)
+    sceptre:::stat_qq_band() +
+    # Scales and transformations
+    ggplot2::scale_x_continuous(trans = sceptre:::revlog_trans(10)) +
+    ggplot2::scale_y_continuous(trans = sceptre:::revlog_trans(10)) +
+    # Labels and guides
+    ggplot2::labs(
+      x = "Expected null p-value", 
+      y = "Observed p-value",
+      color = "Method"
+    ) +
+    ggplot2::geom_abline(col = "black", linetype = "dashed") +
+    ggplot2::ggtitle(plot_title) +
+    my_theme +
+    # Ensure the legend is visible for the methods
+    ggplot2::theme(legend.position = "right")
+  
+  return(p_tail)
+}
+
+plot_pvalue_comparison_log <- function(df, 
+                                       reference_col = "p_value_scep", 
+                                       pair_type_col = "pair_type",
+                                       neg_control_name = "negative control",
+                                       downsample_n = NULL,
+                                       max_log_p = 50,
+                                       point_size = 0.8,
+                                       transparency = 0.5, dataset_name) {
+  
+ # 1. Downsampling Logic
+  if (!is.null(downsample_n)) {
+    df_nc <- df %>% filter(.data[[pair_type_col]] == neg_control_name)
+    df_other <- df %>% filter(.data[[pair_type_col]] != neg_control_name)
+    
+    if (nrow(df_nc) > downsample_n) {
+      set.seed(42) 
+      df_nc <- df_nc %>% sample_n(downsample_n)
+    }
+    df <- bind_rows(df_nc, df_other)
+  }
+
+  # 2. Identify comparison columns
+  comparison_cols <- grep("^p_value_", colnames(df), value = TRUE)
+  comparison_cols <- setdiff(comparison_cols, reference_col)
+  
+  # 3. Pivot and Transform/Clip/Clean labels
+  df_long <- df %>%
+    pivot_longer(
+      cols = all_of(comparison_cols),
+      names_to = "comparison_method",
+      values_to = "comparison_pvalue"
+    ) %>%
+    mutate(
+      # Clip values
+      x_plot = pmin(-log10(.data[[reference_col]]), max_log_p),
+      y_plot = pmin(-log10(comparison_pvalue), max_log_p),
+      # Clean Method Labels: remove "p_value_"
+      comparison_method = str_remove(comparison_method, "^p_value_"),
+      # Clean Pair Type Labels: Capitalize first letters
+      !!sym(pair_type_col) := str_to_title(.data[[pair_type_col]])
+    )
+
+  # 4. Create the Plot
+  p <- ggplot(df_long, aes(x = x_plot, y = y_plot)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+    geom_point(alpha = transparency, size = point_size, color = "dodgerblue4") +
+    facet_wrap(comparison_method ~ .data[[pair_type_col]], scales = "free") +
+    labs(
+      x = paste("-log10(", str_remove(reference_col, "^p_value_"), ")"),
+      y = "-log10(Comparison p-value)",
+      title = paste0(dataset_name, ": comparison of p-values by pair type")
+    ) +
+    theme_bw() +
+    theme(
+      strip.background = element_rect(fill = "gray95"),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(face = "bold") # Optional: makes facets easier to read
+    )
+  
+  return(p)
+}
+
+make_bh_vs_pi_plot_v2 <- function(
+    results,
+    N_total,
+    pi_grid,
+    qc_col = NULL,
+    q_target = 0.1,
+    B        = 100,
+    p_floor  = 1e-250,
+    dataset_name
+) {
+  
+  set.seed(1)
+  pair_col   <- "pair_type"
+  pos_label  <- "positive control"
+  neg_label  <- "negative control"
+  
+  p_val_cols = names(results)[grepl("^p_value_", names(results))]
+  p_cols_present <- gsub("^p_value_", "", p_val_cols)
+  names(p_cols_present) <- p_val_cols
+  
+  stopifnot(length(p_cols_present) > 0, pair_col %in% names(results))
+  
+  results_ <- if(is.null(qc_col)) results else filter(results, .data[[qc_col]])
+  pools <- results_ %>%
+    dplyr::filter(
+      pair_type %in% c("positive control", "negative control")
+    ) %>%
+    select(pair_type, all_of(names(p_cols_present))) %>%
+    pivot_longer(all_of(names(p_cols_present)),
+                 names_to = "method_col",
+                 values_to = "p") %>%
+    filter(!is.na(p)) %>%
+    mutate(
+      method = recode(method_col, !!!as.list(p_cols_present)),
+      p      = pmax(as.numeric(p), p_floor),
+      is_pos = pair_type == "positive control",
+      is_neg = pair_type == "negative control"
+    ) %>%
+    select(method, p, is_pos, is_neg)
+  
+  bench <- tidyr::crossing(method = unique(pools$method), pi = pi_grid, b = seq_len(B)) %>%
+    group_by(method, pi, b) %>%
+    group_modify(~{
+      m  <- .y$method
+      pi <- .y$pi
+      
+      pos_pool <- pools %>% filter(method == m, is_pos) %>% pull(p)
+      neg_pool <- pools %>% filter(method == m, is_neg) %>% pull(p)
+      
+      N_pos <- floor(pi * N_total)
+      N_neg <- N_total - N_pos
+      
+      # sample (use replacement only if needed)
+      if(N_pos > length(pos_pool)) {
+        stop("Trying to sample ", N_pos, "pos. pairs from ", length(pos_pool), " total.\n pi = ", round(pi, 4))
+      }
+      pos_samp <- sample(pos_pool, size = N_pos, replace = FALSE)#(N_pos > length(pos_pool)))
+      neg_samp <- sample(neg_pool, size = N_neg, replace = FALSE)#(N_neg > length(neg_pool)))
+      
+      p_mix <- c(pos_samp, neg_samp)
+      lab   <- c(rep(TRUE, N_pos), rep(FALSE, N_neg))  # TRUE = positive control
+      
+      p_adj <- p.adjust(p_mix, method = "BH")
+      disc  <- p_adj <= q_target
+      
+      tp <- sum(disc &  lab)
+      fp <- sum(disc & !lab)
+      D  <- tp + fp
+      
+      tibble(
+        discoveries = D,
+        tp = tp,
+        fp = fp,
+        fdp = ifelse(D == 0, 0, fp / D),
+        tpr = ifelse(N_pos == 0, NA_real_, tp / N_pos)
+      )
+    }) %>%
+    ungroup()
+  
+  
+  bench_sum <- bench %>%
+    group_by(method, pi) %>%
+    summarise(
+      fdp_med = mean(fdp, na.rm = TRUE),
+      fdp_lo  = quantile(fdp, 0.25, na.rm = TRUE),
+      fdp_hi  = quantile(fdp, 0.75, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(method = fct_inorder(method))
+  
+
+  title_ <- paste0(dataset_name, ": ", "FDP for varying positive prevalence")
+  subtitle_ = paste0("BH q = ", q_target, ", N = ", N_total, ", B = ", B)
+  if(!is.null(qc_col)) {
+    subtitle_ <- paste0(subtitle_, ", QC = ", qc_col)
+  }
+  
+  
+  p_fdp_vs_pi_q01 <- ggplot(bench_sum, aes(x = pi, y = fdp_med, color = method, fill = method)) +
+    geom_line(linewidth = 0.9) +
+    geom_point(size = 2) +
+    geom_ribbon(aes(ymin = fdp_lo, ymax = fdp_hi), alpha = 0.15, color = NA) +
+    geom_hline(yintercept = q_target, linetype = "dashed") +
+    scale_x_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0,NA)) +
+    labs(
+      # x = expression(pi~"(downsample / prevalence)"),
+      x = "Positive prevalence",
+      y = "FDP",
+      subtitle = subtitle_,
+      color = "Method",
+      fill  = "Method",
+      title = title_
+    ) +
+    theme_bw(base_size = 14)
+  p_fdp_vs_pi_q01
+}
+
+
+
+
+load_trace_files_in_memory <- function(run_names, base_path_comp) {
+  lapply(run_names, function(run_name) {
+    read_tsv(
+      file.path(base_path_comp, "outputs", run_name, "trace.txt"),
+      show_col_types = FALSE
+    )
+  }) |>
+    do.call(what = rbind)  |>
+    tidyr::extract(
+      tag,
+      into = c("ngenes", "ntargets"),
+      regex = "ngenes=([0-9]+)_ntargets=([0-9]+)",
+      remove = FALSE,
+      convert = TRUE
+    ) |>
+    transmute(
+      method = gsub("_computational", "", process, ignore.case = TRUE) |> tolower(),
+      peak_rss, realtime, ngenes, ntargets
+    ) |>
+    mutate(
+      peak_rss_gb = case_when(
+        str_detect(peak_rss, regex("\\bGB\\b", ignore_case = TRUE)) ~ parse_number(peak_rss),
+        str_detect(peak_rss, regex("\\bMB\\b", ignore_case = TRUE)) ~ parse_number(peak_rss) / 1024,
+        TRUE ~ NA_real_
+      )
+    ) |>
+    mutate(
+      h = parse_number(str_extract(realtime, "\\d+(?=h)")),
+      m = parse_number(str_extract(realtime, "\\d+(?=m)")),
+      s = parse_number(str_extract(realtime, "\\d+(?=s)")),
+      h = coalesce(h, 0),
+      m = coalesce(m, 0),
+      s = coalesce(s, 0),
+      realtime_sec = 3600*h + 60*m + s,
+      realtime_min = realtime_sec / 60
+    ) %>%
+    select(-h, -m, -s) 
+}
+
+
+
+load_trace_files_scep_pipe <- function(scep_pipe_datasets, scep_pipe_base_fp) {
+  parse_mem_to_gb <- function(x) {
+    x <- str_trim(x)
+    
+    value <- as.numeric(str_extract(x, "^[0-9.]+"))
+    unit  <- str_extract(x, "[A-Za-z]+$") |> toupper()
+    
+    mult <- case_when(
+      unit == "B"  ~ 1 / 1024^3,
+      unit == "KB" ~ 1 / 1024^2,
+      unit == "MB" ~ 1 / 1024,
+      unit == "GB" ~ 1,
+      unit == "TB" ~ 1024,
+      TRUE ~ NA_real_
+    )
+    
+    # hacky wrapper in case any unitless 0's got in there, which become NA
+    ifelse(is.na(value * mult), 0, value * mult)
+  }
+  
+  lapply(
+    scep_pipe_datasets, function(dataset) {
+      curr_path = file.path(
+        scep_pipe_base_fp, dataset, "tracing/trace.tsv"
+      )
+      curr_trace = read_tsv(curr_path, show_col_types = FALSE) |>
+        mutate(
+          start = as.POSIXct(start, tz = "America/New_York"),
+          complete = as.POSIXct(complete, tz = "America/New_York"),
+          submit = as.POSIXct(submit, tz = "America/New_York"),
+          
+          peak_rss_in_GB = parse_mem_to_gb(peak_rss)
+        )
+      
+      # i am treating the time it was submitted as the start, and then adding the
+      # actual runtime to this, to avoid counting time spent queued
+      # i also am ignoring prepare_association_analysis, and the dummy calib and power checks.
+      # these are only ~20sec total, and have the potential to have queue waits
+      # and the ~10s from the two dummy checks is equal to the ~10s from prepare_association_analysis,
+      # so i think i can call it even.
+      
+      assoc_data = curr_trace |>
+        filter(grepl("run_analysis_subworkflow_.*:run_association_analysis", process))
+      
+      start_time <- min(assoc_data$submit)
+      
+      corrected_endtimes = assoc_data$submit + (assoc_data$complete - assoc_data$start)
+      end_time = max(corrected_endtimes)
+      
+      # get max memory for any worker
+      peak_rss_in_gb_for_a_worker = curr_trace |>
+        filter(grepl("run_analysis_subworkflow_.*:run_association_analysis", process)) |>
+        pull(peak_rss_in_GB) |>
+        max()
+      
+      data.frame(
+        dataset = dataset,
+        assoc_elapsed_time_in_sec = as.numeric(end_time - start_time, units = "secs"),
+        max_peak_rss_in_gb_for_assoc_workers = peak_rss_in_gb_for_a_worker,
+        num_assoc_analysis_workers = sum(grepl("run_analysis_subworkflow_.*:run_association_analysis", curr_trace$process))
+      )
+    }
+  ) |>
+    do.call(what = rbind) |>
+    tidyr::extract(
+      dataset,
+      into = c("ngenes", "ntargets"),
+      regex = "ngenes=([0-9]+)_ntargets=([0-9]+)",
+      remove = FALSE,
+      convert = TRUE
+    ) |>
+    mutate(
+      method = "scep-pipe"
+    ) 
+}
+
+
+plot_runtime <- function(trace_file, title) {
+  fmt_hms <- function(x) {
+    x <- round(x)
+    sprintf("%d:%02d:%02d", x %/% 3600, (x %% 3600) %/% 60, x %% 60)
+  }
+  
+  
+  time_breaks <- c(
+    60,      # 1 min
+    120,     # 2 min
+    300,     # 5 min
+    600,     # 10 min
+    1800,    # 30 min
+    3600,    # 1 hr
+    7200,    # 2 hr
+    14400    # 4 hr
+  )
+  
+  target_breaks <- c(50, 100, 200, 400, 800, 1600,3200)
+  
+  ggplot(
+    trace_file,
+    aes(
+      x = ntargets,
+      y = runtime_in_sec,
+      color = method
+    )
+  ) +
+    geom_line() +
+    geom_point(size = 2) +
+    # facet_wrap(
+    #   ~ npairs,
+    #   labeller = labeller(npairs = function(x) paste0("num. pairs = ", x, "k"))
+    # ) +
+    scale_y_log10(
+      breaks = time_breaks[time_breaks <= max(trace_file$runtime_in_sec)],
+      labels = fmt_hms
+    ) +
+    scale_x_log10(
+      breaks = target_breaks[target_breaks <= max(trace_file$ngenes)]
+    ) +
+    labs(
+      x = "Number of targets (log scale)",
+      y = "Runtime (log scale)",
+      color = "Method",
+      linetype = NULL,
+      title = title
+    ) +
+    theme_bw()
+}
+
+plot_memory <- function(trace_file, title) {
+  target_breaks <- c(50, 100, 200, 400, 800, 1600,3200)
+  
+  ggplot(
+    trace_file,
+    aes(
+      x = ntargets,
+      y = mem_in_gb,
+      color = method
+    )
+  ) +
+    geom_line() +
+    geom_point(size = 2) +
+    scale_y_log10(
+      breaks = c(0.5, 1, 2, 4, 8, 16, 32, 64, 128),
+      labels = scales::label_number()
+    ) +
+        scale_x_log10(
+      breaks = target_breaks[target_breaks <= max(trace_file$ngenes)]
+    ) +
+    labs(
+      x = "Number of targets (log scale)",
+      y = "Peak memory (GB, log scale)",
+      color = "Method",
+      title = title,
+      linetype = NULL
+    ) +
+    theme_bw()
+}
+
+```
+
+
+
+
+```{r}
+source_data = "replogle-rd7"
+
+run_name_neg <- "run_repl_1000genes_with_gene_qc_with_frpert_rerun" # "run_repl_1000genes_with_gene_qc" #  i reran frpert wotj skew-t
+dataset_name_neg <- "replogle-rd7_neg_ctrl_ngenes=1000_gene_thresh=7" 
+
+base_path_neg <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/neg-control")
+
+run_name_pos <- "run_repl_ntargets=1500_ncells=100k_with_frpert_rerun" # "run_repl_ntargets=1500_ncells=100k"  #  i reran frpert wotj skew-t
+dataset_name_pos = "replogle-rd7_pos_ctrl_ntargets=1500_ncells=100k_gene_thresh=7"
+
+base_path_pos <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/pos-control")
+path_to_outputs_pos <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/pos-control/outputs")
+
+# summarize_statistical_dataset(
+#   dataset_name = dataset_name_pos,
+#   dataset_type = "pos"
+# )
+# summarize_statistical_dataset(
+#   dataset_name = dataset_name_neg,
+#   dataset_type = "neg"
+# )
+```
+
+
+
+
+
+```{r, echo=FALSE, include=FALSE}
+disc_pairs <- read_rds(file.path(base_path_neg, "input_data", dataset_name_neg, "sceptre/discovery_pairs.rds")) |>
+  as_tibble()
+
+results_list_neg <- load_associations_neg(file.path(base_path_neg, "outputs"), run_name_neg, dataset_name_neg)
+results_neg <- combine_and_prepare_results_neg(results_list_neg, disc_pairs, eps = 1e-250)
+
+results_list_pos = load_associations_pos(file.path(base_path_pos, "outputs"), run_name_pos, dataset_name_pos)
+results_pos <- combine_and_prepare_results_pos(results_list_pos, eps = 1e-250)
+
+# ## adding in sample sizes ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# cell_info <- read_csv(
+#   file.path(base_path_pos, "input_data", dataset_name_pos, "cell_info.csv"),
+#   show_col_types = FALSE)
+# 
+# sample_sizes <- cell_info |> group_by(grna_target) |> summarize(n = n()) |>
+#     dplyr::select(target = grna_target, num_expressed_cells = n) |>
+#   mutate(pair_type = "positive control")
+
+results_repl <- rbind(
+  results_neg,
+  mutate(results_pos, pair_type = "positive control")[names(results_neg)]
+) #|> 
+  # left_join(
+  #   sample_sizes,
+  #   by = c("target", "pair_type")
+  # )
+
+```
+
+
+
+
+EDA plot: pairwise p-values
+
+```{r}
+
+
+results_repl |>
+  dplyr::rename(p_value_SCEPTRE = p_value_scep, `p_value_FR-Perturb`=p_value_frpert, p_value_Mixscale=p_value_mix) |>
+  plot_pvalue_comparison_log(downsample_n = 10000, max_log_p = 50, reference_col = "p_value_SCEPTRE", dataset_name="Replogle") +
+  theme_presentation()
+
+ggsave("~/thesis-defense-figures/repl-assoc-pairs.png", width = 10, height = 7, dpi = 300)
+
+```
+
+
+
+
+
+
+```{r}
+method_renamer = c(scep="SCEPTRE", mix="Mixscale", frpert="FR-Perturb")
+results_repl |>
+  filter(pair_type == "negative control") |>
+  dplyr::select(starts_with("p_value")) |>
+  pivot_longer(cols = everything(), names_to = "method", values_to = "pvalue") |>
+  mutate(method = method_renamer[gsub("p_value_", "", method)]) |>
+  plot_multi_method_qq_tail(transparency = .9, point_size = 1, plot_title = "Replogle: miscalibration in negative controls")+
+  theme_presentation() +
+  scale_color_manual(values = c(
+    "SCEPTRE"  = "#F8766D",
+    "Mixscale" = "#00BFC4",
+    "FR-Perturb"   = "#C77CFF"
+  ))
+ggsave("~/thesis-defense-figures/repl-assoc-qq.png", width = 10, height = 7, dpi = 300)
+
+```
+
+
+
+
+```{r}
+results_repl |>
+  dplyr::rename(p_value_SCEPTRE = p_value_scep, `p_value_FR-Perturb`=p_value_frpert, p_value_Mixscale=p_value_mix) |>
+  make_roc_plot(dataset_name = "Replogle") +
+  theme_presentation() 
+ggsave("~/thesis-defense-figures/repl-assoc-roc.png", width = 10, height = 7, dpi = 300)
+
+
+```
+
+```{r}
+results_repl |>
+  dplyr::rename(p_value_SCEPTRE = p_value_scep, `p_value_FR-Perturb`=p_value_frpert, p_value_Mixscale=p_value_mix) |>
+  make_fp_budget_plot(
+  fp_budgets =  c(0, 1, 2, 5, 10, 20, 30, 50, 100, 250, 500),
+  dataset_name = "Replogle"
+)+
+  scale_color_manual(values = c(
+    "SCEPTRE"  = "#F8766D",
+    "Mixscale" = "#00BFC4",
+    "FR-Perturb"   = "#C77CFF"
+  )) +
+  theme_presentation()
+ggsave("~/thesis-defense-figures/repl-assoc-tps.png", width = 10, height = 7, dpi = 300)
+
+```
+
+
+```{r, echo=FALSE, cache=TRUE}
+bh_plt = results_repl |>
+  dplyr::rename(p_value_SCEPTRE = p_value_scep, `p_value_FR-Perturb`=p_value_frpert, p_value_Mixscale=p_value_mix) |>
+make_bh_vs_pi_plot_v2(
+  q_target = 0.1,
+  N_total  = 7500,
+  pi_grid  = c(.01, .02, .05, .075, .1, .15, .2),
+  dataset_name = "Replogle"
+)
+bh_plt +
+  scale_color_manual(values = c(
+    "SCEPTRE"  = "#F8766D",
+    "Mixscale" = "#00BFC4",
+    "FR-Perturb"   = "#C77CFF"
+  )) +
+    scale_fill_manual(values = c(
+    "SCEPTRE"  = "#F8766D",
+    "Mixscale" = "#00BFC4",
+    "FR-Perturb"   = "#C77CFF"
+  )) +
+  theme_presentation()
+ggsave("~/thesis-defense-figures/repl-assoc-bh.png", width = 10, height = 7, dpi = 300)
+```
+
+```{r, echo=FALSE, cache=TRUE}
+# results_repl |>
+#   dplyr::rename(p_value_SCEPTRE = p_value_scep, `p_value_FR-Perturb`=p_value_frpert, p_value_Mixscale=p_value_mix) |>
+# make_bh_vs_pi_plot_v2(
+#   q_target = 0.1,
+#   N_total  = 100000,
+#   pi_grid  = c(0.001, 0.002, 0.005, .0075, 0.01, 0.015),
+#   dataset_name = "Replogle"
+# )
+```
+
+
+
+
+## comp
+
+```{r}
+run_names_inmem = c(
+"run_repl_ngenes=1000_3targets"
+)
+# scep_pipe_run = "replogle-rd7_comp_ngenes=560_ntargets=225_ncells=90k_n_nonzero_p=0.75"
+base_path_comp = file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/computational")
+
+scep_pipe_datasets <- c(
+'replogle-rd7_comp_ngenes=1000_ntargets=100_gene_thresh=7',
+'replogle-rd7_comp_ngenes=1000_ntargets=200_gene_thresh=7',
+'replogle-rd7_comp_ngenes=1000_ntargets=400_gene_thresh=7',
+'replogle-rd7_comp_ngenes=1000_ntargets=800_gene_thresh=7',
+'replogle-rd7_comp_ngenes=1000_ntargets=1600_gene_thresh=7',
+'replogle-rd7_comp_ngenes=5000_ntargets=1600_gene_thresh=7',
+'replogle-rd7_comp_ngenes=10000_ntargets=1600_gene_thresh=7'
+)
+
+scep_pipe_base_fp = file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "association/computational/outputs/sceptre-pipeline"
+)
+
+# due to rounding, we can't just multiply ngenes and ntargets
+# pair_dat <- data.frame(
+#   ngenes =   c(222L, 250L, 333L, 375L, 444L, 500L), 
+#   ntargets = c(225L, 200L, 225L, 200L, 225L, 200L),
+#   npairs = c(   50,   50,   75,  75,    100, 100)
+# )
+
+
+trace_inmem <- load_trace_files_in_memory(run_names = run_names_inmem, base_path_comp = base_path_comp)
+trace_pipe <- load_trace_files_scep_pipe(scep_pipe_datasets = scep_pipe_datasets, scep_pipe_base_fp = scep_pipe_base_fp)
+
+
+
+trace_repl = rbind(
+  trace_inmem |>
+    dplyr::select(method, mem_in_gb = peak_rss_gb, runtime_in_sec = realtime_sec, ngenes, ntargets) |> mutate(num_assoc_analysis_workers = 1),
+  trace_pipe |>
+    dplyr::select(method, mem_in_gb = max_peak_rss_in_gb_for_assoc_workers, runtime_in_sec = assoc_elapsed_time_in_sec, ngenes, ntargets, num_assoc_analysis_workers)
+)
+
+
+
+
+```
+
+
+
+
+```{r}
+
+# trace_repl |>
+#   mutate(method = recode(method,
+#     "frperturb" = "FR-Perturb",
+#     "sceptre" = "SCEPTRE",
+#     "scep-pipe"         = "Pipeline",
+#      "mixscale"         = "Mixscale"
+#   )) |>
+#   filter(ngenes == 1000) |>
+# plot_runtime("Replogle: runtime for 1000 genes and varying targets")
+
+plot_runtime <- function(df, title_text) {
+  
+  # 1. Master Palette definition (Internal or Global)
+  method_cols_ <- c(
+    "SCEPTRE"  = "#F8766D",
+    "Mixscale" = "#00BFC4",
+    "FR-Perturb"   = "#C77CFF",
+    "pipeline" = "#FF0000"
+  )
+  
+  # 2. Helper for H:M:S formatting
+  fmt_hms <- function(x) {
+    x <- round(x)
+    sprintf("%d:%02d:%02d", x %/% 3600, (x %% 3600) %/% 60, x %% 60)
+  }
+  
+  # 3. Dynamic Time Breaks
+  all_breaks <- c(30, 60, 120, 300, 600, 1800, 3600, 7200, 14400, 28800)
+  current_max <- max(df$runtime_in_sec, na.rm = TRUE)
+  
+  # 4. The Plot Pipeline
+  df |>
+    # dplyr::filter(source_data == !!source_tag) |>
+    ggplot(aes(x = ntargets, y = runtime_in_sec, 
+               color = method, group = method)) +
+    geom_line(linewidth = 0.8, alpha = 0.7) +
+    geom_point(size = 4) +
+    # Scale logic
+    scale_y_log10(breaks = all_breaks[all_breaks <= current_max * 1.2], 
+                  labels = fmt_hms) +
+    scale_x_log10() +
+    # Manual Scales (Built-in)
+    scale_color_manual(values = method_cols_) +
+    # scale_shape_manual(values = c("TRUE" = 17, "FALSE" = 1), guide = "none") +
+    # Formatting
+    labs(
+      x = "Number of guides (log scale)",
+      y = "Runtime (H:M:S, log scale)",
+      color = "Method",
+      title = title_text
+    ) +
+    theme_bw() +
+    theme_presentation() + # Assumes this is defined in your environment
+    theme(
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank()
+    )
+}
+
+method_renamer_comp = c(
+  sceptre="SCEPTRE",
+  mixscale="Mixscale",
+  frperturb = "FR-Perturb",
+  "scep-pipe"="pipeline"
+)
+trace_repl |>
+  mutate(
+    method = factor(method_renamer_comp[method], levels = method_renamer_comp),
+    scep = method %in% c("SCEPTRE", "pipeline")
+  ) |>
+  filter(ngenes == 1000) |>
+plot_runtime(title = "Association: runtime for Replogle")
+ggsave("~/thesis-defense-figures/repl-assoc-runtime.png", width = 10, height = 7, dpi = 300)
+
+
+# trace_all |>
+#   mutate(
+#     method = factor(method_renamer_comp[method], levels = method_renamer_comp),
+#     scep = method %in% c("SCEPTRE", "pipeline")
+#   ) |>
+# plot_runtime(title = "Assignment: runtime for Gasperini", source_tag = "gasperini")
+# ggsave("~/thesis-defense-figures/gasp-assign-runtime.png", width = 10, height = 7, dpi = 300)
+
+```
+
+
+```{r}
+
+plot_memory <- function(df, title_text) {
+  
+  # 1. Master Palette (Ensuring consistency across all slide types)
+  method_cols_ <- c(
+    "SCEPTRE"  = "#F8766D",
+    "Mixscale" = "#00BFC4",
+    "FR-Perturb"   = "#C77CFF",
+    "pipeline" = "#FF0000"
+  )
+  
+  # 2. Filter and Plot
+  df |>
+    # dplyr::filter(source_data == !!source_tag) |>
+    ggplot(aes(x = ntargets, y = mem_in_gb, 
+               color = method, group = method)) +
+    geom_line(linewidth = 0.8, alpha = 0.7) +
+    geom_point(size = 4) +
+    
+    # 3. Log Scales
+    scale_y_log10(
+      breaks = c(0.5, 1, 2, 4, 8, 16, 32, 64, 128),
+      labels = scales::label_number(suffix = " GB") # Adds "GB" directly to axis
+    ) +
+    scale_x_log10() +
+    
+    # 4. Manual Scales (Synced with Runtime plot)
+    scale_color_manual(values = method_cols_) +
+    # scale_shape_manual(values = c("TRUE" = 17, "FALSE" = 1), guide = "none") +
+    
+    # 5. Formatting
+    labs(
+      x = "Number of guides (log scale)",
+      y = "Peak memory (log scale)",
+      color = "Method",
+      title = title_text
+    ) +
+    theme_bw() +
+    theme_presentation() + 
+    theme(
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank()
+    )
+}
+trace_repl |>
+  mutate(
+    method = factor(method_renamer_comp[method], levels = method_renamer_comp),
+    scep = method %in% c("SCEPTRE", "pipeline")
+  ) |>
+  filter(ngenes == 1000) |>
+plot_memory(title = "Association: memory for Replogle")
+ggsave("~/thesis-defense-figures/repl-assoc-mem.png", width = 10, height = 7, dpi = 300)
+
+
+# trace_repl |>
+#   mutate(method = recode(method,
+#     "frperturb" = "FR-Perturb",
+#     "sceptre" = "SCEPTRE",
+#     "scep-pipe"         = "Pipeline",
+#      "mixscale"         = "Mixscale"
+#   )) |>
+#   filter(ngenes == 1000) |>
+# plot_memory("Replogle: memory for 1000 genes and varying targets")
+
+
+```
+
+
+
+
+
+
+
+
+
+## gasp
+
+```{r}
+
+source_data = "gasperini"
+
+run_name_neg <- "run_gasp_1000genes_with_gene_qc_with_frpert_rerun" # "run_gasp_1000genes_with_gene_qc"  # reran frpert with skew-t
+dataset_name_neg <- "gasperini_neg_ctrl_ngenes=1000_gene_thresh=7" 
+
+base_path_neg <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/neg-control")
+
+run_name_pos <- "run_gasp_ntargets=377_ncels=100k_with_frpert_rerun" # "run_gasp_ntargets=377_ncels=100k"  # reran frpert with skew-t
+dataset_name_pos = "gasperini_pos_ctrl_ntargets=377_ncells=100k_gene_thresh=7"
+
+base_path_pos <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/pos-control")
+path_to_outputs_pos <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/pos-control/outputs")
+
+
+disc_pairs <- read_rds(file.path(base_path_neg, "input_data", dataset_name_neg, "sceptre/discovery_pairs.rds")) |>
+  as_tibble()
+
+results_list_neg <- load_associations_neg(file.path(base_path_neg, "outputs"), run_name_neg, dataset_name_neg)
+results_neg <- combine_and_prepare_results_neg(results_list_neg, disc_pairs, eps = 1e-250)
+
+results_list_pos = load_associations_pos(file.path(base_path_pos, "outputs"), run_name_pos, dataset_name_pos)
+results_pos <- combine_and_prepare_results_pos(results_list_pos, eps = 1e-250)
+
+# TODO add sample sizes?
+
+results_gasp <- rbind(
+  results_neg,
+  mutate(results_pos, pair_type = "positive control")[names(results_neg)]
+) 
+```
+
+
+
+
+
+# 
+# ```{r}
+# results_repl |>
+#   dplyr::rename(p_value_SCEPTRE = p_value_scep, `p_value_FR-Perturb`=p_value_frpert, p_value_Mixscale=p_value_mix) |>
+#   make_roc_plot(dataset_name = "Replogle") +
+#   theme_presentation() 
+# ggsave("~/thesis-defense-figures/repl-assoc-roc.png", width = 10, height = 7, dpi = 300)
+# 
+# 
+# ```
+
+
+EDA plot: pairwise p-values
+
+```{r}
+
+
+results_gasp |>
+  dplyr::rename(p_value_SCEPTRE = p_value_scep, `p_value_FR-Perturb`=p_value_frpert) |>
+  plot_pvalue_comparison_log(downsample_n = 10000, max_log_p = 50, reference_col = "p_value_SCEPTRE", dataset_name="Gasperini")+
+  theme_presentation()
+
+ggsave("~/thesis-defense-figures/gasp-assoc-pairs.png", width = 10, height = 7, dpi = 300)
+```
+
+
+
+
+
+
+```{r}
+method_renamer = c(scep="SCEPTRE", frpert="FR-Perturb")
+results_gasp |>
+  filter(pair_type == "negative control") |>
+  dplyr::select(starts_with("p_value")) |>
+  pivot_longer(cols = everything(), names_to = "method", values_to = "pvalue") |>
+  mutate(method = method_renamer[gsub("p_value_", "", method)]) |>
+  plot_multi_method_qq_tail(transparency = .9, point_size =1, plot_title = "Gasperini: miscalibration in negative controls")+
+  theme_presentation() +
+  scale_color_manual(values = c(
+    "SCEPTRE"  = "#F8766D",
+    "Mixscale" = "#00BFC4",
+    "FR-Perturb"   = "#C77CFF"
+  ))
+ggsave("~/thesis-defense-figures/gasp-assoc-qq.png", width = 10, height = 7, dpi = 300)
+  
+```
+
+
+
+
+```{r}
+results_gasp |>
+  dplyr::rename(p_value_SCEPTRE = p_value_scep, `p_value_FR-Perturb`=p_value_frpert) |>
+  make_roc_plot(dataset_name = "Gasperini") +
+  theme_presentation()
+ggsave("~/thesis-defense-figures/gasp-assoc-roc.png", width = 10, height = 7, dpi = 300)
+```
+
+```{r}
+# results_gasp |>
+#   dplyr::rename(p_value_SCEPTRE = p_value_scep, `p_value_FR-Perturb`=p_value_frpert) |>
+#   make_fp_budget_plot(
+#   fp_budgets =  c(0, 1, 2, 5, 10, 20, 30, 50, 100, 250, 500),
+#   dataset_name = "Gasperini"
+# )
+```
+
+
+not doing BH for this, since they're calibrated
+```{r, echo=FALSE, cache=TRUE}
+# results_gasp |>
+#   dplyr::rename(p_value_SCEPTRE = p_value_scep, `p_value_FR-Perturb`=p_value_frpert) |>
+# make_bh_vs_pi_plot_v2(
+#   q_target = 0.1,
+#   N_total  = 7500,
+#   pi_grid  = c(.01, .02, .05, .075, .1, .15, .2),
+#   dataset_name = "Gasperini"
+# )
+```
+
+```{r, echo=FALSE, cache=TRUE}
+# results_gasp |>
+#   dplyr::rename(p_value_SCEPTRE = p_value_scep, `p_value_FR-Perturb`=p_value_frpert) |>
+# make_bh_vs_pi_plot_v2(
+#   q_target = 0.1,
+#   N_total  = 100000,
+#   pi_grid  = c(0.001, 0.002, 0.005, .0075, 0.01, 0.015),
+#   dataset_name = "Gasperini"
+# )
+```
+
+
+
+## compute
+
+```{r}
+run_names_inmem = c(
+"run_gasp_ngenes=1000_3targets"
+)
+# scep_pipe_run = "replogle-rd7_comp_ngenes=560_ntargets=225_ncells=90k_n_nonzero_p=0.75"
+base_path_comp = file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                                 "association/computational")
+
+scep_pipe_datasets <- c(
+'gasperini_comp_ngenes=1000_ntargets=100_gene_thresh=7',
+'gasperini_comp_ngenes=1000_ntargets=200_gene_thresh=7',
+'gasperini_comp_ngenes=1000_ntargets=400_gene_thresh=7',
+'gasperini_comp_ngenes=1000_ntargets=800_gene_thresh=7',
+'gasperini_comp_ngenes=1000_ntargets=1600_gene_thresh=7',
+'gasperini_comp_ngenes=5000_ntargets=1600_gene_thresh=7',
+'gasperini_comp_ngenes=10000_ntargets=1600_gene_thresh=7'
+)
+
+scep_pipe_base_fp = file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "association/computational/outputs/sceptre-pipeline"
+)
+
+# due to rounding, we can't just multiply ngenes and ntargets
+# pair_dat <- data.frame(
+#   ngenes =   c(222L, 250L, 333L, 375L, 444L, 500L), 
+#   ntargets = c(225L, 200L, 225L, 200L, 225L, 200L),
+#   npairs = c(   50,   50,   75,  75,    100, 100)
+# )
+
+
+trace_inmem <- load_trace_files_in_memory(run_names = run_names_inmem, base_path_comp = base_path_comp)
+trace_pipe <- load_trace_files_scep_pipe(scep_pipe_datasets = scep_pipe_datasets, scep_pipe_base_fp = scep_pipe_base_fp)
+
+
+
+trace_gasp = rbind(
+  trace_inmem |>
+    dplyr::select(method, mem_in_gb = peak_rss_gb, runtime_in_sec = realtime_sec, ngenes, ntargets) |> mutate(num_assoc_analysis_workers = 1),
+  trace_pipe |>
+    dplyr::select(method, mem_in_gb = max_peak_rss_in_gb_for_assoc_workers, runtime_in_sec = assoc_elapsed_time_in_sec, ngenes, ntargets, num_assoc_analysis_workers)
+)
+
+
+
+
+```
+
+
+
+
+```{r}
+
+
+method_renamer_comp = c(
+  sceptre="SCEPTRE",
+  # mixscale="Mixscale",
+  frperturb = "FR-Perturb",
+  "scep-pipe"="pipeline"
+)
+trace_gasp |>
+  mutate(
+    method = factor(method_renamer_comp[method], levels = method_renamer_comp),
+    scep = method %in% c("SCEPTRE", "pipeline")
+  ) |>
+  filter(ngenes == 1000) |>
+plot_runtime(title = "Association: runtime for Gasperini")
+ggsave("~/thesis-defense-figures/gasp-assoc-runtime.png", width = 10, height = 7, dpi = 300)
+
+
+```
+
+
+```{r}
+
+trace_gasp |>
+  mutate(
+    method = factor(method_renamer_comp[method], levels = method_renamer_comp),
+    scep = method %in% c("SCEPTRE", "pipeline")
+  ) |>
+  filter(ngenes == 1000) |>
+plot_memory(title = "Association: memory for Gasperini")
+
+ggsave("~/thesis-defense-figures/gasp-assoc-mem.png", width = 10, height = 7, dpi = 300)
+
+
+# trace_gasp |>
+#   mutate(method = recode(method,
+#     "frperturb" = "FR-Perturb",
+#     "sceptre" = "SCEPTRE",
+#     "scep-pipe"         = "Pipeline"
+#   )) |>
+#   filter(ngenes == 1000) |>
+# plot_memory("Gasperini: memory for 1000 genes and varying targets")
+```
+
+
