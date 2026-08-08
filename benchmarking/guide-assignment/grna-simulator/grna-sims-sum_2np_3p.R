@@ -7,7 +7,7 @@ library(zellkonverter)
 
 script_dir <- dirname(sys.frame(1)$ofile)
 source(file.path(script_dir, "../../association/data-preparation/utils_data_prep.R"))
-source(file.path(script_dir, "/sims-for-paper.R"))
+source(file.path(script_dir, "/sims-sum-of-three.R"))
 
 
 
@@ -72,7 +72,8 @@ make_grna_simulation_sum_process(
   num_cells = 50000,
   num_guides_per_param = 100,
   scep = scep_repl,
-  seed = 654
+  seed = 654,
+  use_response_covariates = TRUE
 )
 
 

@@ -1,0 +1,541 @@
+---
+title: "simulations-report"
+output: html_document
+date: "2025-12-11"
+---
+
+
+This document gives our strategy for simulating data with a known ground truth.
+
+Idea: 
+
+1. pick a gRNA vector from the intended dataset. Use one that's fairly highly expressed
+
+2. Regress that vector on our cell covariates to estimate their effects $\hat\beta$
+
+3. sample iid perturbation indicators $X_i$
+
+4. sample new UMI counts via $Y^\star \sim \text{NB}(\mu^\star, \theta^\star)$ where $\log \mu^\star = z^T\hat\beta +  \gamma_0 (1-X_i) + \gamma_1 X_i$, and $\theta^\star$ is chosen so that the distribution of $Y^\star$ matches that of $Y$ (in particular, $\theta^\star \gg \hat\theta$ from the regression since we have much less variation within each component). Our "effect size" is $\gamma_1-\gamma_0$
+
+
+$\newcommand{\E}{\operatorname{E}}\newcommand{\Var}{\operatorname{Var}}$
+
+```{r}
+rm(list=ls())
+library(tidyverse)
+source("~/.Rprofile")
+
+# DATASET_NAME <- "gasperini"
+DATASET_NAME <- "replogle-rd7"
+
+
+base_fp <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data",
+  DATASET_NAME,
+  "sceptre-pipeline/"
+)
+
+grna_odm <- ondisc::initialize_odm_from_backing_file(paste0(base_fp, "grna.odm"))
+scep <- readRDS(file.path(base_fp, "sceptre_object.rds"))
+num_cells <- ncol(grna_odm)
+num_grnas <- nrow(grna_odm)
+cat(DATASET_NAME, " loaded: num grna = ", num_grnas, ", num cells = ", num_cells, "\n", sep="")
+
+
+## defining ggplot2 transform for log1p scales
+
+logp1_trans <- function(base = 10) {
+  trans <- function(x) log(x + 1, base)
+  inv   <- function(x) base^x - 1  # correct inverse
+  
+  # Major breaks: at base^k - 1
+  brks <- function(limits) {
+    rng <- limits + 1
+    scales::log_breaks(base = base)(rng) - 0
+  }
+  
+  scales::trans_new(
+    name = paste0("logp1-", base),
+    transform = trans,
+    inverse   = inv,
+    breaks    = brks,
+    domain = c(0, Inf)
+  )
+}
+```
+
+# 1. picking our target gRNA
+
+First thing: let's pick some active gRNAs and visualize them to confirm we've got the bimodal shape we're looking for.
+
+```{r, echo = FALSE}
+summary_stat <- function(grna_vec) sum(grna_vec > 0)
+# summary_stat <- sum
+
+grna_summary_stats <- numeric(num_grnas)
+for(i in 1:num_grnas) {
+  grna_summary_stats[i] <- summary_stat(grna_odm[i,])
+}
+
+set.seed(23432)
+highly_expressed <- (grna_summary_stats > quantile(grna_summary_stats, .9) & grna_summary_stats < quantile(grna_summary_stats, .99)) |>
+  which() |>
+  sample(10, replace = FALSE) |>
+  sort()
+
+less_expressed <- (grna_summary_stats > quantile(grna_summary_stats, .25) & grna_summary_stats < quantile(grna_summary_stats, .5)) |>
+  which() |>
+  sample(10, replace = FALSE) |>
+  sort()
+
+plotdat <- data.frame(
+  umi = c(grna_odm[highly_expressed[1],], grna_odm[less_expressed[1],]),
+  group = rep(c("very active", "medium active"), each = num_cells) |>
+    factor(levels = c("very active", "medium active"))
+)
+plotdat |>
+  # dplyr::filter(umi > 0) |>
+  ggplot(aes(x = umi, fill = group)) +
+  geom_histogram(bins=30) +
+  facet_wrap(~group) +
+  theme_bw()  +
+  scale_y_continuous(trans = logp1_trans(10)) +
+  scale_x_continuous(trans = logp1_trans(10)) +
+  ggtitle(paste0(DATASET_NAME, " gRNAs ", highly_expressed[1], " and ", less_expressed[1]))
+```
+
+
+For gasperini: these both look pretty similar, but I'm fine using the more active one. It is bimodal on the log scale so we should be able to use this. Same for replogle.
+
+
+```{r}
+grna_idx <- highly_expressed[1]
+y <- grna_odm[grna_idx, ]
+cat("Using gRNA", grna_idx, "\n")
+
+num_bins <- 40
+plt1 <- data.frame(umi = y) |>
+  ggplot(aes(x = umi)) +
+  geom_histogram(bins=num_bins, fill = "#EE7777") +
+  theme_bw()  +
+  scale_y_continuous(trans = logp1_trans(10)) +
+  scale_x_continuous(trans = logp1_trans(10)) +
+  labs(title = paste0(DATASET_NAME, " gRNA ", grna_idx, " UMI (log-log)"), 
+       x = "UMI (log1p)",
+       y = "Frequency (log1p)")
+plt2 <- data.frame(umi = y) |>
+  ggplot(aes(x = umi)) +
+  geom_histogram(bins=num_bins, fill = "#7777EE") +
+  theme_bw()  +
+  scale_y_continuous(trans = logp1_trans(10)) +
+  labs(title = "UMI (log frequency only)", 
+       x = "UMI",
+       y = "Frequency (log1p)")
+cowplot::plot_grid(plt1, plt2)
+```
+
+fitting the model
+
+```{r}
+cell_covs <- scep@covariate_data_frame
+model_df <- cell_covs |>
+  mutate(y = y)
+
+fmla <- if(DATASET_NAME == "gasperini") {
+  y ~ 1 + batch + log(grna_n_umis + 1) + log(grna_n_nonzero + 1)
+} else if(DATASET_NAME == "replogle-rd7") {
+  warning("no batch for replogle right now")
+  y ~ 1 + log(grna_n_umis + 1) + log(grna_n_nonzero + 1)
+} else {
+  stop(paste0("no formula for `DATASET_NAME = '", DATASET_NAME, "'`."))
+}
+
+# mod_pois <- glm(fmla, data = model_df, family = poisson())
+# summary(mod_pois)
+
+mod_nb <- MASS::glm.nb(fmla, model_df)
+summary(mod_nb)
+```
+
+```{r}
+locs <- sample(num_cells, 5000, FALSE)
+data.frame(
+  real = y[locs], 
+  mean_ests = fitted(mod_nb)[locs]
+) |>
+  ggplot(aes(x = real, y = mean_ests)) +
+  geom_jitter(width=.01, height=.01) +
+  scale_y_continuous(trans = logp1_trans(10)) +
+  scale_x_continuous(trans = logp1_trans(10)) +
+  labs(x = "Y (log1p)", y = bquote(hat(Y) ~ "(log1p)"), title = "Actual vs Fitted values for NB GLM") +
+  geom_abline(slope = 1, intercept = 0, color = "#EE7777") +
+  theme_bw()
+```
+
+
+
+```{r}
+set.seed(87368)
+pert_prob <- 0.001
+pert_effect <- 6
+non_pert_effect <- -4
+theta_new <- 4.5
+
+print(pert_effect - non_pert_effect) # effect size
+
+log_mu <- predict(mod_nb, newdata = cell_covs) 
+X <- rbinom(num_cells, 1, pert_prob)
+log_mu_pert <- log_mu + pert_effect * X + non_pert_effect * (1-X)
+
+ysim_nb_covs_pert <- MASS::rnegbin(num_cells, exp(log_mu_pert), theta = theta_new)
+
+# how'd we do?
+sum(ysim_nb_covs_pert > 0)
+sum(y > 0)
+
+mean(ysim_nb_covs_pert)
+mean(y)
+
+var(ysim_nb_covs_pert)
+var(y)
+
+max(ysim_nb_covs_pert)
+max(y)
+
+max(ysim_nb_covs_pert[X == 0]) # pretty small...
+
+
+plt1 <- data.frame(
+  umi = c(y, ysim_nb_covs_pert),
+  group = rep(c("real", "NB sim with pert"), each = num_cells)
+) |>
+  ggplot(aes(x = umi, fill = group)) +
+  geom_histogram(bins=30) +
+  facet_wrap(~group) +
+  theme_bw()  +
+  scale_y_continuous(trans = logp1_trans(10)) +
+  scale_x_continuous(trans = logp1_trans(10)) +
+  ggtitle(bquote(.(DATASET_NAME) ~ "NB GLM sim. data vs real (" * theta ~ "=" ~ .(theta_new) * ")"))
+
+plt2 <- data.frame(
+  umi = ysim_nb_covs_pert,
+  X = ifelse(X == 1, "pert", "not pert")
+) |>
+  ggplot(aes(x = umi, fill = X)) +
+  geom_histogram(bins=30) +
+  facet_wrap(~X) +
+  theme_bw()  +
+  scale_y_continuous(trans = logp1_trans(10)) +
+  scale_x_continuous(trans = logp1_trans(10)) +
+  ggtitle(bquote(.(DATASET_NAME) ~ "NB GLM sim. data by pert status (" *  theta ~ "=" ~ .(theta_new) * ")"))
+
+cowplot::plot_grid(plt1, plt2, nrow = 2)
+
+data.frame(
+  umi = ysim_nb_covs_pert,
+  X = ifelse(X == 1, "pert", "not pert")
+) |>
+  group_by(X) |>
+  summarize_all(.funs = var)
+```
+
+# actually analyzing these
+
+i ran on everything.
+
+
+```{r}
+rm(list=ls())
+
+plot_umi_hist_by_pert <- function(y_sim, is_pert) {
+
+  logp1_trans <- function(base = 10) {
+    trans <- function(x) log(x + 1, base)
+    inv   <- function(x) base^x - 1  # correct inverse
+    
+    # Major breaks: at base^k - 1
+    brks <- function(limits) {
+      rng <- limits + 1
+      scales::log_breaks(base = base)(rng) - 0
+    }
+    scales::trans_new(
+      name = paste0("logp1-", base),
+      transform = trans,
+      inverse   = inv,
+      breaks    = brks,
+      domain = c(0, Inf)
+    )
+  }
+  # plt1 <- data.frame(
+  #   umi = c(y_real, y_sim),
+  #   group = rep(c("real", "sim"), each = length(y_real))
+  # ) |>
+  #   ggplot(aes(x = umi, fill = group)) +
+  #   geom_histogram(bins=30) +
+  #   facet_wrap(~group) +
+  #   theme_bw()  +
+  #   scale_y_continuous(trans = logp1_trans(10)) +
+  #   scale_x_continuous(trans = logp1_trans(10)) +
+  #   ggtitle(paste0("Real vs Sim"))
+  
+  plt2 <- data.frame(
+    umi = y_sim,
+    pert_status = ifelse(is_pert == 1, "pert", "not pert")
+  ) |>
+    ggplot(aes(x = umi, fill = pert_status)) +
+    geom_histogram(bins=30) +
+    facet_wrap(~pert_status) +
+    theme_bw()  +
+    scale_y_continuous(trans = logp1_trans(10)) +
+    scale_x_continuous(trans = logp1_trans(10)) +
+    ggtitle("Simulated UMI counts by pert status")
+  
+  # cowplot::plot_grid(plt1, plt2, nrow = 2)
+  plt2
+}
+
+
+library(tidyverse)
+source("~/.Rprofile")
+
+# dataset_name <- "replogle-rd7_simulated_medium"
+# run_name <- "run_all_sims_medium"
+
+dataset_name <- "replogle-rd7_simulated"
+run_name <- "run_all_sims"
+
+input_base_fp <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/input_data",
+  dataset_name
+)
+
+output_base_fp <- file.path(
+  .get_config_path("LOCAL_BENCHMARKING_DIR"),
+  "guide_assignment/outputs",
+  run_name
+)
+
+ground_truth <- readRDS(file.path(input_base_fp, "true_perturbation_status.rds"))
+sims <- readRDS(file.path(input_base_fp, "sceptre/grna_matrix.rds"))
+y_sim <- sims[1,]
+# plot_umi_hist_by_pert(y_sim = y_sim, is_pert = ground_truth[1,])
+
+# loading each in turn
+# 
+# scep_assign_raw <- readRDS(file.path(output_base_fp, "assignment_matrix_sceptre_replogle-rd7_simulated.rds"))
+# crisp_assign_raw <- read.csv(file.path(output_base_fp, "assignments_crispat_replogle-rd7_simulated.csv"))
+# pert_assign_raw <- read.csv(file.path(output_base_fp, "assignments_pertpy_replogle-rd7_simulated.csv"))
+# clns_assign_raw <- read.csv(file.path(output_base_fp, "assignments_cleanser_replogle-rd7_simulated.csv"))
+
+assn_list <- vector("list", length = nrow(ground_truth)) |>
+    setNames(rownames(ground_truth))
+
+# getting a list form for the ground truth
+true_assign <- assn_list
+for(grna_name in names(true_assign)) {
+  true_assign[[grna_name]] <- which(ground_truth[grna_name, ] == 1)
+}
+
+process_sceptre <- function(scep_output_fp, assn_list) {
+  scep_assign_raw <- readRDS(scep_output_fp)
+  
+  scep_assign <- assn_list
+  # for(i in seq_along(scep_assign)) {
+  for(grna_name in names(scep_assign)) {
+    scep_assign[[grna_name]] <- which(scep_assign_raw[grna_name,])
+  }
+  scep_assign
+}
+
+process_crispat <- function(crisp_output_fp, assn_list) {
+  crisp_assign_raw <- read.csv(crisp_output_fp)
+  unordered_cell_list <- split(crisp_assign_raw$cell_id, crisp_assign_raw$grna_id)
+  crisp_assign <- assn_list
+  for(grna_name in names(unordered_cell_list)) {
+    crisp_assign[[grna_name]] <- unordered_cell_list[[grna_name]]
+  }
+  crisp_assign
+}
+
+process_pert <- function(pert_output_fp, assn_list) {
+  pert_assign_raw <- read.csv(pert_output_fp)
+  
+  pert_assign <- assn_list
+
+  for(grna_name in names(pert_assign)) {
+    pert_assign[[grna_name]] <- pert_assign_raw$cell_id[grepl(pattern = grna_name, x = pert_assign_raw$grna_id)]
+  }
+  pert_assign
+}
+
+process_clns <- function(clns_output_fp, assn_list) {
+  clns_assign_raw <- read.csv(clns_output_fp)
+  unordered_cell_list <- split(clns_assign_raw$cell_id, clns_assign_raw$grna_id)
+  clns_assign <- assn_list
+  for(i in names(unordered_cell_list)) {
+    grna_name <- rownames(ground_truth)[[as.integer(i)]]
+    clns_assign[[grna_name]] <- unordered_cell_list[[i]]
+  }
+  clns_assign
+}
+
+scep_assign <- process_sceptre(paste0(output_base_fp, "/assignment_matrix_sceptre_", dataset_name, ".rds"), assn_list = assn_list)
+crisp_assign <- process_crispat(paste0(output_base_fp, "/assignments_crispat_", dataset_name, ".csv"), assn_list = assn_list)
+pert_assign <- process_pert(paste0(output_base_fp, "/assignments_pertpy_", dataset_name, ".csv"), assn_list = assn_list)
+
+# FIXED_PERT_FP <- "~/data/projects/sceptre3/benchmarking/guide_assignment/outputs/run_pertpy_sim/assignments_pertpy_replogle-rd7_simulated.csv"
+# pert_assign_raw <- read.csv(FIXED_PERT_FP)
+# sum(pert_assign_raw$grna_id == "multiple")
+# sum(pert_assign_raw$grna_id == "negative")
+# pert_assign <- process_pert(FIXED_PERT_FP, assn_list = assn_list)
+# warning("PERTPY HAS A HARD-CODED PATH!!!")
+
+clns_assign <- process_clns(paste0(output_base_fp, "/assignments_cleanser_", dataset_name, "_medium.csv"), assn_list = assn_list)
+warning("!!! hard-coding 'medium' for cleanser !!!")
+all_assns <- list(scep = scep_assign, crisp = crisp_assign, pert = pert_assign, clns = clns_assign)
+
+jaccard <- function(set1, set2) {
+  intersection <- length(intersect(set1, set2))
+  union <- length(union(set1, set2))
+  if (union == 0) return(NA_real_)
+  return(intersection / union)
+}
+
+all_sims <- lapply(
+  all_assns,
+  function(assn) Map(jaccard, assn, true_assign) |> as.numeric()
+)
+
+```
+
+
+is there anything weird about the gRNAs with terrible pertpy performance?
+
+```{r}
+# pltlist <- lapply(1:nrow(ground_truth), function(i) {
+#   df = data.frame(y_sim = sims[i,], pert_ind = ground_truth[i,])
+#   plot_umi_hist_by_pert(y_sim = df$y_sim, is_pert = df$pert_ind) +
+#     ggtitle(paste0("gRNA ", i, ": jaccard = ", all_sims$pert[names(all_assns$pert) == rownames(ground_truth)[i]] |> round(4)))
+# }) 
+# 
+# cowplot::plot_grid(plotlist = pltlist, nrow=5)
+
+```
+
+
+
+comparing each to ground truth
+
+```{r}
+data.frame(
+  sims = unlist(all_sims),
+  method = rep(names(all_sims), each = nrow(ground_truth))
+) |>
+  ggplot(aes(x = sims, fill = method)) +
+  geom_histogram(bins = 50) +
+  facet_wrap(~method) +
+  theme_bw() +
+  labs(x = "Jaccard Similarity", title = paste0("Similarities by method for ", dataset_name))
+
+```
+
+ok that's good for now!
+
+
+how many cells assigned per grna?
+```{r}
+num_assigned <- sapply(all_assns, function(l) sapply(l, length)[rownames(ground_truth)]) |>  # unnecessary, but ensuring they're ordered the same
+  as.data.frame()
+GGally::ggpairs(num_assigned) +
+  labs(title = "Comparison of # cells assigned per gRNA")
+
+```
+
+cleanser is low sim because way too many cells are considered expressed. But why is pertpy bimodal like that?
+- it has 5 exact zeros. This is because 5 genes got nothing assigned to them by cleanser. 
+
+```{r}
+data.frame(
+  num_assigned = sapply(all_assns$pert,length),
+  sim = all_sims$pert
+) |>
+  ggplot(aes(x = num_assigned, y = sim)) +
+  geom_jitter(width = 20, height = .075) +
+  theme_bw() +
+  labs(title = "Num. Assigned per gRNA vs Jaccard for pertpy")
+  
+```
+
+
+let's also do a comparison matrix between them, featuring average similarity.
+
+
+```{r}
+sim_mat <- matrix(0,length(all_assns),length(all_assns))
+rownames(sim_mat) <- colnames(sim_mat) <- names(all_assns)
+
+for(i in 1:(length(all_assns) - 1)) {
+  for(j in (i+1):length(all_assns)) {
+    avg_sim <- Map(jaccard, all_assns[[i]], all_assns[[j]]) |>
+      as.numeric() |>
+      mean()
+    sim_mat[i,j] <- avg_sim
+  }
+}
+sim_mat <- sim_mat + t(sim_mat)
+diag(sim_mat) <- 1
+
+order_levels <- rownames(sim_mat)   # or colnames(sim_mat), or a custom order
+
+sim_df <- sim_mat %>%
+  as.data.frame() %>%
+  rownames_to_column("row") %>%
+  pivot_longer(
+    cols = -row,
+    names_to = "col",
+    values_to = "similarity"
+  ) %>%
+  mutate(
+    row = factor(row, levels = order_levels),
+    col = factor(col, levels = order_levels)
+  )
+
+ggplot(sim_df, aes(x = row, y = col, fill = similarity)) +
+  geom_tile() +
+  scale_fill_gradient(low = "#5555EE", high = "#55EE55") +
+  coord_equal() +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(x = "", y = "", title = "Avg. similarity between methods")
+```
+
+
+would it be nice to see histograms of grna-level sims between each?
+
+```{r}
+pltlist <- list()
+
+for(i in 1:(length(all_assns) - 1)) {
+  for(j in (i+1):length(all_assns)) {
+    curr_sims <- Map(jaccard, all_assns[[i]], all_assns[[j]]) |>
+      as.numeric()
+  
+    pltlist[[length(pltlist)+1]] <- data.frame(sims = curr_sims) |>
+      ggplot(aes(x = sims)) +
+      geom_histogram(bins=15) +
+      ggtitle(paste0(names(all_assns)[i], " vs ", names(all_assns)[j])) +
+      theme_bw()
+  }
+}
+
+cowplot::plot_grid(plotlist = pltlist, nrow=2)
+
+
+
+```
+
+

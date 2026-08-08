@@ -7,7 +7,7 @@ library(zellkonverter)
 
 script_dir <- dirname(sys.frame(1)$ofile)
 source(file.path(script_dir, "../../association/data-preparation/utils_data_prep.R"))
-source(file.path(script_dir, "/sims-for-paper.R"))
+source(file.path(script_dir, "/sims-sum-of-three.R"))
 
 
 
