@@ -44,6 +44,26 @@ benchmarking/association/nf-logs
 # singularity images
 *.sif
 
+# LaTeX build artifacts (e.g. under manuscript/); keep .tex/.bib/.pdf sources
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.fot
+*.lof
+*.lot
+*.nav
+*.out
+*.run.xml
+*.snm
+*.synctex.gz
+*.synctex(busy)
+*.toc
+*.vrb
+*.xdv
+
 # macOS junk
 .DS_Store
 **/.DS_Store
