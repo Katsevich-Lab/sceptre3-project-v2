@@ -191,13 +191,13 @@ load_run <- function(run_name, dataset_name) {
 
 
 sim_pois0nb_2np_3p <- load_run(
-  run_name =  "pois0nb_sims_sum_2np_3p",
+  run_name = "pois0nb_sims_sum_2np_3p",
   dataset_name = "sims_sum_2np_3p"
 )
 
 
 sim_pois0nb_1np_3p_disp <-  load_run(
-  run_name =  "pois0nb_sims_sum_1np_3p_disp",
+  run_name ="pois0nb_sims_sum_1np_3p_disp",
   dataset_name = "sims_sum_1np_3p_disp"
 )
 
@@ -208,9 +208,17 @@ sim_pois0nb_repeat_old <-  load_run(
   dataset_name = "sims_sum_repeat_old"
 )
 
+# methods_to_keep <- c(
+#       "crispat", "sceptre", "script_threshglmpois1000_pois0nb", "script_threshglmpois1000_poissumlog",
+#       "script_threshglmpois1000_poisbug", "script_glmpois_poissumlog", "script_glmpois_poisthresh5", "script_glmpois_poisthresh10"
+#     )
+# methods_to_keep <- c(
+#       "crispat", "sceptre", "script_threshglmpois1000_pois0nb", "script_glmpoisgrnafix_poisthresh5", "script_glmpoisgrnafix_poisthresh10",
+#       "script_threshglmpois1000_poisbug","script_glmpois_poisthresh5", "script_glmpois_poisthresh10", "script_glmpoisgrnafix_poisbug"
+#     )
 methods_to_keep <- c(
-      "crispat", "sceptre", "script_threshglmpois1000_pois0nb", "script_threshglmpois1000_poissumlog",
-      "script_threshglmpois1000_poisbug", "script_glmpois_poissumlog"
+      "crispat", "sceptre", "script_glmpois_poisfix", "script_threshglmpois1000_pois0nb", "script_glmpoisgrnafix_poisthresh10",
+      "script_threshglmpois1000_poisbug", "script_glmpois_poisthresh10", "script_glmpoisgrnafix_poisbug"
     )
 
 # guide_names = rownames(sim_results$grna_matrix)
@@ -252,21 +260,23 @@ I am able to get satisfying looking distributions from this, and in particular I
 
 ```{r, echo=FALSE, fig.cap="Example simulated guides from the three simulated datasets under consideration."}
 library(tidyverse)
+ga_input = file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment", "input_data")
+
 grna_odm_repl = ondisc::initialize_odm_from_backing_file(
-  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline/grna.odm"
+  file.path(ga_input, "replogle-rd7/sceptre-pipeline/grna.odm")
 )
 
 repl_guide_stats = read_csv(
-  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline/grna_summary_stats.csv",
+  file.path(ga_input, "replogle-rd7/sceptre-pipeline/grna_summary_stats.csv"),
   show_col_types = FALSE
 )
 
 grna_odm_gasp = ondisc::initialize_odm_from_backing_file(
-  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/gasperini/sceptre-pipeline/grna.odm"
+  file.path(ga_input, "gasperini/sceptre-pipeline/grna.odm")
 )
 
 gasp_guide_stats = read_csv(
-  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/gasperini/sceptre-pipeline/grna_summary_stats.csv",
+  file.path(ga_input, "gasperini/sceptre-pipeline/grna_summary_stats.csv"),
   show_col_types = FALSE
 )
 

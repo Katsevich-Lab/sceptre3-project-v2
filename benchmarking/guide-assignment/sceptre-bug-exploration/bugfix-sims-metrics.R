@@ -21,7 +21,8 @@ suppressPackageStartupMessages({
 })
 
 ## --- paths ---------------------------------------------------------------
-BENCHMARK_DIR <- "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment"
+source("~/.Rprofile")
+BENCHMARK_DIR <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment")
 RUN_NAME      <- "run_bugfix_sims"
 OUTPUTS_DIR   <- file.path(BENCHMARK_DIR, "outputs", RUN_NAME)
 INPUT_DIR     <- file.path(BENCHMARK_DIR, "input_data")

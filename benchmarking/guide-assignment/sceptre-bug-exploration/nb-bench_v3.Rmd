@@ -178,21 +178,23 @@ The point of this plot: to show how we need the complexity of the summed process
 
 ```{r, echo=FALSE, fig.cap="Standard distributions do not decay so rapidly but then become nearly uniform. A single Pois or NB will not provide a realistic non-pertrubed model."}
 
+ga_input = file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment", "input_data")
+
 grna_odm_repl = ondisc::initialize_odm_from_backing_file(
-  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline/grna.odm"
+  file.path(ga_input, "replogle-rd7/sceptre-pipeline/grna.odm")
 )
 
 repl_guide_stats = read_csv(
-  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline/grna_summary_stats.csv",
+  file.path(ga_input, "replogle-rd7/sceptre-pipeline/grna_summary_stats.csv"),
   show_col_types = FALSE
 )
 
 grna_odm_gasp = ondisc::initialize_odm_from_backing_file(
-  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/gasperini/sceptre-pipeline/grna.odm"
+  file.path(ga_input, "gasperini/sceptre-pipeline/grna.odm")
 )
 
 gasp_guide_stats = read_csv(
-  "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data/gasperini/sceptre-pipeline/grna_summary_stats.csv",
+  file.path(ga_input, "gasperini/sceptre-pipeline/grna_summary_stats.csv"),
   show_col_types = FALSE
 )
 
@@ -253,12 +255,12 @@ I am able to get satisfying looking distributions from this, and in particular I
 # sim_dataset_name <- "replogle-rd7_sims_from_clns_50k_4_mu"
 # 
 # grna_matrix_sims <- read_rds(
-#   file.path( "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data",
+#   file.path( .get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data",
 #              sim_dataset_name, "sceptre/grna_matrix.rds")
 # )
 # 
 # true_perts_sim <- read_rds(
-#    file.path( "/home/josep/data/projects/sceptre3/benchmarking/guide_assignment/input_data",
+#    file.path( .get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data",
 #              sim_dataset_name, "true_pert_matrix.rds")
 # )
 # 
@@ -891,7 +893,10 @@ big question: how similar is my additive model to sceptre?
 
 # agreement on replogle
 
-methods_to_use <- c("script_glmpois_poisbug", "crispat", "script_glmpois_poissumlog", "script_threshglmpois1000_poissumlog", "script_threshglmpois1000_poisbug")
+# methods_to_use <- c("script_glmpois_poisbug", "crispat", "script_glmpois_poissumlog", "script_threshglmpois1000_poissumlog", "script_threshglmpois1000_poisbug")
+
+methods_to_use <- c("script_glmpois_poisbug", "crispat", "script_glmpois_poisthresh5", "script_glmpois_poisthresh10", "script_threshglmpois_pois0nb")
+
 stopifnot(all(methods_to_use %in% names(repl_results$all_assns)))
 
 guide_metric_tbl = make_guide_metric_tbl_vs_ref(
@@ -969,7 +974,7 @@ plot_avg_n_assignments_by_group(
 ```{r}
 
 # agreement on gasperini
-
+source("~/katsevich-lab/code/sceptre3-project-v2/benchmarking/guide-assignment/sceptre-nb/nb-bench_v3-helpers.R")
 methods_to_use <- c("script_glmpois_poisbug", "crispat", "script_glmpois_poissumlog", "script_threshglmpois1000_poissumlog", "script_threshglmpois1000_poisbug")
 stopifnot(all(methods_to_use %in% names(gasp_results$all_assns)))
 
