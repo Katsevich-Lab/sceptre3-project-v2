@@ -21,15 +21,16 @@ fishash_recovered_guide_labels <- function(lambda) {
   )
 }
 
-scale_x_fishash_guide_load <- function(..., secondary = TRUE) {
+scale_x_fishash_guide_load <- function(
+    ..., secondary = TRUE, breaks = fishash_preselection_moi) {
   ggplot2::scale_x_log10(
-    breaks = fishash_preselection_moi,
-    labels = fishash_recovered_guide_labels(fishash_preselection_moi),
+    breaks = breaks,
+    labels = fishash_recovered_guide_labels(breaks),
     sec.axis = if (secondary) {
       ggplot2::dup_axis(
         name = expression("Pre-selection MOI " * lambda * " (paper parameter)"),
-        breaks = fishash_preselection_moi,
-        labels = format(fishash_preselection_moi, trim = TRUE)
+        breaks = breaks,
+        labels = format(breaks, trim = TRUE)
       )
     } else {
       ggplot2::waiver()

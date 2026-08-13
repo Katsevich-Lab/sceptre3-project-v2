@@ -1,6 +1,6 @@
 ---
-title: "Fishash+ on the fishash authors' own simulations"
-subtitle: "A home-field test of the depth fix — their simulator, their grids, their scoring — plus a SCEPTRE head-to-head"
+title: "fishash+ on the fishash authors' simulations"
+subtitle: "Method, simulation design, results, and next steps"
 author: "gRNA-assignment investigation"
 date: today
 format:
@@ -19,330 +19,196 @@ execute:
   message: false
 ---
 
-# Executive summary {-}
+# Method
 
-Every other benchmark in this investigation is *ours* — our datasets, our simulator,
-our scoring. This one is not. Here we run our method through the **fishash paper's own
-`guidebender` simulations**, on the authors' exact grids, scored with the authors' own
-per-entry confusion metric. It is a deliberate home-field test: if the depth fix only
-looked good because we built the field, it should disappear here.
-
-It does not. On the authors' simulator:
-
-- **Fishash+ Poisson is the single best method by F1 from 1.42 to 4.53 mean
-  infection events per recovered cell** (the paper's pre-selection MOI 1–5), beating
-  dcCLEANSER and crispat Poisson-Gaussian across that range, and second only at
-  9.00 infections/cell. It also improves full AUPRC over fishash from 1.14
-  infections/cell onward. The gain is exactly the high-guide-load recall the paper
-  documents fishash losing.
-- **Against the current SCEPTRE mixture, it is strictly more accurate *and* 4×–1030×
-  faster**, with the speedup growing with library size — the difference between seconds
-  and hours at genome scale.
-- The honest costs: a **small (~0.01 F1) precision hit at low guide load**, and a genuine
-  **over-call failure mode when the ambient noise is non-Poisson (overdispersed)** — the
-  one regime the Poisson tail cannot absorb, and the regime the rest of this investigation
-  argues real de-doubleted ambient avoids.
-
-Everything below is computed exactly on the authors' seeded simulations for our method
-and fishash; the other ten methods are read off the paper's figures (it publishes no
-numbers). Full method, pipeline, and per-figure index: `results/fishash_repro/README.md`;
-scripts `scripts/fishash_repro_*.R`. The suite passed a 24-agent adversarial code audit
-(§[Validation](#validation)).
-
----
-
-# What "Fishash+ Poisson" is
-
-Fishash tests each (guide, cell) entry with a one-sided **hypergeometric** contingency
-table whose "draws" margin is the cell's **raw library size** $N_{:,c}$ (fishash Eq 7).
-That raw library is contaminated by the very signal we are trying to call: a cell loaded
-with real guides has an inflated margin, which deflates the apparent ambient rate and
-**masks co-occurring guides** — the recall loss that grows with guide load.
-
-**Fishash+ Poisson** keeps fishash's ambient model but fixes the margin:
-
-1. it fits the rank-1 ambient rate $\lambda_{g,c} = \hat a_g \, \hat d_c$ by the **same
-   masked rank-1 Poisson completion fishash itself uses**
-   (`fishash::impute_masked_counts`), with fishash's exact mask schedule, Guo–Sarkar FDR,
-   and `min_count = 2`;
-2. it scores each entry by the **Poisson upper tail**
-   $P\{\mathrm{Pois}(\hat a_g \hat d_c) \ge N_{g,c}\}$ — the unconditional form from
-   `canonical_model.qmd`.
-
-Because the rate uses the **fitted ambient depth** $\hat d_c$ (signal removed by the
-completion) rather than the raw library $N_{:,c}$, the depth decontamination is intrinsic.
-This is the Poisson-tail analogue of `depth_fix`. Implementation: `fishash_plus_poisson()`
-and `rank1_factors()` in `scripts/fishash_repro_lib.R`.
-
----
-
-# The test: the fishash authors' own simulator
-
-**Home field.** Datasets are regenerated from `fishash_analysis/simulate/*.R`
-(<https://github.com/jackkamm/fishash_analysis>) with the authors' **exact seed and
-generation order**, byte-for-byte identical draws. Scoring replicates their
-`bin/process_assignments.R` per-entry pooled TP/FP/FN → Precision, Recall (the "full" and
-"nonzero" subsets). None of this is our machinery.
-
-**Scenarios (verbatim parameters):**
-
-- **varyMOI** — 200 guides, 20k cells, snr 4, 100 UMI/cell, endo 0.75,
-  pre-selection MOI $\lambda \in$ {0.1, 0.3, 0.5, 1, 2, 3, 5, 10}, 10 iters.
-  *The high-guide-load regime where the depth fix bites.*
-- **varyNguides** — {20, 200, 2000, 20000} guides, 20k cells, snr 4,
-  pre-selection MOI 0.3, endo 0.75, 10
-  iters (Fig 5 high-gRNA). **varyNguidesLow** is the low-gRNA regime (20 UMI, snr 1, endo 0.25).
-- **`_od` variants** — `FISH_PHI_NOISE = 1`: overdispersed (Geometric) ambient noise (paper
-  Appendix C, Figs C.1/C.2).
-- **varyMOI versus varyMOILow** — the paper's endo-heavy and exo-heavy regimes, used to
-  test whether the depth advantage depends on the source of ambient counts.
-
-::: {.callout-note}
-## MOI convention used in the figures
-
-The fishash code calls $\lambda$ the **pre-selection MOI**: it is the Poisson
-infection rate before conditioning on infection. In the lab we more commonly use
-"MOI" for the mean gRNAs observed per recovered cell. To put the figures on that
-familiar post-selection scale, the figures report the simulator's expected number
-of infection events per recovered cell:
+Let $Y\in\mathbb{N}_0^{G\times C}$ be the observed guide-UMI count matrix, with
+guides indexed by $g\in\{1,\ldots,G\}$ and cells by
+$c\in\{1,\ldots,C\}$. Both fishash and fishash+ begin from a rank-1 model for
+ambient counts,
 
 $$
-\bar k_{\mathrm{recovered}}
-=
-(1-0.1)\frac{\lambda}{1-e^{-\lambda}},
+Y_{gc}^{\mathrm{ambient}}\sim\operatorname{Pois}(a_gd_c),
 $$
 
-where 0.1 is the authors' zero-guide hurdle probability. Thus their grid
-$\lambda=$ 0.1, 0.3, 0.5, 1, 2, 3, 5, 10 becomes 0.95, 1.04, 1.14, 1.42,
-2.08, 2.84, 4.53, and 9.00 mean infection events per recovered cell. Bottom
-axes use this recovered-cell scale; top axes retain $\lambda$ so the paper is
-easy to cross-reference. This is the mathematical post-selection analogue of
-the lab's observed gRNAs-per-cell convention; actual distinct detected guide
-load can be somewhat lower because of repeated infection by the same guide and
-imperfect detection.
+where $a_g\in[0,1]$, $\sum_{g=1}^G a_g=1$, and
+$d_c\in[0,\infty)$.
+
+Thus $a_g$ is guide $g$'s share of the ambient pool and $d_c$ is the expected
+total ambient guide count in cell $c$. The normalization $\sum_g a_g=1$ makes
+the two factors identifiable. Both methods iteratively mask likely signal
+entries and refit this model so that real guide counts do not distort the
+estimated ambient composition.
+
+## fishash+ algorithm
+
+::: {.callout-note icon="false"}
+## Algorithm 1: fishash+
+
+**Inputs:** guide-count matrix $Y$; target FDR $q=0.05$; maximum number of
+refits $R=10$; minimum assignable count $m=2$.
+
+1. **Initialize.** Set the assignment mask to empty.
+2. **Define the testing universe.** Exclude empty guide rows and empty cell
+   columns. Let $G_+$ and $C_+$ be the respective numbers remaining, and set
+   $n_{\mathrm{entries}}=G_+C_+$.
+3. **Fit ambient factors.** Fit
+   $\lambda_{gc}=\hat a_g\hat d_c$ by masked
+   rank-1 Poisson completion. On the first iteration, use the unmasked matrix.
+4. **Score entries.** For every observed nonzero entry, compute
+   $$p_{gc}=P\{\operatorname{Pois}(\hat a_g\hat d_c)\ge Y_{gc}\}.$$
+5. **Apply the inherited Guo--Sarkar rule.** Form a cell-level block p-value
+   from the smallest guide-level p-value in each cell, apply BH across cells,
+   and let $B$ be the number of selected cell blocks. The entry-level cutoff is
+   $qB/n_{\mathrm{entries}}$.
+6. **Assign guides.** Set
+   $$A_{gc}=1\{p_{gc}\le qB/n_{\mathrm{entries}},\;Y_{gc}\ge m\}.$$
+7. **Refit.** Update the mask using fishash's unchanged refit schedule and
+   repeat Steps 3--6 until the assignments stabilize or the refit limit is
+   reached.
+
+**Output:** the logical guide-by-cell assignment matrix $A$.
 :::
 
-**Parity checks (exact).** `contingency_assign(cell_margin = "observed", tail = "hyper",
-fdr = "GS")` reproduces the real `fishash(refit = 10)` with **zero disagreements**, and
-`rank1_factors` matches `impute_masked_counts` so the fitted depth $\hat d_c$ agrees with
-fishash's to 1e-14. So "fishash" in every figure below *is* the package, and our method
-differs from it by exactly the one intended change.
+## Where fishash+ differs from fishash
 
----
+fishash is a per-entry contingency-table method. For each guide--cell pair, it
+forms a $2\times2$ table contrasting the focal guide with all other guides and
+the focal cell with all other cells, then applies a one-sided hypergeometric
+(Fisher exact) test conditional on the table margins.
 
-# Results {#results}
+The comparison is deliberately narrow. fishash+ retains fishash's masked
+rank-1 completion, iterative mask schedule, Guo--Sarkar FDR procedure,
+minimum-count rule, and empty-row/empty-column handling. It changes two linked
+parts of the final entry test:
 
-## Varying guide load — the depth fix recovers high-load recall {#varymoi}
+- **Cell exposure.** fishash's hypergeometric test conditions on the raw cell
+  guide-library total $Y_{:c}$. fishash+ uses the fitted ambient depth
+  $\hat d_c$. The raw total contains true guide signal; at high
+  MOI, one real guide can therefore inflate the background used to test
+  another.
+- **Tail calculation.** fishash uses a one-sided hypergeometric tail conditional
+  on the row and column margins. fishash+ uses the unconditional Poisson upper
+  tail under $\hat a_g\hat d_c$.
 
-This is the headline scenario. As recovered-cell guide load rises, co-occurring real guides
-inflate fishash's raw-library margin and its **recall falls off a cliff** (0.96 → 0.49
-from 0.95 → 9.00 mean infections/cell).
-Fishash+ Poisson, scoring against the denoised depth, recovers that recall. The methods
-cross at roughly 1.42 infections/cell (pre-selection MOI 1): below it Fishash+ pays a
-small precision cost; above it the recall gain grows, reaching **+0.11 F1 at
-9.00 infections/cell**.
+# Simulation setting
 
-![Precision, recall and F1 versus mean infection events per recovered cell. The main comparison is Fishash+ Poisson against the real `fishash(refit = 10)` package; Fishash+ increasingly recovers high-guide-load recall.](results/fishash_repro/varyMOI/varyMOI_prf_vs_x.png)
+## GuideBender generative model
 
-## Overlaid on the paper's field — best method at each guide load {#fig6}
+1. **Draw the number of infections per cell.** Let $K_c$ be the infection
+   count assigned to modeled recovered cell $c$:
+   $$
+   K_c\sim
+   \begin{cases}
+   0, & \text{with probability }h,\\
+   \operatorname{Pois}(\lambda)\mid\operatorname{Pois}(\lambda)\geq1,
+   & \text{with probability }1-h.
+   \end{cases}
+   $$
+   Here $\lambda$ is the pre-selection MOI: the underlying Poisson
+   infection-rate parameter before the hurdle mixture and conditioning on at
+   least one infection. In the figures and elsewhere in this report, MOI
+   instead denotes the mean infection count per modeled recovered cell after
+   those selection steps.
+   The hurdle probability $h$ models imperfect filtering for infected cells:
+   some uninfected cells remain in the recovered population.
+   The simulator uses $h=0.1$, so 10% of modeled recovered cells receive zero
+   infections and the remaining 90% receive at least one.
+2. **Draw which gRNAs infected each cell.** Let $\pi_g$ be the population
+   frequency of guide $g$, meaning the
+   probability that any one infection event uses that guide. Draw the vector
+   of frequencies $\pi$ from a symmetric Dirichlet distribution. Given $K_c$,
+   allocate the infection events across guides, and let $J_{gc}$ be the number
+   assigned to guide $g$:
+   $$J_{\cdot c}\mid K_c\sim\operatorname{Multinomial}(K_c,\pi).$$
+3. **Draw guide and cell characteristics.** Give each guide an expression
+   factor $d_g^{\mathrm{guide}}$, and each cell a cellular-depth factor
+   $d_c^{\mathrm{cell}}$, a droplet-depth factor $d_c^{\mathrm{drop}}$, a
+   mean-one capture-efficiency factor $\epsilon_c$, and an exogenous-noise
+   fraction $\rho_c$. The depth factors are lognormal, $\epsilon_c$ is Gamma,
+   and $\rho_c$ is Beta. Let $\chi_g$ be the shared endogenous ambient profile
+   and $b_g$ the dataset-wide bulk guide profile, both normalized to sum to
+   one.
+4. **Draw and add the count components.** Conditional on the infection
+   assignments and guide and cell factors, independently draw
+   $$
+   Y_{gc}^{\mathrm{sig}}
+   \sim\operatorname{NB}\!\left(
+     \text{mean}=J_{gc}d_g^{\mathrm{guide}}(1-\rho_c)\epsilon_c
+     d_c^{\mathrm{cell}},
+     \ \text{dispersion}=1
+   \right),
+   $$
+   $$
+   Y_{gc}^{\mathrm{endo}}
+   \sim\operatorname{Pois}\!\left(
+     \chi_g(1-\rho_c)\epsilon_c d_c^{\mathrm{drop}}
+   \right),
+   $$
+   and
+   $$
+   Y_{gc}^{\mathrm{exo}}
+   \sim\operatorname{Pois}\!\left(
+     b_g\rho_c\epsilon_c
+     \left(d_c^{\mathrm{cell}}+d_c^{\mathrm{drop}}\right)
+   \right).
+   $$
+   The two ambient components remain conditionally Poisson in the primary
+   model. Signal and
+   endogenous ambient were physically present in the droplet and therefore
+   receive the non-exogenous fraction $1-\rho_c$, whereas exogenous molecules
+   arise through barcode swapping or related artifacts and receive $\rho_c$.
+   Finally, set
+   $$
+   Y_{gc}=Y_{gc}^{\mathrm{sig}}+Y_{gc}^{\mathrm{endo}}+Y_{gc}^{\mathrm{exo}}.
+   $$
+   The implementation adds a finite-sample calibration to this scientific
+   description.[^guidebender-calibration]
 
-The paper reports **no numeric values** for its 11 methods (only boxplots), so the other ten
-are **digitized** (median F1 read off Fig 6a) and our method + fishash are computed **exactly**
-on the identical seeded sims. Digitization is validated by matching the read-off fishash to our
-exact fishash: agreement is **≤ 0.013 F1 at every guide load**. Read-off precision is ~±0.02, so fine
-orderings inside the top cluster are not resolvable. To keep the comparison readable, the
-figure shows Fishash+ Poisson, exact fishash, and a single grey envelope: the best of the
-other nine published methods at each guide load. The individual competitor identities are retained
-in the appendix.
+[^guidebender-calibration]: The implementation first draws the latent signal
+    Gamma rate, then applies one common factor to all latent components so that
+    the realized cohort median total latent guide abundance hits the scenario
+    target exactly; this finite-sample calibration preserves the relative
+    signal/ambient structure.
 
-![Fishash+ Poisson and exact fishash versus the pointwise best of the other nine published methods. Fishash+ Poisson leads the field from 1.42 through 4.53 mean infection events per recovered cell.](results/fishash_repro/varyMOI/fig6_overlay_f1_vs_moi.png)
+## Scenarios and scoring
 
-## Full AUPRC (Fig 6c) — the gap grows with guide load {#auprc}
+| Setting | Guides; cells | Target median guide UMIs/cell | SNR | Exogenous ambient | Hurdle | Ambient distribution |
+|---|---|---|---|---|---|---|
+| **Primary setting** | 200 guides; 20,000 cells | 100 UMIs/cell | 4 | 25% | $h=0.1$ | Conditionally Poisson |
+| **NB-ambient setting** | 200 guides; 20,000 cells | 100 UMIs/cell | 4 | 25% | $h=0.1$ | NB ambient |
+| **Increased exogenous setting** | 200 guides; 20,000 cells | 20 UMIs/cell | 1 | 75% | $h=0.1$ | Conditionally Poisson |
 
-F1 depends on a threshold; AUPRC does not. Computing the full area under the
-precision–recall curve exactly for our method and fishash (the paper's other methods are not
-digitizable here — the Fig D.1 axis crams every value at the top) gives the same conclusion:
-Fishash+ is at least as good from 1.14 infections/cell onward, and the gap widens
-with guide load (0.923 versus 0.912 at 9.00 infections/cell).
+Accuracy is the fishash paper's pooled per-entry precision, recall, and F1 on
+the full guide-by-cell matrix. fishash+, fishash, and sceptre are computed on
+the simulated matrices. Other published methods are available only as
+digitized medians from the paper, with approximately ±0.02 F1 read-off
+precision. "Best other" is a pointwise envelope: its method identity can change
+across settings.
 
-![Fig 6c AUPRC versus mean infection events per recovered cell, exact for both methods (`fig6c_auprc_vs_moi.png`).](results/fishash_repro/varyMOI/fig6c_auprc_vs_moi.png)
+# Results
 
-## Varying guide count (Fig 5) — no win, no regression {#varynguides}
+## Headline results
 
-Fig 5 is run entirely at **1.04 mean infection events per recovered cell**
-(pre-selection MOI 0.3) — there is little co-occurrence to recover, so the depth fix
-has nothing to add. As expected, Fishash+ Poisson tracks just below fishash (the small low-load
-precision cost) across guide counts, in both the high- and low-gRNA regimes. The difference
-stays near 0.01 F1 as the library grows.
+![**Accuracy and runtime.** Panel A compares fishash+, fishash, sceptre mixture, and the pointwise best of the other eight published methods. Exact curves are medians over the 10 common author-seeded datasets; shaded bands are IQRs. The grey curve is digitized. Panel B shows median single-CPU runtime on 20k-cell simulations.](results/fishash_repro/main_headline.png)
 
-![Fishash+ Poisson versus exact fishash as the guide library grows, in the paper's high- and low-gRNA regimes.](results/fishash_repro/varyNguides/fig5_overlay_f1_vs_nguides.png)
+## Robustness: variance and mean boundaries
 
-## Variance misspecification: overdispersed ambient noise (Fig C.2) {#overdispersed}
+![**Two distinct robustness conditions.** Panel A compares median F1 and IQRs for fishash+ and fishash in the NB-ambient setting; matched sceptre output is not available for this scenario. Panel B shows median F1 and IQRs for fishash+, fishash, and sceptre in the increased exogenous setting. Both panels use the MOI axis and F1 scale of the headline accuracy panel. No grey comparator is shown because published values do not exist for either boundary-condition sweep.](results/fishash_repro/main_boundary_conditions.png)
 
-The one place Fishash+ Poisson genuinely breaks. When the ambient noise is made
-**overdispersed** (Geometric, `FISH_PHI_NOISE = 1`), the Poisson upper tail is mis-specified:
-it cannot absorb the extra variance, so it **over-calls at low guide load** (precision ~0.76 vs the
-nominal ~0.95). It still wins F1 at high guide load (recall dominates there), but this is a real
-boundary, not a rounding wobble.
+![**Detailed variance robustness.** Precision, recall, and F1 for fishash+ and fishash in the NB-ambient setting. Matched sceptre and numeric published-competitor results are unavailable for this scenario. The two-method decomposition shows that fishash+'s low-MOI F1 loss comes from reduced precision rather than reduced recall.](results/fishash_repro/varyMOI_od/figC2_overdispersed_prf.png)
 
-This matters for scope, and it is where this document connects to the rest of the
-investigation: the argument elsewhere is that **real, de-doubleted ambient noise is
-near-Poisson** (the overdispersion attributed to ambient is largely doublets, which QC
-removes — see `doublet_overdispersion.qmd`). If that holds, this failure mode sits outside the
-operating regime. If a dataset's ambient is truly overdispersed, the hypergeometric
-`depth_fix` (contingency) form — which does not assume a Poisson tail — is the safer choice,
-and it is one flag away in the same code.
+# Conclusions and next steps
 
-![Fig C.2: precision/recall/F1 under overdispersed (Geometric) ambient noise, exact for ours and fishash (`figC2_overdispersed_prf.png`). Note the low-guide-load precision drop for the Poisson-tail method.](results/fishash_repro/varyMOI_od/figC2_overdispersed_prf.png)
+The next steps are:
 
----
-
-# SCEPTRE mixture vs Fishash+ Poisson — head to head {#h2h}
-
-The practical question for the lab: **should SCEPTRE's assignment step adopt this?** Both were
-run on the **same machine, single-threaded**, on the authors' identical sims. "SCEPTRE" is the
-current legacy mixture assignment (`sim_lib.R::sceptre_assign`, dummy-response, log-UMI
-covariates).
-
-## Accuracy — Fishash+ dominates (20 reps, error bars)
-
-Higher precision *and* recall at every guide load. The gaps are largest exactly where they
-should be: **high guide load** (recall recovery) and **small libraries** (20 guides), where SCEPTRE's per-guide
-mixture is unstable with few guides while the contingency test borrows strength across guides.
-Across 20 replicates, Fishash+ Poisson has higher F1 at every tested guide load and markedly less
-run-to-run variation.
-
-![Head-to-head accuracy versus mean infection events per recovered cell with 20-rep error bars (`h2h_accuracy_moi_errorbars.png`).](results/fishash_repro/sceptre_h2h/h2h_accuracy_moi_errorbars.png)
-
-## Runtime — 4× to 1030×, and the gap grows with library size
-
-SCEPTRE's per-guide mixture fitting is $O(\#\text{guides})$; Fishash+ is flat. At genome-wide
-library sizes on real cell counts (Gasperini 200k, Replogle 600k–1.2M cells), this is the
-difference between **seconds and hours**. On 20k-cell datasets, Fishash+ stays near
-0.2–0.35 seconds as the guide library grows, yielding a 4×–1030× speedup.
-
-![Runtime vs guide count (`h2h_runtime_nguides.png`) and the side-by-side accuracy+runtime headline (`h2h_headline_sidebyside.png`).](results/fishash_repro/sceptre_h2h/h2h_headline_sidebyside.png)
-
-**Verdict on these sims:** adopting Fishash+ is strictly better accuracy and orders of
-magnitude faster — with the single caveat being the overdispersed-noise over-call above, and
-the endo/exo dependence below.
-
----
-
-# Mean-model sensitivity: endogenous versus exogenous ambient counts {#endoexo}
-
-This is a different question from the overdispersion experiment above. That experiment
-changes the **conditional variance** while holding the ambient mean model fixed. Here the
-counts remain Poisson-like, but the **mean exposure** changes: endogenous ambient noise
-scales with signal-independent droplet depth, whereas the paper's exogenous component
-scales with the cell's own library $(d_\text{cell} + d_\text{drop})$ (their Eq 6).
-
-Fishash+'s denoised depth is well specified for the endogenous component; fishash's raw
-library margin is better aligned with the exogenous component. Contrasting the paper's two
-regimes — high-gRNA (25% exogenous) versus low-gRNA (75% exogenous), both swept over guide load —
-shows the expected attenuation. Fishash+'s F1 advantage over fishash is +0.065 versus
-+0.035 at 4.53 infections/cell and +0.109 versus +0.021 at 9.00 infections/cell. Under
-exo-heavy noise the high-load gap therefore roughly halves at 4.53 and nearly vanishes at 9.00 infections/cell —
-exactly what the exo mechanism predicts. The **same picture holds for SCEPTRE vs Fishash+**:
-Fishash+'s edge over the mixture is concentrated in the endo-heavy regime (F1 gap at 9.00 infections/cell:
-**+0.078** high-gRNA vs **−0.013** low-gRNA — SCEPTRE slightly edges it there, because its
-per-cell library covariates model the library-scaling of exogenous noise that the denoised
-depth ignores). The runtime advantage is unaffected.
-
-![Endo/exo modulation of SCEPTRE, fishash and Fishash+ across recovered-cell guide load (`endo_exo_contrast.png`).](results/fishash_repro/endo_contrast/endo_exo_contrast.png)
-
-**Which regime is real? The endo-heavy one.** Estimating the exogenous fraction from the
-barnyard (GEX-pure cells, so doublets excluded) puts real, well-behaved data far below the
-paper's 25/75% settings. In the non-co-cultured controls, the estimate ranges from
-approximately 0% for CROP-seq to 14–17% for direct capture, concentrated in a handful of
-high-count events. The 72-hour direct-capture sample is not a clean index-hop estimate
-because co-culture cross-contamination inflates it.
-
-![Estimated exogenous share in the barnyard controls. Points use high-count events (count at least 10); vertical ranges show sensitivity to thresholds 3, 5, and 10.](results/fishash_repro/barnyard_exo_fraction.png)
-
----
-
-# Coverage — what we ran, and what we did not {#coverage}
-
-The report covers the paper axes that bear directly on the shipping decision:
-
-- **Fig 6a, varying guide load:** exact Fishash+ and fishash, plus the digitized published
-  field; Fishash+ is best from 1.42 through 4.53 mean infection events per recovered cell.
-- **Fig 5a, varying guide count:** exact Fishash+ and fishash in both regimes;
-  the small low-guide-load cost does not grow with library size.
-- **Fig 6c / D.1b, full AUPRC:** exact Fishash+ and fishash; the Fishash+ advantage
-  widens with guide load.
-- **Figs C.1 / C.2, overdispersed noise:** exact Fishash+ and fishash; this identifies
-  the low-guide-load over-call boundary.
-- **Fig 8, runtime and memory:** exact timings; Fishash+ remains in the fast,
-  low-memory tier.
-
-**Not run (by design):** the 80,000-guide tier (the authors' runtime/memory tier — our F1
-there matches the 20,000 tier; skipped for memory), and the paper's real-data figures
-(barnyard Fig 3 / Table 2, Replogle K562 Fig 4 — out of scope here; the barnyard Table-2
-reproduction lives in `external/repro_work/`). Supplements D.2–D.4 are fishash-family
-diagnostics reproducible for our method on request.
-
-# Validation {#validation}
-
-- **Exact parity.** `contingency_assign(cell_margin = "observed", tail = "hyper", fdr = "GS")`
-  reproduces `fishash(refit = 10)` with **0 disagreements**; the fitted ambient depth matches
-  fishash's `impute_masked_counts` to 1e-14.
-- **Adversarial multi-agent code audit (24 agents, every finding re-run in R): verdict SOLID.**
-  Method, parity, scoring, DGM RNG replay, AUPRC, and head-to-head all confirmed correct.
-  The audit found and corrected one simulation-ordering bug before the final outputs.
-
-# Bottom line {-}
-
-On the fishash authors' own simulator, exact grids, and exact scoring, Fishash+ Poisson
-behaves exactly as the depth-fix theory predicts: **essentially tied with fishash at low guide load
-(a small precision cost), pulling ahead increasingly as guide load rises (up to +0.11 F1 at 9.00 infections/cell via
-recovered recall).** Against the current SCEPTRE mixture it is more accurate and 4×–1030×
-faster. The honest boundaries are the small low-guide-load precision cost, genuine over-calling
-when the conditional ambient variance is non-Poisson, and attenuation of the depth advantage
-when ambient counts scale with the cell's own library rather than droplet ambient depth.
-
-# Appendix: diagnostic decompositions {#appendix .unnumbered}
-
-The main text compares the two methods relevant to the decision: **Fishash+ Poisson** and the
-real **`fishash(refit = 10)`** package. The checks below decompose *why* they differ; they are
-diagnostic rather than part of the headline comparison.
-
-## Depth change versus tail change
-
-The full computational panel adds three variants:
-
-- **Fishash+ contingency (`depth_fix`)** uses denoised ambient depth with fishash's
-  hypergeometric tail.
-- **Poisson tail only** uses fishash's raw cell-library margin with a Poisson tail.
-- **Uncorrected fishash (`refit = 0`)** removes fishash's iterative background correction.
-
-The Poisson-tail-only curve tracks fishash, while Fishash+ contingency tracks Fishash+
-Poisson. This isolates the denoised **depth**, rather than the Poisson-versus-hypergeometric
-tail choice, as the source of the high-guide-load gain.
-
-![Full five-method diagnostic decomposition. The two depth-fixed variants coincide, as do the two raw-depth variants.](results/fishash_repro/varyMOI/varyMOI_ablation_prf_vs_x.png)
-
-## Raw-count AUPRC baseline
-
-The raw UMI count is included here only as a baseline. Both modeled methods rank entries
-better, and Fishash+ separates increasingly from fishash as guide load rises.
-
-![Full-AUPRC diagnostic including the raw-count baseline.](results/fishash_repro/varyMOI/fig6c_auprc_ablation_vs_moi.png)
-
-## Individual published competitors
-
-The main field comparison uses the best-published-method envelope to avoid nine grey curves.
-This appendix view retains every digitized competitor as a named point in each guide-load panel.
-It is useful for provenance and for checking which method defines the envelope, but not for
-the main visual argument.
-
-![All digitized methods from the paper's Fig 6a, with exact fishash and Fishash+ Poisson added.](results/fishash_repro/varyMOI/fig6_overlay_faceted.png)
-
-::: {.callout-note collapse="true"}
-## Reproducing this document
-All figures read from committed CSVs under `results/fishash_repro/` (the 443 MB
-dataset cache is gitignored but regenerates byte-exact from the authors' seeds). Pipeline and
-per-script → figure index: `results/fishash_repro/README.md`; scripts `scripts/fishash_repro_*.R`.
-Conceptual home for the depth fix: `literature_review.qmd`; the Poisson tail: `canonical_model.qmd`.
-:::
+1. **Implement fishash+ efficiently.** As the leading candidate for integration
+   into sceptre, fishash+ should be implemented next. The precise integration
+   boundary---inside sceptre or elsewhere in the surrounding workflow---remains
+   an open implementation decision.
+2. **Adopt the GuideBender simulation framework.** Use its simulation structure
+   as the starting point for the sceptre benchmark, without treating its fixed
+   parameter regimes as benchmark defaults. Calibrate parameter values and
+   choose sweep dimensions in future work.
+3. **Perform the benchmark.** Use the already available barnyard evaluation
+   where relevant, and build and run a more comprehensive simulation benchmark
+   from the GuideBender framework.
