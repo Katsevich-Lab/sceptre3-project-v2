@@ -2,6 +2,7 @@
 # Side-by-side headline: SCEPTRE mixture vs Fishash+ Poisson — accuracy (F1) and runtime.
 setwd("/Users/ekatsevi/code/research/sceptre3-project-v2/benchmarking/guide-assignment/grna-count-modeling")
 suppressPackageStartupMessages({ library(ggplot2); library(dplyr); library(tidyr); library(patchwork) })
+source("scripts/fishash_repro_axis.R")
 OUT <- "results/fishash_repro/sceptre_h2h"
 cols <- c(sceptre_mixture = "#1f78b4", `fishash+ Poisson` = "#e31a1c")
 labs2 <- c("sceptre (mixture)", "fishash+")
@@ -12,10 +13,11 @@ acc$method <- factor(acc$method, names(cols))
 agA <- acc %>% group_by(moi, method) %>% summarize(F1 = mean(F1), .groups = "drop")
 pA <- ggplot(agA, aes(moi, F1, color = method)) +
   geom_line(linewidth = .9) + geom_point(size = 2) +
-  scale_x_log10(breaks = c(.1,.3,.5,1,2,3,5,10)) +
+  scale_x_fishash_guide_load(secondary = FALSE) +
   scale_color_manual(values = cols, labels = labs2) +
   coord_cartesian(ylim = c(0.6, 1)) +
-  labs(x = "MOI (200 guides, 20k cells)", y = "F1 (per-entry, full)", color = NULL, title = "Accuracy") +
+  labs(x = "Mean infection events per recovered cell", y = "F1 (per-entry, full)",
+       color = NULL, title = "Accuracy") +
   theme_bw(base_size = 17)
 
 # ---- (B) runtime: median seconds vs nguides ----

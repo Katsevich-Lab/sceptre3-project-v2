@@ -2,6 +2,7 @@
 # Error-bar accuracy plot for the higher-rep sceptre-vs-fishash+ head-to-head.
 setwd("/Users/ekatsevi/code/research/sceptre3-project-v2/benchmarking/guide-assignment/grna-count-modeling")
 suppressPackageStartupMessages({ library(ggplot2); library(dplyr); library(tidyr) })
+source("scripts/fishash_repro_axis.R")
 OUT <- "results/fishash_repro/sceptre_h2h"
 d <- read.csv(file.path(OUT, "h2h_accuracy_reps.csv"))
 d$method <- factor(d$method, c("sceptre_mixture", "fishash+ Poisson"))
@@ -21,11 +22,12 @@ p <- ggplot() +
   geom_line(data = ag, aes(moi, mean, color = method), linewidth = .8) +
   geom_errorbar(data = ag, aes(moi, ymin = mean - se, ymax = mean + se, color = method), width = .06, linewidth = .7) +
   geom_point(data = ag, aes(moi, mean, color = method), size = 1.9) +
-  facet_wrap(~stat, nrow = 1) + scale_x_log10(breaks = c(.1,.3,.5,1,2,3,5,10)) +
+  facet_wrap(~stat, nrow = 1) + scale_x_fishash_guide_load() +
   scale_color_manual(values = cols) + coord_cartesian(ylim = c(0.55, 1)) +
-  labs(x = "MOI (200 guides, 20k cells)", y = "per-entry (full subset)", color = NULL,
+  labs(x = "Mean infection events per recovered cell (200 guides, 20k cells)",
+       y = "per-entry (full subset)", color = NULL,
        title = sprintf("SCEPTRE mixture vs Fishash+ Poisson — accuracy over %d replicates", nrep),
-       subtitle = "Bars = mean +/- 1 SE; faint points = individual replicates. The MOI 0.3 sceptre-precision wobble regresses with more reps.") +
+       subtitle = "Bars = mean +/- 1 SE; faint points = individual replicates. The 1.04-infection/cell sceptre-precision wobble regresses with more reps.") +
   theme_bw(base_size = 12) + theme(legend.position = "bottom", plot.subtitle = element_text(size = 8.5))
 ggsave(file.path(OUT, "h2h_accuracy_moi_errorbars.png"), p, width = 12, height = 4.6, dpi = 130)
 

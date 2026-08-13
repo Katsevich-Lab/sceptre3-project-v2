@@ -19,6 +19,7 @@ suppressPackageStartupMessages({
   library(ggplot2); library(dplyr); library(tidyr)
 })
 source("scripts/fishash_repro_lib.R"); source("scripts/sim_lib.R")
+source("scripts/fishash_repro_axis.R")
 OUT <- "results/fishash_repro/endo_contrast"; dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 scen <- c(varyMOI = "high-gRNA (25% exo)", varyMOILow = "low-gRNA (75% exo)")
 MOI  <- c(.1, .3, .5, 1, 2, 3, 5, 10); ITERS <- 1:10
@@ -63,9 +64,10 @@ long <- ag %>% pivot_longer(c(Precision, Recall, F1), names_to = "stat", values_
 
 p <- ggplot(long, aes(moi, v, color = method)) +
   geom_line(linewidth = 0.9) + geom_point(size = 1.7) +
-  facet_grid(stat ~ regime) + scale_x_log10(breaks = c(.1,.3,.5,1,2,3,5,10)) +
+  facet_grid(stat ~ regime) + scale_x_fishash_guide_load() +
   scale_color_manual(values = cols, labels = c("sceptre (mixture)", "fishash", "fishash+")) +
-  labs(x = "MOI (200 guides, 20k cells)", y = "mean (per-entry, full)", color = NULL,
+  labs(x = "Mean infection events per recovered cell (200 guides, 20k cells)",
+       y = "mean (per-entry, full)", color = NULL,
        title = "SCEPTRE vs fishash+ across the paper's endo-heavy vs exo-heavy regimes",
        subtitle = "fishash+ leads sceptre in both regimes; its edge over fishash (the depth fix) is larger under endo-heavy noise (left) than exo-heavy (right).") +
   theme_bw(base_size = 12) + theme(legend.position = "bottom", plot.subtitle = element_text(size = 8))

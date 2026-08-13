@@ -66,21 +66,25 @@ val <- dig %>% filter(method == "fishash (digitized)") %>%
 cat("=== digitization check: |digitized fishash - exact fishash| ===\n")
 print(as.data.frame(val %>% mutate(absdiff = round(abs(F1 - F1exact), 3)) %>% select(regime, ng, F1, F1exact, absdiff)), row.names = FALSE)
 
-# ---- figure: F1 vs nguides, facet by regime, ours overlaid -------------------
-others <- dig %>% filter(method != "fishash (digitized)")
+# ---- figure: decision-relevant comparison only -------------------------------
 rlab <- c(high_gRNA = "high-gRNA regime (100 UMI, SNR 4)", low_gRNA = "low-gRNA regime (20 UMI, SNR 1)")
-p <- ggplot() +
-  geom_line(data = others, aes(ng, F1, group = method), color = "grey78", linewidth = 0.5) +
-  geom_line(data = exact %>% filter(method == "fishash"), aes(ng, F1), color = "#6a3d9a", linewidth = 1.0) +
-  geom_line(data = exact %>% filter(grepl("ours", method)), aes(ng, F1), color = "#e31a1c", linewidth = 1.6) +
-  geom_point(data = exact %>% filter(grepl("ours", method)), aes(ng, F1), color = "#e31a1c", size = 2.2) +
+p <- ggplot(exact, aes(ng, F1, color = method, group = method)) +
+  geom_line(aes(linewidth = method)) +
+  geom_point(aes(size = method)) +
   facet_wrap(~regime, nrow = 1, labeller = labeller(regime = rlab)) +
   scale_x_log10(breaks = ng) +
+  scale_color_manual(values = c("fishash" = "#6a3d9a", "fishash+ Poisson (ours)" = "#e31a1c"),
+                     labels = c("fishash (refit10)", "Fishash+ Poisson"), name = NULL) +
+  scale_linewidth_manual(values = c("fishash" = 1.0, "fishash+ Poisson (ours)" = 1.5),
+                         guide = "none") +
+  scale_size_manual(values = c("fishash" = 1.8, "fishash+ Poisson (ours)" = 2.4),
+                    guide = "none") +
   labs(x = "number of guides", y = "median F1 (full subset)",
-       title = "Fishash+ Poisson overlaid on the fishash paper's varying-guides panel (Fig 5a)",
-       subtitle = "Both regimes are MOI 0.3 (low MOI): red (ours) tracks just below fishash at the top of the field — the small low-MOI precision cost, no self-masking to recover. grey = 8 other digitized paper methods.") +
-  coord_cartesian(ylim = c(0.4, 1.0)) +
-  theme_bw(base_size = 12) + theme(plot.subtitle = element_text(size = 8.5))
+       title = "Fishash+ Poisson stays close to fishash as the guide library grows",
+       subtitle = "Both regimes average 1.04 infection events per recovered cell (pre-selection MOI 0.3), leaving little co-occurrence to recover.") +
+  coord_cartesian(ylim = c(0.68, 1.0)) +
+  theme_bw(base_size = 12) +
+  theme(plot.subtitle = element_text(size = 8.5), legend.position = "bottom")
 ggsave(file.path(OUT, "fig5_overlay_f1_vs_nguides.png"), p, width = 12, height = 5.5, dpi = 130)
 write.csv(bind_rows(dig %>% rename(), exact), file.path(OUT, "fig5_overlay_data.csv"), row.names = FALSE)
 cat("\nwrote fig5_overlay_f1_vs_nguides.png + fig5_overlay_data.csv to", OUT, "\n")

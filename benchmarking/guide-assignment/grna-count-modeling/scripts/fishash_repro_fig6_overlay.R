@@ -11,6 +11,7 @@
 # ============================================================================
 setwd("/Users/ekatsevi/code/research/sceptre3-project-v2/benchmarking/guide-assignment/grna-count-modeling")
 suppressPackageStartupMessages({ library(ggplot2); library(dplyr); library(tidyr) })
+source("scripts/fishash_repro_axis.R")
 OUT <- "results/fishash_repro/varyMOI"
 
 moi <- c(0.1, 0.3, 0.5, 1, 2, 3, 5, 10)
@@ -41,41 +42,70 @@ exact <- d %>% filter(method %in% c("fishash_refit10", "fishash+_poisson")) %>%
 
 write.csv(bind_rows(dig, exact), file.path(OUT, "fig6_overlay_data.csv"), row.names = FALSE)
 
-# ---- Figure: median F1 vs MOI, our method overlaid on the digitized field ----
-others <- dig %>% filter(method != "fishash (digitized)")
-key    <- dig %>% filter(method %in% c("cleanser_dc", "crispat_poisgauss"))   # paper's high-MOI winners
-p <- ggplot() +
-  geom_line(data = others, aes(moi, F1, group = method), color = "grey75", linewidth = 0.5) +
-  geom_line(data = key, aes(moi, F1, color = method), linewidth = 0.7, linetype = "22") +
-  geom_point(data = key, aes(moi, F1, color = method), size = 1.5) +
-  geom_line(data = exact %>% filter(method == "fishash"),
-            aes(moi, F1), color = "#6a3d9a", linewidth = 1.0) +
-  geom_line(data = exact %>% filter(grepl("ours", method)),
-            aes(moi, F1), color = "#e31a1c", linewidth = 1.6) +
-  geom_point(data = exact %>% filter(grepl("ours", method)),
-             aes(moi, F1), color = "#e31a1c", size = 2.4) +
-  scale_x_log10(breaks = moi, expand = expansion(mult = c(0.03, 0.22))) +
-  scale_color_manual(values = c(cleanser_dc = "#1f78b4", crispat_poisgauss = "#33a02c"), name = "paper's high-MOI winners") +
-  annotate("text", x = 11, y = 0.769, label = "fishash+ Poisson\n(ours)", color = "#e31a1c", hjust = 0, size = 3.8, fontface = 2, lineheight = 0.9) +
-  annotate("text", x = 11, y = 0.66, label = "fishash", color = "#6a3d9a", hjust = 0, size = 3.8) +
-  annotate("text", x = 0.1, y = 0.50, label = "grey = other 8 paper methods (digitized)", color = "grey55", hjust = 0, size = 3.3) +
-  labs(x = "MOI", y = "median F1 (full subset)",
-       title = "Fishash+ Poisson overlaid on the fishash paper's varying-MOI panel (Fig 6a)",
-       subtitle = "10 paper methods digitized from Fig 6a; fishash & Fishash+ Poisson computed exactly on the authors' identical seeded sims") +
-  coord_cartesian(ylim = c(0.45, 1.0)) +
-  theme_bw(base_size = 13) + theme(legend.position = "bottom", plot.subtitle = element_text(size = 9))
+# ---- Main figure: ours, real fishash, and the best published alternative -----
+# The envelope preserves the "best in field" comparison without an unreadable
+# spaghetti of nine individually digitized competitor curves.
+best_alt <- dig %>%
+  filter(method != "fishash (digitized)") %>%
+  group_by(moi) %>%
+  slice_max(F1, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(display = "best other published method (digitized)")
+main <- bind_rows(
+  exact %>% transmute(moi, F1, display = recode(
+    method,
+    "fishash" = "fishash (refit10)",
+    "fishash+ Poisson (ours)" = "Fishash+ Poisson"
+  )),
+  best_alt %>% select(moi, F1, display)
+)
+main$display <- factor(
+  main$display,
+  c("Fishash+ Poisson", "fishash (refit10)", "best other published method (digitized)")
+)
+main_cols <- c(
+  "Fishash+ Poisson" = "#e31a1c",
+  "fishash (refit10)" = "#6a3d9a",
+  "best other published method (digitized)" = "grey45"
+)
+p <- ggplot(main, aes(moi, F1, color = display, linetype = display)) +
+  geom_line(aes(linewidth = display)) +
+  geom_point(aes(size = display)) +
+  scale_x_fishash_guide_load(expand = expansion(mult = c(0.03, 0.22))) +
+  scale_color_manual(values = main_cols, name = NULL) +
+  scale_linetype_manual(
+    values = c("Fishash+ Poisson" = "solid", "fishash (refit10)" = "solid",
+               "best other published method (digitized)" = "22"),
+    name = NULL
+  ) +
+  scale_linewidth_manual(values = c(1.5, 1.0, 0.8), guide = "none") +
+  scale_size_manual(values = c(2.5, 1.9, 1.6), guide = "none") +
+  labs(x = "Mean infection events per recovered cell", y = "median F1 (full subset)",
+       title = "Fishash+ Poisson leads the published field at moderate-to-high guide load",
+       subtitle = "Fishash and Fishash+ are exact; the grey curve is the pointwise best of nine digitized alternatives from Fig 6a (read-off precision about ±0.02).") +
+  coord_cartesian(ylim = c(0.62, 1.0)) +
+  theme_bw(base_size = 13) +
+  theme(legend.position = "bottom", plot.subtitle = element_text(size = 9)) +
+  guides(color = guide_legend(nrow = 1), linetype = guide_legend(nrow = 1))
 ggsave(file.path(OUT, "fig6_overlay_f1_vs_moi.png"), p, width = 11, height = 6.5, dpi = 130)
 
 # ---- their-figure layout: facet by MOI, all 11 methods as points -------------
 allm <- bind_rows(
   dig %>% filter(method != "fishash (digitized)") %>% mutate(hi = "paper (digitized)"),
   exact %>% mutate(hi = ifelse(grepl("ours", method), "Fishash+ Poisson (ours)", "fishash (exact)"))
-) %>% mutate(method = factor(method, levels = c(
+) %>% mutate(
+  guide_load = factor(
+    fishash_recovered_guide_labels(moi),
+    levels = fishash_recovered_guide_labels(fishash_preselection_moi)
+  ),
+  method = factor(method, levels = c(
   "cleanser_cs","cleanser_dc","crispat_gauss","crispat_poisgauss","crispat_poisson",
-  "crispat_negbinom","sceptre_mixture","demuxem","geomux","fishash","fishash+ Poisson (ours)")))
+  "crispat_negbinom","sceptre_mixture","demuxem","geomux","fishash","fishash+ Poisson (ours)"))
+)
 pf <- ggplot(allm, aes(method, F1, color = hi)) +
   geom_point(size = 2) +
-  facet_wrap(~moi, nrow = 2, labeller = label_both) +
+  facet_wrap(~guide_load, nrow = 2,
+             labeller = labeller(guide_load = function(z) paste(z, "infections/cell"))) +
   scale_color_manual(values = c("paper (digitized)" = "grey60", "fishash (exact)" = "#6a3d9a",
                                 "Fishash+ Poisson (ours)" = "#e31a1c"), name = NULL) +
   labs(x = NULL, y = "median F1", title = "Their Fig 6a layout, with Fishash+ Poisson added (red)") +
