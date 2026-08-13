@@ -18,6 +18,7 @@ external/repro_work/*.mtx
 external/repro_work/*.h5ad
 external/repro_work/*.tsv
 external/repro_work/*.tsv.gz
+external/repro_work/*.log
 # our QC'd barnyard cohort export (regenerable)
 results/barnyard_cohort_export/
 # macOS junk

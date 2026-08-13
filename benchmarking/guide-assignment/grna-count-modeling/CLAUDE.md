@@ -135,9 +135,13 @@ grna-count-modeling/
 **Assignment-report figures + barnyard (current):** figure scripts in `scripts/` feed
 `sceptre3_assignment_report.qmd` — `final_barnyard_figure.R`, `comprehensive_depthfix.R`,
 `build_vs_adopt.R`, `ambient_survey_{compute,plots}.R`, `ambient_intuition_{compute,plots}.R`,
-`simpson_paradox_{repro,plot}.R`. Barnyard EXACT reproduction lives in `external/repro_work/`
-(`build_inputs.py`, `run_fishash_local.R`, geomux via `.venv_geomux_v5`, `score_table2.R` +
-`score_ours_table2.R` → `results/barnyard_exact_corrected.csv`).
+`simpson_paradox_{repro,plot}.R`. Barnyard EXACT reproduction lives in `external/repro_work/`:
+Fishash + geomux + ours feed `results/barnyard_exact_corrected.csv`; the extended fixed-version run
+adds SCEPTRE 0.10.3 and CLEANSER 1.2.1 via `run_extended_table2.sh` and
+`score_extended_table2.R` → `extended_table2_reproduction.csv`. SCEPTRE matches all four Table-2
+accuracies at four decimals; CLEANSER matches six of eight at four decimals, all eight within 0.001,
+and all 12 SCEPTRE/CLEANSER standard errors match at four decimals. Use the stated CLEANSER cutoffs
+(cs 0.80, dc 0.50): the current public Fishash helper's 0.95 selection does not reproduce Table 2.
 
 **Method-comparison / ambient-ceiling suite (current):** feeds `method_comparison.qmd`. Run order
 (all from the folder root; full detail in `scripts/README_ambient_ceiling.md`):
