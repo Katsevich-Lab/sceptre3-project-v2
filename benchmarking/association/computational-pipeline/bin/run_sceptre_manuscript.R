@@ -141,7 +141,7 @@ dataset_dir <- args[1]
 dataset_id  <- args[2]
 
 # Tunables (env-overridable so the Nextflow module can set them)
-B                     <- 50 # as.integer(Sys.getenv("SCEPTRE_MANUSCRIPT_B", "500"))
+B                     <- as.integer(Sys.getenv("SCEPTRE_MANUSCRIPT_B", "500"))
 regularization_amount <- as.numeric(Sys.getenv("SCEPTRE_MANUSCRIPT_REG", "3"))
 side                  <- Sys.getenv("SCEPTRE_MANUSCRIPT_SIDE", "both")
 seed                  <- as.integer(Sys.getenv("SCEPTRE_MANUSCRIPT_SEED", "1234"))
