@@ -1,0 +1,61 @@
+Bootstrap: docker
+From: rocker/r-ver:4.4.3
+
+%labels
+    Author Louis 
+    Description Original 2021 manuscript-era sceptre (Katsevich-Lab/sceptre-manuscript, sceptre_package/sceptre, v1.0.0), installed as the sole `sceptre` package for benchmarking the published distilled-CRT + skew-t method.
+    Version 1.0
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    # System deps. gfortran is required to compile the manuscript package's
+    # dependencies (sn -> quantreg, VGAM, etc.); procps gives `ps`.
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        procps \
+        build-essential \
+        gfortran \
+        cmake \
+        curl \
+        git \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libxml2-dev \
+        zlib1g-dev \
+        libfontconfig1-dev \
+        libfreetype6-dev \
+        libfribidi-dev \
+        libharfbuzz-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libtiff5-dev \
+        pkg-config
+    rm -rf /var/lib/apt/lists/*
+
+    # remotes, then the MANUSCRIPT sceptre from GitHub (installs as package `sceptre`
+    # v1.0.0). The package lives in a subdirectory of the (public) repo.
+    # dependencies=TRUE pulls its Depends (VGAM, sn, MASS, fst, bigstatsr,
+    # tidyverse, magrittr).
+    R --slave -e 'install.packages("remotes", repos="https://cran.r-project.org")'
+    R --slave -e 'remotes::install_github("Katsevich-Lab/sceptre-manuscript", subdir="sceptre_package/sceptre", ref="master", dependencies=TRUE, upgrade="never")'
+
+    mkdir -p /opt/sceptre-manuscript
+
+%runscript
+    # Pass-through so `ps`, `bash`, `Rscript`, etc. all work with `apptainer run`
+    exec "$@"
+
+%environment
+    export LC_ALL=C
+    export PATH=/usr/local/bin:$PATH
+    # Avoid reading host user libraries when using --cleanenv
+    export R_LIBS_USER=
+
+%test
+    which ps
+    ps -o pid,comm | head -n 2
+    # Confirm this is the MANUSCRIPT build: version 1.0.0 and the manuscript-only
+    # workhorse function run_sceptre_using_precomp must be present.
+    R --quiet -e 'suppressPackageStartupMessages(library(sceptre)); stopifnot(as.character(packageVersion("sceptre")) == "1.0.0"); stopifnot(exists("run_sceptre_using_precomp", mode="function")); cat("manuscript sceptre", as.character(packageVersion("sceptre")), "OK\n")'
