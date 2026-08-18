@@ -43,7 +43,7 @@ sceptre_object <- set_analysis_parameters(
   discovery_pairs      = discovery_pairs,
   formula_object       = formula(~ log(response_n_nonzero + 1) + log(response_n_umis + 1) +
                                    log(grna_n_nonzero + 1) + log(grna_n_umis + 1) + prep_batch),
-  resampling_mechanism = "permutations"
+  resampling_mechanism = "crt"
 )
 
 write_ondisc_backed_sceptre_object(sceptre_object = sceptre_object,
