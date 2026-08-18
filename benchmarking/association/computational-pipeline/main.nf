@@ -5,6 +5,7 @@ nextflow.enable.dsl = 2
 // Import method modules
 include { SCEPTRE_COMPUTATIONAL } from './modules/sceptre'
 include { SCEPTRE_MANUSCRIPT_COMPUTATIONAL } from './modules/sceptre_manuscript'
+include { SCEPTRE_V030_COMPUTATIONAL } from './modules/sceptre_v030'
 include { SCEPTREGAMPOI_COMPUTATIONAL } from './modules/sceptregampoi'
 include { MIXSCALE_COMPUTATIONAL } from './modules/mixscale'
 include { FRPERTURB_COMPUTATIONAL } from './modules/frperturb'
@@ -32,7 +33,7 @@ workflow {
         .map { resource_row ->
             def dataset_id = resource_row.dataset
             def method = resource_row.method
-            def data_method = (method in ['sceptregampoi', 'sceptre_manuscript']) ? 'sceptre' : method
+            def data_method = (method in ['sceptregampoi', 'sceptre_manuscript', 'sceptre_v030']) ? 'sceptre' : method
             def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${data_method}")
             def resources = [
                 cpus: resource_row.cpus,
@@ -47,6 +48,7 @@ workflow {
     branched_ch = dataset_method_ch.branch {
         sceptre: it[2] == 'sceptre'
         sceptre_manuscript: it[2] == 'sceptre_manuscript'
+        sceptre_v030: it[2] == 'sceptre_v030'
         sceptregampoi: it[2] == 'sceptregampoi'
         mixscale: it[2] == 'mixscale'
         frperturb: it[2] == 'frperturb'
@@ -57,6 +59,9 @@ workflow {
 
     // Run manuscript (2021) sceptre computational benchmarking
     sceptre_manuscript_results = SCEPTRE_MANUSCRIPT_COMPUTATIONAL(branched_ch.sceptre_manuscript, outdir)
+
+    // Run historical sceptre v0.3.0 computational benchmarking
+    sceptre_v030_results = SCEPTRE_V030_COMPUTATIONAL(branched_ch.sceptre_v030, outdir)
 
     // Run sceptregampoi computational benchmarking
     sceptregampoi_results = SCEPTREGAMPOI_COMPUTATIONAL(branched_ch.sceptregampoi, outdir)

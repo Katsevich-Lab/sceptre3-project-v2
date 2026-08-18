@@ -150,6 +150,20 @@ cat("Running MANUSCRIPT sceptre (computational)\n")
 cat("  dataset_dir:", dataset_dir, "\n  dataset_id:", dataset_id, "\n")
 cat("  B:", B, " regularization_amount:", regularization_amount, " side:", side, " seed:", seed, "\n")
 
+# This method is HIGH-MOI only; low-MOI data is benchmarked with sceptre_v030.
+# Error out rather than silently running the wrong analysis.
+DATASET_NAMES <- c("gasperini", "replogle")
+dataset_name <- DATASET_NAMES[sapply(DATASET_NAMES, function(name) grepl(name, dataset_id, ignore.case = TRUE))]
+if (length(dataset_name) != 1) {
+  stop("Could not determine dataset from dataset_id: ", dataset_id)
+}
+moi <- list(gasperini = "high", replogle = "low")[[dataset_name]]
+if (moi != "high") {
+  stop("sceptre_manuscript is a HIGH-MOI method, but dataset '", dataset_id, "' is ", moi,
+       " MOI. Use sceptre_v030 for low-MOI data.")
+}
+cat("  detected dataset:", dataset_name, " MOI:", moi, "\n")
+
 # --- load inputs ---
 response_matrix <- readRDS(file.path(dataset_dir, "response_matrix.rds"))
 grna_matrix     <- readRDS(file.path(dataset_dir, "grna_matrix.rds"))

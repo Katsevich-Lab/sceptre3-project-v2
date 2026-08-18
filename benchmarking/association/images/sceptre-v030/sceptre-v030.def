@@ -1,0 +1,56 @@
+Bootstrap: docker
+From: rocker/r-ver:4.4.3
+
+%labels
+    Author Louis
+    Description Historical SCEPTRE v0.3.0 (Katsevich-Lab/sceptre @ tag v0.3.0), installed as the sole `sceptre` package. Used to benchmark the v0.3.0-era method (single-call run_sceptre_lowmoi / run_sceptre_highmoi API).
+    Version 1.0
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        procps \
+        build-essential \
+        gfortran \
+        cmake \
+        curl \
+        git \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libxml2-dev \
+        zlib1g-dev \
+        libfontconfig1-dev \
+        libfreetype6-dev \
+        libfribidi-dev \
+        libharfbuzz-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libtiff5-dev \
+        pkg-config
+    rm -rf /var/lib/apt/lists/*
+
+    # remotes, then sceptre pinned to the v0.3.0 tag (installs as package `sceptre`
+    # version 0.3.0). This version has C++ sources (LinkingTo: Rcpp, BH), so the
+    # build toolchain above is required.
+    R --slave -e 'install.packages("remotes", repos="https://cran.r-project.org")'
+    R --slave -e 'remotes::install_github("Katsevich-Lab/sceptre", ref="v0.3.0", dependencies=TRUE, upgrade="never")'
+
+    mkdir -p /opt/sceptre-v030
+
+%runscript
+    exec "$@"
+
+%environment
+    export LC_ALL=C
+    export PATH=/usr/local/bin:$PATH
+    export R_LIBS_USER=
+
+%test
+    which ps
+    ps -o pid,comm | head -n 2
+    # Confirm this is the v0.3.0 build: version 0.3.0 and the v0.3.0-era single-call
+    # entry points must be present (modern sceptre does not export these).
+    R --quiet -e 'suppressPackageStartupMessages(library(sceptre)); stopifnot(as.character(packageVersion("sceptre")) == "0.3.0"); stopifnot(exists("run_sceptre_lowmoi", mode="function"), exists("run_sceptre_highmoi", mode="function")); cat("sceptre", as.character(packageVersion("sceptre")), "OK\n")'
