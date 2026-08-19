@@ -1,0 +1,160 @@
+---
+title: "Progress report"
+author: "Louis Deutsch"
+date: "2026-08-19"
+output:
+  pdf_document:
+    toc: false
+    number_sections: true
+geometry: margin=1in
+fontsize: 11pt
+---
+
+```{r, echo=FALSE, include=FALSE}
+library(tidyverse); library(Matrix); library(ondisc)
+
+```
+
+
+# 1. Assignment
+
+Figure 1 shows that we do not want to simply downsample guides. That will produce datasets with unrealistic noise distributions.
+
+```{r umi-grid-subset, fig.width = 10, fig.height = 8, echo=FALSE, fig.cap = "This plot explores the consequences of downsampling guides while keeping all cells. For each of Replogle and Gasperini, we sample 4 random guides. Rows 1 and 3 of this plot show the UMI counts for those 4 guides, respectively, using all cells. For rows 2 and 4, we pretend that these 4 guides were part of a random downsample of 100 guides, and remove all cells flagged as expressing a guide outside that pretend sample of 100 guides (provided those cells did not also express one of the 100). When the original assay had many more guides than our downsample, we can see an increase in small ambient UMI counts for the guides chosen to be in our downsample, and especially for Replogle. Downsampling on guides changes statistical properties."}
+
+# ---- mixed linear->log binning ---------------------------------------------
+logp1 <- function(x, base = 10) log(x + 1, base = base)
+
+make_mixed_bin_info <- function(max_x, k_exact = 10L) {
+  upper <- 0:k_exact; width <- 2L
+  while (tail(upper, 1L) < max_x) { upper <- c(upper, tail(upper, 1L) + width); width <- width * 2L }
+  lower <- c(0L, head(upper, -1L) + 1L)
+  label <- ifelse(lower == upper, as.character(upper), paste0(lower, "-", upper))
+  data.frame(bin_id = seq_along(label), lower = lower, upper = upper, label = label,
+             xmin = seq_along(label) - 0.45, xmax = seq_along(label) + 0.45,
+             stringsAsFactors = FALSE)
+}
+make_x_axis_spec <- function(bin_info, k_exact, exact_every = 2L, tail_every = 2L) {
+  is_exact <- bin_info$lower == bin_info$upper & bin_info$upper <= k_exact
+  ei <- which(is_exact); ti <- which(!is_exact); keep <- rep(FALSE, nrow(bin_info))
+  if (length(ei)) { keep[ei[seq(1, length(ei), by = exact_every)]] <- TRUE; keep[max(ei)] <- TRUE }
+  if (length(ti)) { keep[ti[seq(1, length(ti), by = tail_every)]] <- TRUE; keep[max(ti)] <- TRUE }
+  list(breaks = bin_info$bin_id[keep], labels = bin_info$label[keep])
+}
+make_y_breaks_umi <- function(mx) { b <- c(1,10,100,1e3,1e4,1e5,1e6); b[b <= mx] }
+
+dataset_colour <- c(Replogle = "#7480CC", Gasperini = "#E3A245")
+
+DS <- list(
+  Replogle = list(
+    odm  = "~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/replogle-rd7/sceptre-pipeline/grna.odm",
+    assn = "~/data/projects/sceptre3/benchmarking/guide_assignment/outputs/replogle-rd7/maximum/grna_assignment_matrix.rds"),
+  Gasperini = list(
+    odm  = "~/data/projects/sceptre3/benchmarking/guide_assignment/input_data/gasperini/sceptre-pipeline/grna.odm",
+    assn = "~/data/projects/sceptre3/benchmarking/guide_assignment/outputs/gasperini/thresholding-5/grna_assignment_matrix.rds")
+)
+
+n_panel <- 4L; n_pool <- 100L; k_exact <- 10L
+set.seed(1)
+
+rows <- list()
+for (ds in names(DS)) {
+  odm <- ondisc::initialize_odm_from_backing_file(path.expand(DS[[ds]]$odm))
+  m   <- readRDS(path.expand(DS[[ds]]$assn))
+  stopifnot(identical(rownames(m), rownames(odm)), ncol(m) == ncol(odm))
+
+  pool  <- sort(sample(nrow(odm), n_pool))       # the 100 guides we "keep"
+  shown <- pool[sort(sample(n_pool, n_panel))]   # the 4 we actually plot
+
+  # keep a cell iff it carries >=1 of the 100, or carries no guide at all.
+  # (low MOI: every cell has exactly 1 guide, so this is just "assigned inside")
+  n_in  <- Matrix::colSums(m[pool, , drop = FALSE])
+  n_out <- Matrix::colSums(m) - n_in
+  keep  <- (n_in >= 1) | (n_out == 0)
+  # message(sprintf("%s: kept %s / %s cells (%.1f%%)", ds,
+  #                 format(sum(keep), big.mark = ","),
+  #                 format(length(keep), big.mark = ","), 100 * mean(keep)))
+
+  for (i in shown) {
+    u <- as.integer(odm[i, ]); g <- rownames(odm)[i]
+    rows[[length(rows) + 1]] <- data.frame(umi = u,       Dataset = ds, guide = g,
+                                           Cells = "all cells", stringsAsFactors = FALSE)
+    rows[[length(rows) + 1]] <- data.frame(umi = u[keep], Dataset = ds, guide = g,
+                                           Cells = "100-guide subset", stringsAsFactors = FALSE)
+  }
+}
+df <- dplyr::bind_rows(rows)
+df$Dataset <- factor(df$Dataset, levels = names(DS))
+df$Cells   <- factor(df$Cells,   levels = c("all cells", "100-guide subset"))
+
+# panel order -> row1 Repl(all), row2 Repl(subset), row3 Gasp(all), row4 Gasp(subset)
+ord <- df |> dplyr::distinct(Dataset, Cells, guide) |>
+  dplyr::arrange(Dataset, Cells, guide) |>
+  dplyr::mutate(panel = paste0(substr(guide, 1, 20), "\n(", Cells, ")"))
+df <- dplyr::left_join(df, ord, by = c("Dataset", "Cells", "guide"))
+df$panel <- factor(df$panel, levels = ord$panel)
+
+# ONE shared bin structure across all 16 panels
+bi <- make_mixed_bin_info(max(df$umi), k_exact)
+counts <- df |>
+  dplyr::mutate(bin = factor(cut(umi, breaks = c(-1, bi$upper), labels = bi$label, right = TRUE),
+                             levels = bi$label)) |>
+  dplyr::group_by(Dataset, panel, bin, .drop = FALSE) |>
+  dplyr::summarise(count = dplyr::n(), .groups = "drop") |>
+  dplyr::filter(count > 0) |>
+  dplyr::mutate(bin = as.character(bin)) |>
+  dplyr::left_join(bi, by = c("bin" = "label"))
+
+xa <- make_x_axis_spec(bi, k_exact); yb <- make_y_breaks_umi(max(counts$count))
+
+ggplot(counts) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = logp1(count), fill = Dataset),
+            colour = NA) +
+  facet_wrap(~ panel, nrow = 4, dir = "h") +
+  scale_x_continuous(breaks = xa$breaks, labels = xa$labels, expand = expansion(add = 0.6)) +
+  scale_y_continuous(breaks = logp1(yb), labels = scales::label_comma()(yb),
+                     expand = expansion(mult = c(0, 0.05))) +
+  scale_fill_manual(values = dataset_colour) +
+  labs(x = "gRNA UMI count", y = "Number of cells (log)", fill = NULL) +
+  theme_bw(base_size = 9) +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank(),
+        strip.text = element_text(size = 8),
+        axis.text.x = element_text(angle = 90, vjust = .5, hjust = 1, size = 8)) +
+  ggtitle("Downsampling guides changes the ambient noise")
+```
+
+
+If instead we keep all guides, but downsample cells, then we preserve the noise distribution, but the number of true positives can get very small. I am concerned that different methods will suffer differently as we enter this unrealistic regime. For example, mixture models (especially MCMC-based ones) may be penalized more than other methods.
+
+Conclusion: we cannot get a statistically realistic sequence of datasets by downsampling cells or guides independently in a real dataset. We need to vary them jointly, and should do so in a way that keeps #cells/guide fixed.
+
+I don't see a good way to do this using real data. I therefore propose the following:
+
+1. Assessing statistical performance:
+
+  a. Performance on fishash simulations
+
+  b. Comparative analyses using single run of each method on Replogle and Gasperini, using all guides, and as light of a downsample of cells as possible to get the methods to finish
+
+2. Assessing computational performance:
+
+  a. use a sequence of simulated datasets, with #cells/guide fixed to a realistic value for each real dataset.
+  
+  b. compare with the resource use on the full real datasets. If we have to downsample cells for these to run, the #cells/guide should reflect this downsampling
+  
+
+
+
+# 2. Association: published versions of SCEPTRE
+
+
+Decision: for benchmarking the published version(s) of SCEPTRE, we use the 2021 `sceptre-manuscript` version for high MOI, and SCEPTRE's v0.3.0 tagged release.
+
+
+For computational benchmarking, the precomputations are all done serially in-memory, to give a fair comparison. No I/O happens.
+
+
+One thing to note: without parallelization, I think the 2021 manuscript version may be too slow to run on even my smallest computational benchmarking datasets. Claude estimates it will take 2 days to run with B=500 samples on just 25k pairs. Claude blames this on the overhead with each `vglm` call. This would be a genuine performance result, but I just want to make sure this seems reasonable. I will verify this once I can use the HPC again.
+
+
+
