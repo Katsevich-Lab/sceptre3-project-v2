@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Eugene Katsevich">
-<meta name="dcterms.date" content="2026-06-25">
+<meta name="dcterms.date" content="2026-08-27">
 
 <title>sceptre — Bioconductor Submission Plan</title>
 <style>
@@ -2324,7 +2324,7 @@ margin: 2em 0;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">June 25, 2026</p>
+      <p class="date">August 27, 2026</p>
     </div>
   </div>
   
@@ -2338,21 +2338,23 @@ margin: 2em 0;
 
 <section id="current-state" class="level2" data-number="1">
 <h2 data-number="1" class="anchored" data-anchor-id="current-state"><span class="header-section-number">1</span> Current state</h2>
-<pre><code>R CMD build  — 0 ERRORS · 0 WARNINGS · 0 NOTES
-BiocCheck    — 1 ERROR  · 1 WARNING  · 5 NOTES</code></pre>
-<p>Two stacked PRs are now in flight, and together they close the remaining blockers:</p>
+<pre><code>R-CMD-check          — passes on macOS, Ubuntu release/oldrel, and Windows
+BiocCheck v1.47.26   — 0 ERRORS · 1 WARNING · 5 NOTES</code></pre>
+<p>Three stacked <code>sceptre</code> PRs and one independent book PR are now in flight, and together they should clear the way for Bioconductor submission:</p>
 <ul>
-<li><strong><a href="https://github.com/Katsevich-Lab/sceptre/pull/216">PR #216</a> — submission finalization.</strong> Now that <a href="https://cran.r-project.org/package=ondisc"><code>ondisc</code> is on CRAN</a>, it drops the <code>Remotes: github::timothy-barry/ondisc</code> entry — <strong>clearing the BiocCheck dependency ERROR</strong> — bumps the version <code>0.10.3 → 0.99.0</code>, and finalizes <code>NEWS</code>, <code>README</code>, the package logo, and the vignette. With #216, <code>BiocCheck</code> reaches <strong>0 ERRORS · 1 WARNING · 5 NOTES</strong>; only the cover-letter exemptions below remain.</li>
-<li><strong><a href="https://github.com/Katsevich-Lab/sceptre/pull/217">PR #217</a> — generated documentation.</strong> Regenerates the <code>man/</code> pages (clearing stale merge-conflict markers in <code>import_data_from_parse.Rd</code>) and rebuilds the pkgdown site against the finalized 0.99.0 source. Documentation only — it is <code>.Rbuildignore</code>d and does not affect the built package.</li>
+<li><strong><a href="https://github.com/Katsevich-Lab/sceptre/pull/229">sceptre #229</a> — maintainer metadata.</strong> Makes Eugene Katsevich the package maintainer, adds his ORCID, and records the canonical package URL.</li>
+<li><strong><a href="https://github.com/Katsevich-Lab/sceptre/pull/228">sceptre #228</a> — mixture-assignment disclosure.</strong> Documents the known fitting inconsistency in the current <code>method = &quot;mixture&quot;</code> implementation while retaining the established behavior that has performed well in benchmarks. The maximum and thresholding assignment methods are unaffected.</li>
+<li><strong><a href="https://github.com/Katsevich-Lab/sceptre/pull/230">sceptre #230</a> — generated pkgdown site.</strong> Rebuilds the complete site from the combined metadata and disclosure source changes.</li>
+<li><strong><a href="https://github.com/timothy-barry/sceptre-book/pull/6">sceptre-book #6</a> — mixture-method documentation.</strong> Updates the book to distinguish the intended EM derivation from the current implementation and adds focused limitation callouts while preserving the existing derivation and explanatory text.</li>
 </ul>
-<p>Separately, the companion <em>Hands-On Single-Cell CRISPR Screen Analysis</em> book has been rebuilt against 0.99.0 (<a href="https://github.com/timothy-barry/sceptre-book/pull/4">sceptre-book #4</a>): example data is now loaded explicitly from <code>sceptredata</code>, all analysis outputs were regenerated, and the prose was audited against the package for fidelity to the 0.99.0 API.</p>
+<p>The three <code>sceptre</code> PRs should be reviewed and merged in the order #229 → #228 → #230. The book PR is independent. BiocCheck on the exact combined package source reports that the maintainer is registered at the Support Site and that <code>sceptre</code> is among the maintainer’s watched tags.</p>
 </section>
 <section id="bioconductor-cover-letter" class="level2" data-number="2">
 <h2 data-number="2" class="anchored" data-anchor-id="bioconductor-cover-letter"><span class="header-section-number">2</span> Bioconductor cover letter</h2>
 <p>The submitted package has 1 warning and 5 notes, for which we request exemptions:</p>
 <ul>
 <li><strong>WARNING: No Bioconductor dependencies detected.</strong> The primary container for single-cell data in the Bioconductor ecosystem is SingleCellExperiment. Instead of using SingleCellExperiment to store and manipulate the expression data, we implemented several specialized data structures and algorithms better suited to the specific access patterns required of perturb-seq analysis. After data import (e.g., from a collection of 10x Genomics .mtx files), sceptre computes various cell-wise covariates relevant to perturb-seq analysis, including the gRNA with the greatest UMI count in a given cell and the fraction of UMIs attributable to this gRNA. sceptre does so using optimized C++ routines. Next, sceptre converts the sparse gene and gRNA expression matrices from column-accessible format into row-accessible format. This transformation is crucial, as all subsequent steps – including QC, gRNA assignment, and gRNA-to-gene association testing – require rowwise access to the gene and gRNA expression matrices. SingleCellExperiment (and allied packages, such as scran) can store these matrices and covariates, but they do not implement the specific, optimized perturb-seq computations of sceptre.</li>
-<li><strong>NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.</strong> The maintainer (Timothy Barry, <a href="mailto:tbarry@hsph.harvard.edu" class="email">tbarry@hsph.harvard.edu</a>) is subscribed to the mailing list.</li>
+<li><strong>NOTE: Cannot determine whether maintainer is subscribed to the Bioc-Devel mailing list.</strong> The maintainer (Eugene Katsevich, <a href="mailto:ekatsevi@wharton.upenn.edu" class="email">ekatsevi@wharton.upenn.edu</a>) is subscribed to the mailing list.</li>
 <li><strong>NOTE: Update R version dependency from 4.1 to 4.6.0.</strong> We would prefer to avoid excluding users with older versions of R, including those in computer clusters where they do not have control over the version of R installed.</li>
 <li><strong>NOTE: Avoid ‘cat’ and ‘print’ outside of ‘show’ methods.</strong> This NOTE targets <code>cat()</code>/<code>print()</code> used in place of <code>message()</code>/<code>warning()</code> for diagnostic logging. Both flagged instances are instead object-display / file-serialization output — the use the <code>show()</code>-method exemption is meant to cover. In <code>R/s4_helpers.R</code>, the flagged <code>cat()</code> calls are inside the S4 <code>print()</code> method for <code>sceptre_object</code>, which first delegates to <code>show(x)</code> and then renders additional detail (an analysis-status checklist and result summaries) that <code>show()</code> omits. In <code>R/s4_analysis_functs_2.R</code>, the flagged <code>print()</code> call sits inside a <code>sink()</code> block that serializes the object’s summary to <code>analysis_summary.txt</code>.</li>
 <li><strong>NOTE: Consider shorter lines.</strong> We have reduced lines over 80 characters as much as possible. The remaining long lines (constituting only 2% of our codebase) are impossible to shorten as they contain long URLs, generated <code>R/RcppExports.R</code>, or single-line knitr chunk headers.</li>
