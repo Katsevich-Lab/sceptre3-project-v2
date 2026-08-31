@@ -7,6 +7,7 @@ process CRISPAT_ASSIGN {
 
   cpus { resources.cpus }
   memory { resources.memory }
+  time   { resources.time }   // -> SGE -l h_rt AND queue routing (>=4h -> hpc3.q)
 
   input:
   tuple val(dataset_id), path(dataset_dir), val(method), val(resources)
@@ -14,10 +15,15 @@ process CRISPAT_ASSIGN {
 
   output:
   tuple val(dataset_id), val(method), path("assignments_crispat.csv"), emit: assignments
+  path("crispat_${dataset_id}.time.txt"), optional: true, emit: timing
 
   publishDir "${outdir}",
              mode: 'copy',
              saveAs: { "assignments_crispat_${dataset_id}.csv" }
+
+  publishDir "${outdir}/monitoring",
+             mode: 'copy',
+             pattern: '*.time.txt'
 
   // Triple *single* quotes: shell $VARS pass through unchanged.
   // Inject Nextflow vars with !{...}.
@@ -37,7 +43,14 @@ export PYTHONNOUSERSITE=1
 export XDG_CACHE_HOME="\$PWD/.cache"
 mkdir -p "\$XDG_CACHE_HOME"
 
-python "${projectDir}/bin/run_crispat.py" "${dataset_dir}/grna_matrix.h5ad"
+# Measure peak memory & elapsed time (parity with the cleanser module)
+/usr/bin/time -v -o crispat_${dataset_id}.time.txt \\
+  python "${projectDir}/bin/run_crispat.py" "${dataset_dir}/grna_matrix.h5ad"
+
+# Print a one-line summary into .command.out for convenience
+awk '/Maximum resident set size/ {printf "Peak RAM: %.2f GiB\\n", \$NF/1024/1024} \\
+     /Elapsed \\(wall clock\\) time/ {print "Elapsed:", \$0}' crispat_${dataset_id}.time.txt
+
 """
 
 }

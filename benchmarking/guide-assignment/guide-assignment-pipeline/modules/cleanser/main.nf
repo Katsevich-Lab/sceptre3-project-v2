@@ -6,6 +6,7 @@ process CLEANSER_ASSIGN {
 
   cpus { resources.cpus }
   memory { resources.memory }
+  time   { resources.time }   // -> SGE -l h_rt AND queue routing (>=4h -> hpc3.q)
 
   input:
   tuple val(dataset_id), path(dataset_dir), val(method), val(resources)
@@ -13,7 +14,7 @@ process CLEANSER_ASSIGN {
 
   output:
   tuple val(dataset_id), val(method), path("assignments_cleanser.csv"), emit: assignments
-  path("cleanser_${dataset_id}.time.txt"), emit: timing
+  path("cleanser_${dataset_id}.time.txt"), optional: true, emit: timing
 
   publishDir "${outdir}",
              mode: 'copy',

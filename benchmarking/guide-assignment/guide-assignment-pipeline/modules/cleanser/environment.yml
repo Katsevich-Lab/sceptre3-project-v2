@@ -4,7 +4,9 @@ channels:
 dependencies:
   - python=3.12
   - cmdstan
-  - cmdstanpy
+  # Pinned: CLEANSER's Stan models are compiled by cmdstanpy, and 1.2 is the
+  # series this env was built and validated against.
+  - cmdstanpy=1.2
   - pandas
   - pip
   - pip:

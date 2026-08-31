@@ -11,4 +11,8 @@ dependencies:
   - scanpy
   - pip
   - pip:
-    - git+https://github.com/jdeu1023/crispat.git@benchmark
+    # PINNED to an immutable commit. '@benchmark' is a BRANCH -- it can move
+    # under you and silently change the method between runs. This SHA is the
+    # branch tip as of 2026-04-11 ("replace max(selected_guide.toarray()) with
+    # selected_guide.max()").
+    - git+https://github.com/jdeu1023/crispat.git@f870d65c71b9fa66013adbf3c0e85ca920aabf6d

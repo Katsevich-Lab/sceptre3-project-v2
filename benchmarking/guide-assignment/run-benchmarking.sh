@@ -3,6 +3,11 @@
 #$ -cwd
 #$ -j y
 #$ -l m_mem_free=2G
+#$ -l h_rt=96:00:00      # the nf driver must OUTLIVE the whole pipeline; without this it
+                         # resource-matches short.q (s_rt=4h) and, on dying, qdels its children.
+                         # Must exceed the longest per-task `time` (default_time=48h) PLUS
+                         # however long those tasks sit queued.
+#$ -q hpc3.q             # long-job queue (h_rt max 8760h); driver is light, just orchestrates
 #$ -pe openmp 1
 
 set -euo pipefail

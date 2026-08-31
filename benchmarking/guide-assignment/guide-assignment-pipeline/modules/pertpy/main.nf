@@ -11,6 +11,7 @@ process PERTPY_ASSIGN {
   conda "${moduleDir}/environment.yml"
 
   memory { resources.memory }
+  time   { resources.time }   // -> SGE -l h_rt AND queue routing (>=4h -> hpc3.q)
 
   // Store gpu settings in task.ext for access in nextflow.config
   ext.gpu_queue = { resources.gpu_queue }
@@ -22,10 +23,15 @@ process PERTPY_ASSIGN {
 
   output:
   tuple val(dataset_id), val(method), path("assignments_pertpy.csv"), emit: assignments
+  path("pertpy_${dataset_id}.time.txt"), optional: true, emit: timing
 
   publishDir "${outdir}",
              mode: 'copy',
              saveAs: { "assignments_pertpy_${dataset_id}.csv" }
+
+  publishDir "${outdir}/monitoring",
+             mode: 'copy',
+             pattern: '*.time.txt'
 
   script:
   """
@@ -37,7 +43,14 @@ process PERTPY_ASSIGN {
   export MPLCONFIGDIR=${projectDir}/.mplconfig
   export PYTHONNOUSERSITE=1
 
-  # Run pertpy guide assignment
-  python ${projectDir}/bin/run_pertpy.py "${dataset_dir}/grna_matrix.h5ad" ${dataset_id}
+  # Run pertpy guide assignment, measuring peak memory & elapsed time
+  # (parity with the cleanser module)
+  /usr/bin/time -v -o pertpy_${dataset_id}.time.txt \\
+    python ${projectDir}/bin/run_pertpy.py "${dataset_dir}/grna_matrix.h5ad" ${dataset_id}
+
+  # Print a one-line summary into .command.out for convenience
+  awk '/Maximum resident set size/ {printf "Peak RAM: %.2f GiB\\n", \$NF/1024/1024} \\
+       /Elapsed \\(wall clock\\) time/ {print "Elapsed:", \$0}' pertpy_${dataset_id}.time.txt
+
   """
 }

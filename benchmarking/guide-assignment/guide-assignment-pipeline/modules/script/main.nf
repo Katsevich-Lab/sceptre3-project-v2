@@ -11,6 +11,7 @@ process SCRIPT_ASSIGN {
 
   cpus { resources.cpus }
   memory { resources.memory }
+  time   { resources.time }   // -> SGE -l h_rt AND queue routing (>=4h -> hpc3.q)
 
   stageInMode 'symlink'
 
