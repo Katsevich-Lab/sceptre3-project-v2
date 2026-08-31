@@ -43,9 +43,18 @@ process PERTPY_ASSIGN {
   export MPLCONFIGDIR=${projectDir}/.mplconfig
   export PYTHONNOUSERSITE=1
 
+  # TIMEOUT ENFORCED IN-BAND, not by the scheduler. Measured on HPC3 2026-08-31:
+  # a task requesting `-l h_rt=00:03:00` ran for 10m and exited 0, so SGE does NOT
+  # enforce h_rt here (h_rt is requestable and short.q caps at 04:05:00, yet the
+  # limit never fired). On mem.q -- where every full-dataset task lands -- the
+  # ceiling is effectively a year, so an unbounded method would run until the
+  # nextflow driver dies and qdel's it. `timeout` exits 124, which reaches the
+  # trace as an unambiguous "hit the time limit". /usr/bin/time stays OUTSIDE the
+  # timeout so peak-RSS telemetry is still written when the limit fires.
   # Run pertpy guide assignment, measuring peak memory & elapsed time
   # (parity with the cleanser module)
   /usr/bin/time -v -o pertpy_${dataset_id}.time.txt \\
+    timeout -k 60s ${task.time.toSeconds()}s \\
     python ${projectDir}/bin/run_pertpy.py "${dataset_dir}/grna_matrix.h5ad" ${dataset_id}
 
   # Print a one-line summary into .command.out for convenience

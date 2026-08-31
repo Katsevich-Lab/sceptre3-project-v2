@@ -3,10 +3,14 @@
 #$ -cwd
 #$ -j y
 #$ -l m_mem_free=2G
-#$ -l h_rt=96:00:00      # the nf driver must OUTLIVE the whole pipeline; without this it
-                         # resource-matches short.q (s_rt=4h) and, on dying, qdels its children.
-                         # Must exceed the longest per-task `time` (default_time=48h) PLUS
-                         # however long those tasks sit queued.
+#$ -l h_rt=192:00:00     # 8 days. The nf driver must OUTLIVE the whole pipeline; without
+                         # this it resource-matches short.q (s_rt=4h) and, on dying, qdels its
+                         # children. Tasks are allowed 7d, so the driver needs MORE than that
+                         # plus however long those tasks sit queued.
+                         # CAVEAT: per-job h_rt is NOT enforced on HPC3 -- only the QUEUE's own
+                         # s_rt/h_rt is. So this number is a floor request, and what actually
+                         # bounds the driver is hpc3.q's queue limit. Verify it allows 8 days:
+                         #   qconf -sq hpc3.q | grep -E 's_rt|h_rt'
 #$ -q hpc3.q             # long-job queue (h_rt max 8760h); driver is light, just orchestrates
 #$ -pe openmp 1
 

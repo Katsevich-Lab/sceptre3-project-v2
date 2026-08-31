@@ -26,13 +26,19 @@ process SURVIVOR {
   script: "sleep 60; echo survived > out_${name}.txt"
 }
 
-// Real SGE walltime kill: asks for 3 minutes, then sleeps 10.
-process DIE_WALLTIME {
-  tag "walltime"
+// Hits the IN-BAND timeout, which is how the real modules now bound runtime.
+//
+// This used to ask SGE for h_rt=3m and sleep 600, expecting a scheduler kill.
+// Measured on HPC3 2026-08-31, that task ran the full 10m and exited 0: SGE does
+// NOT enforce h_rt here (it is requestable, and short.q caps at 04:05:00, yet
+// the limit never fired). So the methods enforce their own limit with coreutils
+// `timeout`, and this reproduces that mechanism. Expect exit 124.
+process DIE_TIMEOUT {
+  tag "timeout"
   memory '2.GB'
-  time   '3m'
+  time   '10m'
   output: path "never_written.txt"
-  script: "echo 'sleeping past my h_rt...'; sleep 600; touch never_written.txt"
+  script: "echo 'about to exceed my in-band timeout...'; timeout -k 10s 5s sleep 600"
 }
 
 // What a kernel OOM kill looks like to the wrapper (SIGKILL -> 137).
@@ -66,7 +72,7 @@ process ROUTING_MEM {
 
 workflow {
   SURVIVOR(Channel.of('survivor1', 'survivor2'))
-  DIE_WALLTIME()
+  DIE_TIMEOUT()
   DIE_OOM_SIM()
   DIE_CRASH()
   ROUTING_MEM()

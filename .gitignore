@@ -40,6 +40,8 @@ benchmarking/association/nf-logs
 # vscode
 .vscode/*
 **/.vscode
+**/.lintr 
+
 
 # singularity images
 *.sif
@@ -68,3 +70,6 @@ benchmarking/association/nf-logs
 .DS_Store
 **/.DS_Store
 
+
+# guide-assignment SGE smoke-test run artifacts (source lives in tests/, output does not)
+benchmarking/guide-assignment/guide-assignment-pipeline/tests/smoke-out/

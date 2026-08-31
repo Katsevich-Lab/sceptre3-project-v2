@@ -125,6 +125,13 @@ if [ -s "$TR" ]; then
         'NR>1 && $cs=="FAILED" {printf "           %-12s exit=%s\n", $ct, $ce}' "$TR"
     echo "         (a task SGE kills may show a sentinel exit, not 137/143, if it"
     echo "          died before the wrapper could write its .exitcode file)"
+    # 124 == coreutils `timeout` fired. This is the mechanism the real modules
+    # rely on to bound runtime, since SGE does not enforce h_rt on this cluster.
+    if awk -F'\t' -v ce="$C_EXIT" 'NR>1 && $ce==124 {found=1} END{exit !found}' "$TR"; then
+      note "PASS" "in-band timeout fired and surfaced as exit 124"
+    else
+      note "FAIL" "no exit 124 -- the in-band timeout did NOT fire; runtime is unbounded"; fail=1
+    fi
   else
     note "FAIL" "trace is missing status/exit -- you cannot tell what failed"; fail=1
   fi
