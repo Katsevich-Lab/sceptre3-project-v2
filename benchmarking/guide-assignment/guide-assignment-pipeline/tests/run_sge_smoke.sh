@@ -28,10 +28,48 @@
 
 set -uo pipefail   # NOT -e: we want to inspect failures, not abort on them
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
+# --------------------------------------------------------------------------
+# Locate ourselves.
+#
+# DO NOT use "$0" here. SGE COPIES the job script into its spool directory
+# before executing it, so $0 is /var/sge/.../job_scripts/<jobid>, NOT this file
+# in the repo. Deriving paths from it puts every mkdir into a root-owned spool
+# dir and the whole run dies with "Permission denied". "#$ -cwd" runs the job in
+# the SUBMISSION directory, so resolve from there instead.
+# --------------------------------------------------------------------------
+SUBMIT_DIR="${SGE_O_WORKDIR:-$PWD}"
+
+if   [ -f "${SUBMIT_DIR}/sge_smoke.nf" ];       then HERE="${SUBMIT_DIR}"
+elif [ -f "${SUBMIT_DIR}/tests/sge_smoke.nf" ]; then HERE="${SUBMIT_DIR}/tests"
+else
+  echo "SETUP ERROR: cannot find sge_smoke.nf from submission dir '${SUBMIT_DIR}'." >&2
+  echo "Submit from the pipeline dir or from tests/:" >&2
+  echo "    cd <repo>/benchmarking/guide-assignment/guide-assignment-pipeline" >&2
+  echo "    qsub tests/run_sge_smoke.sh" >&2
+  exit 2
+fi
 PIPE_DIR="$(dirname "$HERE")"
 TESTOUT="${HERE}/smoke-out"
 
+# Fail LOUDLY and distinctly on setup problems. A setup failure that falls
+# through to the verdict block prints "all checks FAILED", which reads as
+# "graceful failure is broken" when the run never even started.
+[ -f "${PIPE_DIR}/nextflow.config" ] || {
+  echo "SETUP ERROR: no nextflow.config at ${PIPE_DIR}" >&2; exit 2; }
+command -v nextflow >/dev/null 2>&1 || {
+  echo "SETUP ERROR: nextflow not on PATH (module load / conda activate first)" >&2; exit 2; }
+mkdir -p "$TESTOUT" 2>/dev/null || {
+  echo "SETUP ERROR: cannot write to ${TESTOUT}" >&2; exit 2; }
+
+echo "submission dir : ${SUBMIT_DIR}"
+echo "test dir       : ${HERE}"
+echo "pipeline dir   : ${PIPE_DIR}"
+echo
+
+# Guard the rm -rf. HERE is already validated (it must contain sge_smoke.nf),
+# but never let an unexpected expansion reach a recursive delete on a shared box.
+[ -n "${HERE}" ] && [ "${TESTOUT}" = "${HERE}/smoke-out" ] || {
+  echo "SETUP ERROR: refusing to rm -rf unexpected path '${TESTOUT}'" >&2; exit 2; }
 rm -rf "$TESTOUT" && mkdir -p "$TESTOUT" "${HERE}/nf-logs"
 
 export NXF_OPTS="-Xms512m -Xmx2g"

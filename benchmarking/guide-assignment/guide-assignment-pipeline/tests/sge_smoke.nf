@@ -57,8 +57,8 @@ process DIE_CRASH {
 // may sit in the queue longer than the others because of the memory request).
 process ROUTING_MEM {
   tag "routing"
-  memory '20.GB'
-  time   '6h'
+  memory '16.GB'   // just over the 14GB mem.q routing threshold -- no more
+  time   '6h'      // than needed, since this reserves a slice of a shared node
   publishDir "${params.testout}", mode: 'copy'
   output: path "out_routing.txt"
   script: "echo routed > out_routing.txt"
