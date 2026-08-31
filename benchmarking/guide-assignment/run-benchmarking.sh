@@ -12,13 +12,6 @@
 
 set -euo pipefail
 
-# RUN_ID="run_all_sims_medium"
-# RUN_ID="run_all"
-RUN_ID="test_pertpy_prealloc"
-# RUN_ID="run_pertpy_gasp"
-# RUN_ID="run_all_which_actually_finishes"
-# RUN_ID="run_all_medium_pt2"
-
 OUT_BASE="$(realpath -m "${LOCAL_BENCHMARKING_DIR}guide_assignment/outputs")"
 OUT_DIR="${OUT_BASE}/${RUN_ID}"
 mkdir -p "$OUT_DIR" nf-logs
