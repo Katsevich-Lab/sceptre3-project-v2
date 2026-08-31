@@ -142,17 +142,30 @@ fi
 # --- 4. did `time` become -l h_rt, and where did each task get routed? ----
 echo
 echo "--- SGE directives actually emitted (proves time -> h_rt + queue routing) ---"
-find "${HERE}/work" -name .command.run 2>/dev/null | while read -r f; do
-  nm=$(grep -m1 '^#\$ -N' "$f" | sed 's/^#\$ -N //')
-  hrt=$(grep -m1 -o 'h_rt=[^ ,]*' "$f")
-  q=$(grep -m1 -o '\-q [^ ]*' "$f")
-  printf '  %-42s %-18s %s\n' "${nm:-?}" "${hrt:-NO_H_RT!}" "${q:-<no -q: routed by resource match>}"
-done
-
-if ! find "${HERE}/work" -name .command.run 2>/dev/null | xargs grep -l 'h_rt=' >/dev/null 2>&1; then
-  note "FAIL" "no task emitted -l h_rt -- the time directive is not reaching SGE"; fail=1
+# Read each task's work dir FROM THE TRACE rather than globbing work/. work/ is
+# not cleaned between runs, so a glob would mix in .command.run files from
+# PREVIOUS runs and report directives for tasks that are not in this run.
+C_WORKDIR=$(col workdir); C_PROC=$(col process); C_TAG=$(col tag)
+saw_hrt=0
+if [ -n "$C_WORKDIR" ]; then
+  while IFS=$'\t' read -r wd proc tg; do
+    [ -n "$wd" ] && [ "$wd" != "-" ] || continue
+    f="${wd}/.command.run"
+    [ -f "$f" ] || { printf '  %-34s %s\n' "${proc}(${tg})" "<no .command.run>"; continue; }
+    hrt=$(grep -m1 -o 'h_rt=[^ ,]*' "$f")
+    q=$(grep -m1 -o '\-q [^ ]*' "$f")
+    [ -n "$hrt" ] && saw_hrt=1
+    printf '  %-34s %-18s %s\n' "${proc}(${tg})" "${hrt:-NO_H_RT!}" "${q:-<no -q: resource match>}"
+  done < <(awk -F'\t' -v cw="$C_WORKDIR" -v cp="$C_PROC" -v ct="$C_TAG" \
+             'NR>1 {print $cw"\t"$cp"\t"$ct}' "$TR")
 else
+  echo "  (trace has no workdir column -- cannot scope to this run)"
+fi
+
+if [ "$saw_hrt" -eq 1 ]; then
   note "PASS" "tasks emitted -l h_rt"
+else
+  note "FAIL" "no task emitted -l h_rt -- the time directive is not reaching SGE"; fail=1
 fi
 
 # --- 5. what SGE itself says about the killed jobs ------------------------
