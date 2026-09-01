@@ -12,11 +12,15 @@ dependencies:
       # _guide_rna.py and _guide_rna_mixture.py are byte-identical in 1.0.5 and
       # 1.0.6, and in 1.1.0 numpyro/MCMC/NUTS drop to zero occurrences.
       - pertpy==1.0.6
-      # Upper bounds on the fast-moving numeric stack. These are NOT a lock --
-      # they only stop the resolver drifting into API-incompatible territory
-      # (unpinned, jax resolves to 0.11.x today vs the 0.5.2 this env was built
-      # against). Replace this block with a frozen lock after the first
-      # successful build:  pip freeze > modules/pertpy/requirements.lock
-      - "jax<0.10"
-      - "numpyro<0.21"
-      - "numpy<2.5"
+      # Upper bounds on the fast-moving numeric stack. These are NOT a lock:
+      # replace them with a frozen one after the first successful build
+      #   pip freeze > modules/pertpy/requirements.lock
+      # pertpy 1.0.6 constrains only arviz>=1.0.0 and scikit-learn>=1.4 -- every
+      # other dependency floats to latest. Unbounded, that pulls an Aug-2026
+      # anndata/scanpy against a Mar-2026 pertpy. These caps keep the stack
+      # CONTEMPORANEOUS with pertpy 1.0.6 rather than 5 months ahead of it.
+      - "jax<0.10"          # 0.9.x (Jan 2026); unbounded resolves to 0.11.x
+      - "numpyro<0.21"      # 0.20.0 (Jan 2026) -- this is the MCMC engine
+      - "numpy<2.5"         # 2.4.x (Jan 2026)
+      - "anndata<0.13"      # 0.12.x; 0.13 landed Aug 2026, AFTER pertpy 1.0.6
+      - "scanpy<1.13"       # 1.12.x (Jan 2026)

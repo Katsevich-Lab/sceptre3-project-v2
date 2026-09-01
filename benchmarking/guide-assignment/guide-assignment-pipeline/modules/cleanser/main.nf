@@ -38,10 +38,14 @@ ls -l "${dataset_dir}" || true
 export PYTHONNOUSERSITE=1
 [ -n "\${PYTHONPATH:-}" ] && unset PYTHONPATH
 
-# Cache directories
+# Cache directory. NOTE: there is deliberately no CMDSTANPY_CACHE_DIR here --
+# cmdstanpy does not read that variable (it appears nowhere in the package), so
+# setting it only created an empty unused dir per task and implied, wrongly, that
+# compiled Stan models were task-local. They are not: CmdStan lives in the conda
+# env (CMDSTAN is set by its activate.d script) and a compiled model is written
+# next to its .stan file in site-packages/cleanser/, so it PERSISTS in the env.
 export XDG_CACHE_HOME="\$PWD/.cache"
-export CMDSTANPY_CACHE_DIR="\$PWD/.cmdstanpy_cache"
-mkdir -p "\$XDG_CACHE_HOME" "\$CMDSTANPY_CACHE_DIR"
+mkdir -p "\$XDG_CACHE_HOME"
 
 # TIMEOUT ENFORCED IN-BAND, not by the scheduler. Measured on HPC3 2026-08-31:
 # a task requesting `-l h_rt=00:03:00` ran for 10m and exited 0, so SGE does NOT

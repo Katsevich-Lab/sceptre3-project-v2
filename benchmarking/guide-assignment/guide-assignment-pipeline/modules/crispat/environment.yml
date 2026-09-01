@@ -5,7 +5,11 @@ channels:
   - bioconda
 dependencies:
   - python=3.12
-  - pytorch
+  # PINNED: this benchmark measures runtime, and the torch version is the single
+  # biggest performance lever. 2.12 is what the last-built env resolved to
+  # (cpu_mkl_py312 build), so this fixes a known-working combination rather than
+  # letting each rebuild pick a different one.
+  - pytorch=2.12
   - cpuonly       # This is the magic "make it easy" button for non-GPU users
   - pandas
   - scanpy

@@ -2,8 +2,15 @@ name: cleanser
 channels:
   - conda-forge
 dependencies:
-  - python=3.12
-  - cmdstan
+  # 3.13, not 3.12: CLEANSER declares requires-python >=3.11 with no upper bound,
+  # and python 3.13.5 + cmdstan 2.36.0 + cmdstanpy 1.2.5 is the combination that
+  # actually built and ran. The yml previously said 3.12 but was never built with
+  # it, so 3.13 is the better-evidenced choice.
+  - python=3.13
+  # PINNED: cmdstan is the Stan toolchain that COMPILES the mixture models, so it
+  # affects both the generated binary and the runtime this benchmark measures.
+  # 2.36.0 is what the last-built env used.
+  - cmdstan=2.36
   # Pinned: CLEANSER's Stan models are compiled by cmdstanpy, and 1.2 is the
   # series this env was built and validated against.
   - cmdstanpy=1.2
