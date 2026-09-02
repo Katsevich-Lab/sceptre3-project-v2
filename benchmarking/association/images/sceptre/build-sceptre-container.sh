@@ -41,7 +41,7 @@ echo "Build complete!"
 echo "Container saved to: $SIF_FILE"
 echo ""
 echo "Testing container..."
-$CONTAINER_CMD run "$SIF_FILE" R --quiet -e 'library(sceptre); library(robustbase); library(MASS); cat("All packages loaded successfully!\n")'
+$CONTAINER_CMD run "$SIF_FILE" R --quiet -e 'suppressPackageStartupMessages(library(sceptre)); v <- as.character(packageVersion("sceptre")); if (v != "0.99.0") stop("expected sceptre 0.99.0, got ", v); cat(R.version.string, "| sceptre", v, "OK\n")'
 
 echo ""
 echo "Done! You can now use this container in your Nextflow pipeline."

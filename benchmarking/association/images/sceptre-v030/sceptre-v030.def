@@ -1,10 +1,11 @@
 Bootstrap: docker
-From: rocker/r-ver:4.4.3
+# Pins R 4.6.0 and the CRAN snapshot of 2026-06-23, which rocker sets in Rprofile.site.
+From: rocker/r-ver:4.6.0
 
 %labels
     Author Louis
-    Description Historical SCEPTRE v0.3.0 (Katsevich-Lab/sceptre @ tag v0.3.0), installed as the sole `sceptre` package. Used to benchmark the v0.3.0-era method (single-call run_sceptre_lowmoi / run_sceptre_highmoi API).
-    Version 1.0
+    Description Historical SCEPTRE v0.3.0 (Katsevich-Lab/sceptre @ tag v0.3.0), installed as the sole `sceptre` package. Used to benchmark the v0.3.0-era method (single-call run_sceptre_lowmoi / run_sceptre_highmoi API). R 4.6.0, CRAN 2026-06-23.
+    Version 2.0
 
 %post
     set -eux
@@ -32,10 +33,9 @@ From: rocker/r-ver:4.4.3
         pkg-config
     rm -rf /var/lib/apt/lists/*
 
-    # remotes, then sceptre pinned to the v0.3.0 tag (installs as package `sceptre`
-    # version 0.3.0). This version has C++ sources (LinkingTo: Rcpp, BH), so the
-    # build toolchain above is required.
-    R --slave -e 'install.packages("remotes", repos="https://cran.r-project.org")'
+    # sceptre pinned to the v0.3.0 tag, installing as package `sceptre` version 0.3.0.
+    # It has C++ sources (LinkingTo: Rcpp, BH), which the toolchain above compiles.
+    R --slave -e 'install.packages("remotes")'
     R --slave -e 'remotes::install_github("Katsevich-Lab/sceptre", ref="v0.3.0", dependencies=TRUE, upgrade="never")'
 
     mkdir -p /opt/sceptre-v030
@@ -51,6 +51,8 @@ From: rocker/r-ver:4.4.3
 %test
     which ps
     ps -o pid,comm | head -n 2
-    # Confirm this is the v0.3.0 build: version 0.3.0 and the v0.3.0-era single-call
-    # entry points must be present (modern sceptre does not export these).
+    # Fail the build unless this is the v0.3.0 build: version 0.3.0, exporting the
+    # v0.3.0-era single-call entry points.
     R --quiet -e 'suppressPackageStartupMessages(library(sceptre)); stopifnot(as.character(packageVersion("sceptre")) == "0.3.0"); stopifnot(exists("run_sceptre_lowmoi", mode="function"), exists("run_sceptre_highmoi", mode="function")); cat("sceptre", as.character(packageVersion("sceptre")), "OK\n")'
+    # Record R and every installed package version in the build log.
+    R --quiet -e 'cat(R.version.string, "\n"); ip <- as.data.frame(installed.packages()[, c("Package","Version")], stringsAsFactors=FALSE); print(ip[order(ip$Package), ], row.names=FALSE)'

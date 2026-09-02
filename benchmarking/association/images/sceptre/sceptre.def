@@ -1,10 +1,11 @@
 Bootstrap: docker
-From: rocker/r-ver:4.4.3
+# Pins R 4.6.0 and the CRAN snapshot of 2026-06-23, which rocker sets in Rprofile.site.
+From: rocker/r-ver:4.6.0
 
 %labels
     Author Louis Deutsch
-    Description Sceptre guide assignment container (with procps + robustbase + MASS) from latest main
-    Version 1.2
+    Description Modern sceptre for association benchmarking. sceptre commit 21f9ea09 (v0.99.0), R 4.6.0, CRAN 2026-06-23.
+    Version 2.0
 
 %post
     set -eux
@@ -32,15 +33,9 @@ From: rocker/r-ver:4.4.3
         pkg-config
     rm -rf /var/lib/apt/lists/*
 
-    # R packages: remotes, then sceptre from GitHub (with dependencies)
-    R --slave -e 'install.packages("remotes", repos="https://cran.r-project.org")'
-    R --slave -e 'remotes::install_github("Katsevich-Lab/sceptre", dependencies=TRUE, upgrade="never")'
-
-    # Extra CRAN packages used by bin/script/{variant}.R fitters
-    # (MASS is also pulled in transitively via sceptre's deps -- listing it
-    # here keeps the variants' requireNamespace() checks robust if that ever
-    # changes upstream).
-    R --slave -e 'install.packages(c("robustbase", "MASS"), repos="https://cran.r-project.org")'
+    # sceptre, pinned to commit 21f9ea09 (v0.99.0, main as of 2026-08-31).
+    R --slave -e 'install.packages("remotes")'
+    R --slave -e 'remotes::install_github("Katsevich-Lab/sceptre@21f9ea098b69c444a884a49bc254de711968e3b5", dependencies=TRUE, upgrade="never")'
 
     # Working directory (optional)
     mkdir -p /opt/sceptre
@@ -58,8 +53,9 @@ From: rocker/r-ver:4.4.3
 %test
     which ps
     ps -o pid,comm | head -n 2
-    R --quiet -e 'suppressPackageStartupMessages(library(sceptre)); cat("sceptre ", as.character(packageVersion("sceptre")), " OK\n", sep="")'
-    R --quiet -e 'suppressPackageStartupMessages(library(robustbase)); cat("robustbase ", as.character(packageVersion("robustbase")), " OK\n", sep="")'
-    R --quiet -e 'suppressPackageStartupMessages(library(MASS)); cat("MASS ", as.character(packageVersion("MASS")), " OK\n", sep="")'
+    # Fail the build if sceptre is not the pinned version.
+    R --quiet -e 'suppressPackageStartupMessages(library(sceptre)); v <- as.character(packageVersion("sceptre")); if (v != "0.99.0") stop("expected sceptre 0.99.0 (commit 21f9ea09), got ", v); cat("sceptre ", v, " OK\n", sep="")'
+    # Record R and every installed package version in the build log.
+    R --quiet -e 'cat(R.version.string, "\n"); ip <- as.data.frame(installed.packages()[, c("Package","Version")], stringsAsFactors=FALSE); print(ip[order(ip$Package), ], row.names=FALSE)'
 
 

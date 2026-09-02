@@ -1,10 +1,11 @@
 Bootstrap: docker
-From: rocker/r-ver:4.4.3
+# Pins R 4.6.0 and the CRAN snapshot of 2026-06-23, which rocker sets in Rprofile.site.
+From: rocker/r-ver:4.6.0
 
 %labels
-    Author Louis 
-    Description Original 2021 manuscript-era sceptre (Katsevich-Lab/sceptre-manuscript, sceptre_package/sceptre, v1.0.0), installed as the sole `sceptre` package for benchmarking the published distilled-CRT + skew-t method.
-    Version 1.0
+    Author Louis
+    Description Original 2021 manuscript-era sceptre (Katsevich-Lab/sceptre-manuscript, sceptre_package/sceptre, v1.0.0), installed as the sole `sceptre` package for benchmarking the published distilled-CRT + skew-t method. Pinned to commit 98fc64eb, R 4.6.0, CRAN 2026-06-23.
+    Version 2.0
 
 %post
     set -eux
@@ -34,12 +35,11 @@ From: rocker/r-ver:4.4.3
         pkg-config
     rm -rf /var/lib/apt/lists/*
 
-    # remotes, then the MANUSCRIPT sceptre from GitHub (installs as package `sceptre`
-    # v1.0.0). The package lives in a subdirectory of the (public) repo.
-    # dependencies=TRUE pulls its Depends (VGAM, sn, MASS, fst, bigstatsr,
-    # tidyverse, magrittr).
-    R --slave -e 'install.packages("remotes", repos="https://cran.r-project.org")'
-    R --slave -e 'remotes::install_github("Katsevich-Lab/sceptre-manuscript", subdir="sceptre_package/sceptre", ref="master", dependencies=TRUE, upgrade="never")'
+    # The manuscript sceptre, pinned to commit 98fc64eb. It lives in a subdirectory of
+    # the repo and installs as package `sceptre` v1.0.0; dependencies=TRUE pulls its
+    # Depends (VGAM, sn, MASS, fst, bigstatsr, tidyverse, magrittr).
+    R --slave -e 'install.packages("remotes")'
+    R --slave -e 'remotes::install_github("Katsevich-Lab/sceptre-manuscript@98fc64ebd7f9eb9d6283e472752d557ec458fe32", subdir="sceptre_package/sceptre", dependencies=TRUE, upgrade="never")'
 
     mkdir -p /opt/sceptre-manuscript
 
@@ -56,6 +56,8 @@ From: rocker/r-ver:4.4.3
 %test
     which ps
     ps -o pid,comm | head -n 2
-    # Confirm this is the MANUSCRIPT build: version 1.0.0 and the manuscript-only
-    # workhorse function run_sceptre_using_precomp must be present.
+    # Fail the build unless this is the manuscript build: v1.0.0, exporting the
+    # manuscript-only workhorse run_sceptre_using_precomp.
     R --quiet -e 'suppressPackageStartupMessages(library(sceptre)); stopifnot(as.character(packageVersion("sceptre")) == "1.0.0"); stopifnot(exists("run_sceptre_using_precomp", mode="function")); cat("manuscript sceptre", as.character(packageVersion("sceptre")), "OK\n")'
+    # Record R and every installed package version in the build log.
+    R --quiet -e 'cat(R.version.string, "\n"); ip <- as.data.frame(installed.packages()[, c("Package","Version")], stringsAsFactors=FALSE); print(ip[order(ip$Package), ], row.names=FALSE)'
