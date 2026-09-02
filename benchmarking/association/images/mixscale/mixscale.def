@@ -1,9 +1,11 @@
 Bootstrap: docker
-From: rocker/r-ver:4.4.3
+# Pins R 4.6.0 and the CRAN snapshot of 2026-06-23, which rocker sets in Rprofile.site.
+From: rocker/r-ver:4.6.0
 
 %labels
-    Description Mixscale association testing container
-    Version 1.0
+    Author Louis
+    Description Mixscale association testing container. Mixscale commit 3d3a2cd1 (v0.3.0), presto v1.1.0, Seurat 5.3.1 with SeuratObject 5.2.0, R 4.6.0, CRAN 2026-06-23.
+    Version 2.0
 
 %post
     set -eux
@@ -30,32 +32,44 @@ From: rocker/r-ver:4.4.3
         libpng-dev \
         libtiff5-dev \
         libhdf5-dev \
+        libglpk-dev \
         pkg-config
     rm -rf /var/lib/apt/lists/*
 
     # Install R package managers
-    R --slave -e 'install.packages("remotes", repos="https://cloud.r-project.org")'
-    R --slave -e 'install.packages("BiocManager", repos="https://cloud.r-project.org")'
+    R --slave -e 'install.packages("remotes")'
+    R --slave -e 'install.packages("BiocManager")'
 
     # Install core dependencies from CRAN
-    R --slave -e 'install.packages(c("Matrix", "data.table", "PMA", "protoclust"), repos="https://cloud.r-project.org")'
+    R --slave -e 'install.packages(c("Matrix", "data.table", "PMA", "protoclust"))'
 
-    # Install Seurat 5.3.1 first (will pull in SeuratObject 5.3.0 as dependency)
-    R --slave -e 'remotes::install_version("Seurat", version = "5.3.1", repos = "https://cloud.r-project.org")'
+    # Seurat 5.3.1, needed before Mixscale is built against it.
+    R --slave -e 'remotes::install_version("Seurat", version = "5.3.1", upgrade = "never")'
 
-    # Downgrade SeuratObject to 5.2.0 AFTER Seurat installation (overwrites 5.3.0)
-    # This is the critical fix - Mixscale uses the old slot argument which is deprecated in 5.2.0 but defunct in 5.3.0
-    # We know this combo works (Seurat 5.3.1 + SeuratObject 5.2.0) from RStudio testing
-    R --slave -e 'remotes::install_version("SeuratObject", version = "5.2.0", repos = "https://cloud.r-project.org")'
+    # glmGamPoi from Bioconductor. R 4.6.0 maps to Bioc 3.23, which supplies 1.24.0;
+    # Bioconductor has no dated snapshots, so %test asserts the exact version.
+    # update = FALSE keeps this from moving packages pinned above.
+    R --slave -e 'BiocManager::install("glmGamPoi", ask = FALSE, update = FALSE)'
 
-    # Install Bioconductor dependencies
-    R --slave -e 'BiocManager::install("glmGamPoi")'
+    # presto (faster Wilcoxon tests in Mixscale), pinned to tag v1.1.0.
+    R --slave -e 'remotes::install_github("immunogenomics/presto@aea3befbdc72bf9db60f5a26db9d73916d8e72ac", upgrade = "never")'
 
-    # Install presto from GitHub (for faster Wilcoxon tests in Mixscale)
-    R --slave -e 'remotes::install_github("immunogenomics/presto")'
+    # Mixscale, pinned to commit 3d3a2cd1 (v0.3.0, 2026-03-12). The repo has no tags,
+    # and its version string has not changed, so the commit is the only identifier.
+    R --slave -e 'remotes::install_github("longmanz/Mixscale@3d3a2cd12e62382df01c056536d967534b2de3a9", upgrade = "never")'
 
-    # Install Mixscale from GitHub
-    R --slave -e 'remotes::install_github("longmanz/Mixscale")'
+    # Set SeuratObject to 5.2.0 last, so nothing above can move it. Mixscale uses the
+    # old slot argument, deprecated in 5.2.0 but defunct from 5.3.0 on, so the pair
+    # Seurat 5.3.1 + SeuratObject 5.2.0 is load-bearing and %test asserts it.
+    R --slave -e 'remotes::install_version("SeuratObject", version = "5.2.0", upgrade = "never")'
+
+    # install_github and install_version only warn when an installation fails, so R
+    # exits 0 and set -e does not catch it. Check the packages are actually present.
+    R --slave -e 'req <- c("Mixscale","Seurat","SeuratObject","presto","glmGamPoi"); miss <- req[!vapply(req, requireNamespace, logical(1), quietly = TRUE)]; if (length(miss)) stop("missing packages: ", paste(miss, collapse = ", "))'
+
+    # Catch a version drift here, where the failing step is still in view, rather than
+    # only at %test.
+    R --slave -e 'sv <- as.character(packageVersion("Seurat")); so <- as.character(packageVersion("SeuratObject")); if (sv != "5.3.1" || so != "5.2.0") stop("expected Seurat 5.3.1 + SeuratObject 5.2.0, got ", sv, " + ", so)'
 
     # Working directory
     mkdir -p /opt/mixscale
@@ -71,8 +85,18 @@ From: rocker/r-ver:4.4.3
     export R_LIBS_USER=
 
 %test
+    # Any failing check below aborts the build (apptainer otherwise takes only the
+    # last command's exit status).
+    set -e
     which ps
     ps -o pid,comm | head -n 2
-    R --quiet -e 'suppressPackageStartupMessages(library(Mixscale)); cat("Mixscale OK\n")'
-    R --quiet -e 'suppressPackageStartupMessages(library(Seurat)); cat("Seurat ", as.character(packageVersion("Seurat")), " OK\n", sep="")'
-    R --quiet -e 'suppressPackageStartupMessages(library(SeuratObject)); cat("SeuratObject ", as.character(packageVersion("SeuratObject")), " OK\n", sep="")'
+    R --quiet -e 'suppressPackageStartupMessages(library(Mixscale)); cat("Mixscale ", as.character(packageVersion("Mixscale")), " OK\n", sep="")'
+    # Fail the build unless the load-bearing Seurat / SeuratObject pair survived the
+    # downgrade above.
+    R --quiet -e 'suppressPackageStartupMessages(library(Seurat)); sv <- as.character(packageVersion("Seurat")); so <- as.character(packageVersion("SeuratObject")); if (sv != "5.3.1" || so != "5.2.0") stop("expected Seurat 5.3.1 + SeuratObject 5.2.0, got ", sv, " + ", so); cat("Seurat ", sv, " + SeuratObject ", so, " OK\n", sep="")'
+    R --quiet -e 'suppressPackageStartupMessages(library(presto)); cat("presto ", as.character(packageVersion("presto")), " OK\n", sep="")'
+    # Bioconductor has no dated snapshots, so assert the glmGamPoi version that Bioc
+    # 3.23 supplies; a patch release within 3.23 will fail here rather than pass quietly.
+    R --quiet -e 'suppressPackageStartupMessages(library(glmGamPoi)); v <- as.character(packageVersion("glmGamPoi")); if (v != "1.24.0") stop("expected glmGamPoi 1.24.0 from Bioc 3.23, got ", v); cat("glmGamPoi ", v, " OK\n", sep="")'
+    # Record R and every installed package version in the build log.
+    R --quiet -e 'cat(R.version.string, "\n"); ip <- as.data.frame(installed.packages()[, c("Package","Version")], stringsAsFactors=FALSE); print(ip[order(ip$Package), ], row.names=FALSE)'

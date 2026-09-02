@@ -49,6 +49,9 @@ From: rocker/r-ver:4.6.0
     export R_LIBS_USER=
 
 %test
+    # Any failing check below aborts the build (apptainer otherwise takes only the
+    # last command's exit status).
+    set -e
     which ps
     ps -o pid,comm | head -n 2
     # Fail the build unless this is the v0.3.0 build: version 0.3.0, exporting the
