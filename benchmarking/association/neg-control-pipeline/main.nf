@@ -4,6 +4,8 @@ nextflow.enable.dsl = 2
 
 // Import method modules
 include { SCEPTRE_NEGCTRL } from './modules/sceptre'
+include { SCEPTRE_MANUSCRIPT_NEGCTRL } from './modules/sceptre_manuscript'
+include { SCEPTRE_V030_NEGCTRL } from './modules/sceptre_v030'
 include { MIXSCALE_NEGCTRL } from './modules/mixscale'
 include { FRPERTURB_NEGCTRL } from './modules/frperturb'
 
@@ -30,7 +32,8 @@ workflow {
         .map { resource_row ->
             def dataset_id = resource_row.dataset
             def method = resource_row.method
-            def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${method}")
+            def data_method = (method in ['sceptre_manuscript', 'sceptre_v030']) ? 'sceptre' : method
+            def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${data_method}")
             def resources = [
                 cpus: resource_row.cpus,
                 memory: resource_row.memory
@@ -42,12 +45,20 @@ workflow {
     // Route to appropriate method based on method name
     branched_ch = dataset_method_ch.branch {
         sceptre: it[2] == 'sceptre'
+        sceptre_manuscript: it[2] == 'sceptre_manuscript'
+        sceptre_v030: it[2] == 'sceptre_v030'
         mixscale: it[2] == 'mixscale'
         frperturb: it[2] == 'frperturb'
     }
 
     // Run sceptre negative control analysis
     sceptre_results = SCEPTRE_NEGCTRL(branched_ch.sceptre, outdir)
+
+    // Run manuscript (2021) sceptre negative control analysis (high MOI)
+    sceptre_manuscript_results = SCEPTRE_MANUSCRIPT_NEGCTRL(branched_ch.sceptre_manuscript, outdir)
+
+    // Run historical sceptre v0.3.0 negative control analysis (low MOI)
+    sceptre_v030_results = SCEPTRE_V030_NEGCTRL(branched_ch.sceptre_v030, outdir)
 
     // Run mixscale negative control analysis
     mixscale_results = MIXSCALE_NEGCTRL(branched_ch.mixscale, outdir)
