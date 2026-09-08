@@ -10,6 +10,8 @@ work/
 
 # ignore the many benchmarking configs by default
 benchmarking/guide-assignment/guide-assignment-pipeline/configs/*_config.csv
+# ...except ones the cluster needs, which otherwise can't arrive via git
+!benchmarking/guide-assignment/guide-assignment-pipeline/configs/python_method_cache_warmup_config.csv
 benchmarking/association/neg-control-pipeline/configs/
 benchmarking/association/pos-control-pipeline/configs/
 benchmarking/association/computational-pipeline/configs/
