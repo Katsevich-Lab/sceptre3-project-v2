@@ -24,3 +24,11 @@ dependencies:
       - "numpy<2.5"         # 2.4.x (Jan 2026)
       - "anndata<0.13"      # 0.12.x; 0.13 landed Aug 2026, AFTER pertpy 1.0.6
       - "scanpy<1.13"       # 1.12.x (Jan 2026)
+      # MEASURED on the cluster 2026-09-01, not guessed. Left unbounded, pip
+      # installed mudata 0.4.1, whose 0.4.0 release REMOVED set_options --
+      # pertpy/__init__.py:22 calls mudata.set_options(pull_on_update=False), so
+      # `import pertpy` raised AttributeError and BOTH pertpy tasks died before
+      # touching any data. pertpy 1.0.6 declares a bare `mudata` with no upper
+      # bound, so nothing stopped this. 0.3.10 is the newest release that still
+      # has set_options.
+      - "mudata<0.4"        # 0.3.10; 0.4.0 dropped set_options
