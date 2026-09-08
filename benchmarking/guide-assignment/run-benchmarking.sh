@@ -16,6 +16,8 @@
 
 set -euo pipefail
 
+RUN_ID="python_method_cache_warmup"
+
 OUT_BASE="$(realpath -m "${LOCAL_BENCHMARKING_DIR}guide_assignment/outputs")"
 OUT_DIR="${OUT_BASE}/${RUN_ID}"
 mkdir -p "$OUT_DIR" nf-logs
