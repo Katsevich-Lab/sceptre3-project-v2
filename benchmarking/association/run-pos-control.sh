@@ -27,6 +27,7 @@ export APPTAINER_TMPDIR="${TMPDIR:-/tmp}"
 export NXF_SINGULARITY_CMD=apptainer
 
 nextflow \
+  -log "${OUT_DIR}/nextflow.log" \
   -C ~/.nextflow/config \
   -C pos-control-pipeline/nextflow.config \
   run pos-control-pipeline/main.nf \

@@ -29,6 +29,7 @@ export APPTAINER_TMPDIR="${TMPDIR:-/tmp}"
 export NXF_SINGULARITY_CMD=apptainer
 
 nextflow \
+  -log "${OUT_DIR}/nextflow.log" \
   -C ~/.nextflow/config \
   -C neg-control-pipeline/nextflow.config \
   run neg-control-pipeline/main.nf \
