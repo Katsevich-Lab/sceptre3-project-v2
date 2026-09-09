@@ -1,0 +1,7 @@
+method,dataset,cpus,memory,time
+crispat,gasperini,1,100.GB,7d
+pertpy,gasperini,1,200.GB,7d
+cleanser,gasperini,4,200.GB,7d
+crispat,replogle-rd7,1,100.GB,7d
+pertpy,replogle-rd7,1,200.GB,7d
+cleanser,replogle-rd7,4,200.GB,7d
