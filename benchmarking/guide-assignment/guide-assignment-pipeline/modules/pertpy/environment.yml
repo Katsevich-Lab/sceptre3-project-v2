@@ -32,3 +32,8 @@ dependencies:
       # bound, so nothing stopped this. 0.3.10 is the newest release that still
       # has set_options.
       - "mudata<0.4"        # 0.3.10; 0.4.0 dropped set_options
+      # 0.15 moved the multipletests re-export in sandbox/stats/multicomp.py into
+      # a function body, so pertpy/tools/_dialogue.py:24's
+      # `from statsmodels.sandbox.stats.multicomp import multipletests` no longer
+      # resolves. 0.14.x still has it at module level.
+      - "statsmodels<0.15"
