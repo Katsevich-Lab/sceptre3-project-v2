@@ -47,6 +47,14 @@ export PYTHONNOUSERSITE=1
 export XDG_CACHE_HOME="\$PWD/.cache"
 mkdir -p "\$XDG_CACHE_HOME"
 
+# Stan scratch goes in the task work dir, NOT the node-local default TMPDIR.
+# cmdstanpy writes one CSV per chain holding 3 length-N arrays per draw, so a
+# guide with N cells costs ~1000*3*N numbers per chain, x4 chains. The largest
+# replogle warm-up guide (N=112,007) is ~27 GB on its own, which overruns
+# /mnt/tmp on short.q and kills all 4 chains with exit 1.
+export TMPDIR="\$PWD/stan_tmp"
+mkdir -p "\$TMPDIR"
+
 # TIMEOUT ENFORCED IN-BAND, not by the scheduler. Measured on HPC3 2026-08-31:
 # a task requesting `-l h_rt=00:03:00` ran for 10m and exited 0, so SGE does NOT
 # enforce h_rt here (h_rt is requestable and short.q caps at 04:05:00, yet the
