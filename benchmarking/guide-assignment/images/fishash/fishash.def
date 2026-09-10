@@ -1,0 +1,92 @@
+Bootstrap: docker
+# Pins R 4.6.0 and the CRAN snapshot of 2026-06-23, which rocker sets in Rprofile.site.
+From: rocker/r-ver:4.6.0
+
+%labels
+    Author Louis
+    Description fishash guide assignment (one-sided Fisher test). fishash commit 9b6eabc1 (v0.99.3, 2026-08-23), R 4.6.0, CRAN 2026-06-23, Bioconductor 3.23.
+    Version 1.0
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    # System deps. procps gives `ps`. `time` gives GNU /usr/bin/time, which
+    # modules/fishash/main.nf wraps the run in for peak-RSS telemetry: unlike the
+    # conda-backed methods, the whole task runs INSIDE this image, so the host's
+    # copy is not reachable and rocker does not ship one.
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        procps \
+        time \
+        build-essential \
+        cmake \
+        curl \
+        git \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libxml2-dev \
+        zlib1g-dev \
+        libfontconfig1-dev \
+        libfreetype6-dev \
+        libfribidi-dev \
+        libharfbuzz-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libtiff5-dev \
+        pkg-config
+    rm -rf /var/lib/apt/lists/*
+
+    # Install R package managers
+    R --slave -e 'install.packages("remotes")'
+    R --slave -e 'install.packages("BiocManager")'
+
+    # fishash Imports four Bioconductor packages. Install them first so the
+    # install_github below resolves them from Bioc instead of failing to find them
+    # on CRAN. R 4.6.0 maps to Bioc 3.23. Bioconductor has no dated snapshots, so
+    # these versions are not pinned; %test records every installed version in the
+    # build log. update = FALSE keeps this from moving anything installed above.
+    R --slave -e 'BiocManager::install(c("SummarizedExperiment", "SingleCellExperiment", "S4Vectors", "sparseMatrixStats"), ask = FALSE, update = FALSE)'
+
+    # fishash, pinned to commit 9b6eabc1 (v0.99.3, 2026-08-23). The package is
+    # slated for Bioconductor 3.24, which is unreleased, so GitHub is the only
+    # source today; the commit is the pin either way. Switching to
+    # BiocManager::install("fishash") after 3.24 ships would loosen the pin.
+    R --slave -e 'remotes::install_github("jackkamm/fishash@9b6eabc11632bc250a5d88f76a6e428b57793386", dependencies = TRUE, upgrade = "never")'
+
+    # install_github and BiocManager::install only warn when an installation fails,
+    # so R exits 0 and set -e does not catch it. Check the packages are present.
+    R --slave -e 'req <- c("fishash","SummarizedExperiment","SingleCellExperiment","S4Vectors","sparseMatrixStats","Matrix"); miss <- req[!vapply(req, requireNamespace, logical(1), quietly = TRUE)]; if (length(miss)) stop("missing packages: ", paste(miss, collapse = ", "))'
+
+    # Catch a version drift here, where the failing step is still in view, rather
+    # than only at %test.
+    R --slave -e 'v <- as.character(packageVersion("fishash")); if (v != "0.99.3") stop("expected fishash 0.99.3 (commit 9b6eabc1), got ", v)'
+
+    # Working directory
+    mkdir -p /opt/fishash
+
+%runscript
+    # Pass-through so `ps`, `bash`, `Rscript`, etc. all work with `apptainer run`
+    exec "$@"
+
+%environment
+    export LC_ALL=C
+    export PATH=/usr/local/bin:$PATH
+    # Avoid reading host user libraries when using --cleanenv
+    export R_LIBS_USER=
+
+%test
+    # Any failing check below aborts the build (apptainer otherwise takes only the
+    # last command's exit status).
+    set -e
+    which ps
+    ps -o pid,comm | head -n 2
+    # The nextflow module wraps the run in `/usr/bin/time -v`. Fail the build if it
+    # is missing, rather than losing the memory telemetry at run time.
+    /usr/bin/time -v true
+    # Fail the build unless this is the pinned fishash, and unless it actually runs:
+    # assign guides on the TAPseq benchmark data the package ships with, which is
+    # the example on ?fishash.
+    R --quiet -e 'suppressPackageStartupMessages({library(fishash); library(SingleCellExperiment)}); v <- as.character(packageVersion("fishash")); if (v != "0.99.3") stop("expected fishash 0.99.3 (commit 9b6eabc1), got ", v); data(tapseq_diffex); cm <- counts(altExp(tapseq_diffex)); res <- fishash(cm); a <- assay(res, "assigned"); stopifnot(identical(dim(a), dim(cm)), sum(a) > 0); cat("fishash ", v, " OK -- ", nrow(cm), "x", ncol(cm), " example assigned ", sum(a), " pairs in ", metadata(res)$num_iter, " iterations\n", sep = "")'
+    # Record R and every installed package version in the build log.
+    R --quiet -e 'cat(R.version.string, "\n"); cat("Bioconductor", as.character(BiocManager::version()), "\n"); ip <- as.data.frame(installed.packages()[, c("Package","Version")], stringsAsFactors=FALSE); print(ip[order(ip$Package), ], row.names=FALSE)'

@@ -8,6 +8,7 @@ include { CLEANSER_ASSIGN } from './modules/cleanser'
 include { PERTPY_ASSIGN } from './modules/pertpy'
 include { SCEPTRE_ASSIGN } from './modules/sceptre'
 include { SCRIPT_ASSIGN } from './modules/script'
+include { FISHASH_ASSIGN } from './modules/fishash'
 // TODO: Add more methods as needed
 
 workflow {
@@ -34,8 +35,17 @@ workflow {
             def dataset_id = resource_row.dataset
             def method = resource_row.method
             // All script_* variants consume the same R input format as sceptre,
-            // so they share the sceptre/ input subdirectory.
-            def input_subdir = method.startsWith('script_') ? 'sceptre' : method
+            // so they share the sceptre/ input subdirectory. fishash() takes a
+            // bare count matrix, which is what cleanser's Matrix Market file
+            // already holds, so it reads that rather than an input of its own.
+            def input_subdir
+            if (method.startsWith('script_')) {
+                input_subdir = 'sceptre'
+            } else if (method == 'fishash') {
+                input_subdir = 'cleanser'
+            } else {
+                input_subdir = method
+            }
             def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${input_subdir}")
             // `time` drives BOTH the SGE -l h_rt AND the queue routing in
             // ~/.nextflow/config (which sends time >= 4h to hpc3.q). Without it a
@@ -60,6 +70,7 @@ workflow {
         cleanser: it[2] == 'cleanser'
         pertpy: it[2] == 'pertpy'
         sceptre: it[2] == 'sceptre'
+        fishash: it[2] == 'fishash'
         script: it[2].startsWith('script_')
         // TODO: Add more methods here
     }
@@ -75,6 +86,9 @@ workflow {
     
     // Run sceptre with explicit output directory
     sceptre_results = SCEPTRE_ASSIGN(branched_ch.sceptre, outdir)
+
+    // Run fishash with explicit output directory
+    fishash_results = FISHASH_ASSIGN(branched_ch.fishash, outdir)
 
     // Run script_* variants (all share the SCRIPT_ASSIGN process; the wrapper
     // dispatches to bin/script/{variant}.R based on the method name)
