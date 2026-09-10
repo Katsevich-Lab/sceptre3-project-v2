@@ -1,0 +1,216 @@
+---
+title: "meeting 2026-09-10"
+output:
+  pdf_document: default
+  html_document: default
+date: "2026-09-10"
+---
+
+# Association
+
+First, we show the positive and negative control analysis with the two legacy SCEPTRE versions added. The only substantial difference is that `sceptre-manuscript` (high MOI only) only allows p-values as small as `2e-16`, hence the pairwise scatterplot with current SCEPTRE not looking good, but the rank-based assessments are fine.
+
+```{r setup, include=FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+options(scipen = 10)
+
+# TRUE  -> each figure chunk writes its PDF to thesis-figures/
+# FALSE -> nothing is written; the chunks just print, leaving the committed PDFs
+#          untouched. Set FALSE while iterating on a figure.
+save_plots <- FALSE
+# Located via ~/.research_config so this works whatever the working directory is
+# (knit, console, or elsewhere) without committing a machine-specific path.
+source("~/.Rprofile")
+source(file.path(.get_config_path("LOCAL_SCEPTRE3_REPO_DIR"),
+                 "benchmarking/association/writeups/association-helpers.R"))
+
+results_repl <- load_assoc_bundle("replogle")    # p_value_SCEPTRE/Mixscale/FR-Perturb, pair_type
+results_gasp <- load_assoc_bundle("gasperini")   # no Mixscale
+
+trace_repl <- load_assoc_comp_bundle("replogle")
+trace_gasp <- load_assoc_comp_bundle("gasperini")
+```
+
+## Replogle: comparison with SCEPTRE v0.3.0 from 2023
+
+```{r fig-hex-replogle, fig.width=7.5, fig.height=5, echo=FALSE}
+# (a) Each method's p-values against SCEPTRE's, faceted method x pair type.
+p_hex_repl <- plot_pval_comparison_hex(
+  results_repl, "Replogle", legend = "right", square = FALSE,
+  neg_clip = c(Mixscale = 10, `FR-Perturb` = 10, SCEPTRE = 10, `SCEPTRE v0.3.0` = 10))
+if (save_plots) save_fig(p_hex_repl, "pval-comparison-replogle-hex", width = 7.5, height = 5) else print(p_hex_repl)
+```
+
+```{r fig-qq-replogle, fig.width=6.5, fig.height=4.4, echo=FALSE}
+# (b) Negative-control calibration: QQ tail against the uniform.
+p_qq_repl <- plot_qq_tail(results_repl, "Replogle")
+if (save_plots) save_fig(p_qq_repl, "qq-tail-replogle", width = 6.5, height = 4.4) else print(p_qq_repl)
+```
+
+```{r fig-roc-replogle, fig.width=5.5, fig.height=5, echo=FALSE}
+# (c) Positive vs negative separation, AUC in the legend.
+p_roc_repl <- plot_assoc_roc(results_repl, "Replogle")
+if (save_plots) save_fig(p_roc_repl, "roc-replogle", width = 5.5, height = 5) else print(p_roc_repl)
+```
+
+```{r fig-fpb-replogle, fig.width=6.5, fig.height=4.4, echo=FALSE}
+# (d) True positives recovered at a given false-positive budget.
+p_fpb_repl <- plot_fp_budget(results_repl, "Replogle")
+if (save_plots) save_fig(p_fpb_repl, "fp-budget-replogle", width = 6.5, height = 4.4) else print(p_fpb_repl)
+```
+
+
+```{r fig-6a, cache=TRUE, fig.width=6.5, fig.height=4.4, echo=FALSE}
+p_bh_repl <- plot_bh_vs_pi(
+  results_repl, "Replogle",
+  N_total = 7500,
+  pi_grid = c(.01, .02, .05, .075, .1),
+  q_target = 0.1
+)
+
+if (save_plots) save_fig(p_bh_repl, "bh-fdp-replogle", width = 6.5, height = 4.4) else print(p_bh_repl)
+```
+
+```{r fig-zerotrt-grid, fig.width=10, fig.height=9.4, echo=FALSE}
+p_zt_grid <- plot_assoc_zero_trt_grid(results_repl, "Replogle",
+                                      title = "Replogle: behavior for all-zero treatment groups",
+                                      roc_zoom = .4)
+if (save_plots) save_fig(p_zt_grid, "zero-trt-grid-replogle", width = 10, height = 9.4) else print(p_zt_grid)
+```
+
+
+## Gasperini: comparison with SCEPTRE manuscript from 2021
+
+
+```{r fig-hex-gasperini, fig.width=5.5, fig.height=5, echo=FALSE}
+# (a) Each method's p-values against SCEPTRE's, faceted method x pair type.
+p_hex_gasp <- plot_pval_comparison_hex(results_gasp, "Gasperini", legend = "right", square = TRUE)
+if (save_plots) save_fig(p_hex_gasp, "pval-comparison-gasperini-hex", width = 5.5, height = 5) else print(p_hex_gasp)
+```
+
+```{r fig-qq-gasperini, fig.width=6.5, fig.height=4.4, echo=FALSE}
+# (b) Negative-control calibration: QQ tail against the uniform.
+p_qq_gasp <- plot_qq_tail(results_gasp, "Gasperini")
+if (save_plots) save_fig(p_qq_gasp, "qq-tail-gasperini", width = 6.5, height = 4.4) else print(p_qq_gasp)
+```
+
+```{r fig-roc-gasperini, fig.width=5.5, fig.height=5, echo=FALSE}
+# (c) Positive vs negative separation, AUC in the legend.
+p_roc_gasp <- plot_assoc_roc(results_gasp, "Gasperini")
+if (save_plots) save_fig(p_roc_gasp, "roc-gasperini", width = 5.5, height = 5) else print(p_roc_gasp)
+```
+
+```{r fig-fpb-gasperini, fig.width=6.5, fig.height=4.4, echo=FALSE}
+# (d) True positives recovered at a given false-positive budget.
+p_fpb_gasp <- plot_fp_budget(results_gasp, "Gasperini")
+if (save_plots) save_fig(p_fpb_gasp, "fp-budget-gasperini", width = 6.5, height = 4.4) else print(p_fpb_gasp)
+```
+
+
+
+
+## Computational benchmarking
+
+
+
+```{r fig-comp-ngenes, fig.width=8, fig.height=6.5, echo=FALSE, fig.cap="sceptre-manuscript is slow enough that I only ran it on some pretty small datasets, with 12 or 25 genes, and 50 or 100 targets. That's why Gasperini looks split. sceptre-v030 was able to run on the same datasets as the other methods."}
+p_comp_ngenes <- plot_assoc_comp_grid_faceted_ngenes(
+  trace_repl, trace_gasp, title = "Association: computational benchmarking")
+if (save_plots) save_fig(p_comp_ngenes, "comp-grid-ngenes", width = 6.5, height = 6.5) else print(p_comp_ngenes)
+```
+
+# Assignment
+
+The big thing I want to discuss is how I'm making computational benchmarking datasets.
+
+<!-- $\newcommand{\Dirichlet}{\operatorname{Dirichlet}}\newcommand{\one}{\mathbf{1}}$ -->
+
+We are going to use fishash's GuideBender model for computational benchmarking.
+
+- Problem: varying $N$ and $G$ (number of cells and guides, respectively) separately leads to many implausible datasets. E.g. a low MOI dataset with $N=10^3$ and $G = 10^4$ has around $10^{-1}$ perturbed cells per guide. No one is doing that experiment. 
+
+- Solution: we can avoid a lot of the bad $(N,G)$ if we require a few properties to hold in our data. Let $N^P_G$ be the typical number of actually perturbed cells for a guide. Note that we can count the total number of cells with guides in two ways: 
+$$
+G\times N_G^P = N\times\text{MOI}
+$$
+
+Holding MOI fixed in our sequence is very reasonable. I think it's also reasonable to hold $N_G^P$ fixed, i.e. we don't change the true positive sample size as we vary our dataset dimension. One of the reasons we didn't like downsampling cells is because that reduces the positive sample size. Then the above equation means that $N/G$ is constant under these conditions, so rather than sweeping out a grid of $(N,G)$ pairs, we sweep out a line with a fixed value of $N/G$. The hope is to get realistic small datasets by preserving these properties.
+
+We do need to use an assignment algorithm to estimate $N_G^P$ and $\text{MOI}$. I used thresholding with $T=5$ for Gasperini and $T=10$ for Replogle. 
+
+The final pieces we need are a couple GuideBender parameters:
+
+1. SNR, the signal to noise ratio. This determines the fraction of total cell UMIs that are signal (i.e. coming from an actual perturbation) vs noise (either in-droplet or out-of-droplet error).
+
+2. `frac_endo` $\in [0,1]$: this parameter determines what fraction of the noise UMIs are endogeneous noise (in-droplet) vs exogeneous noise (out-of-droplet)
+
+
+SNR has consequences for the sparsity. Consider low MOI, where each guide contributes around $N_G^P$ perturbed cells. Those will be mostly be non-zero, so the perturbed cells in this setup contribute a fixed number of non-zero entries to each guide. The rest of the non-zero entries come from the ambient noise. If the SNR is low, there will be many more UMIs allocated to the noise terms. This increases the chance of non-zero entries. On my Gasperini test run, I took SNR $\approx 20$ in order to get realistic sparsities. This could be a problem with this approach, but at least for computational purposes it's hopefully still usable. All other GuideBender parameters, including `frac_endo`, were kept at the defaults or values used by the fishash authors.
+
+
+QUESTIONS
+
+1. Does it make sense to keep the actual number of perturbed cells roughly constant per guide? In low MOI this makes sense, since each guide has a nearly disjoint number of cells expressing it, and it's reasonable to design an essentially balanced experiment where each guide contributes around the same number of cells. In high MOI too?  Downsampling cells would change this property. 
+
+2. Does my use of thresholding to compute these seem suspect?
+
+3. Is that Gasperini SNR pretty bad?
+
+
+
+
+
+<!-- i need a detailed description of the exact thing that the simulations are doing. -->
+
+<!-- 0. The key parameters controlling the simulations:  -->
+
+<!-- - The parameters we sweep over are $G$, the number of guides; $N$, the number of cells; and $\text{MOI}$. We use two different settings of $\text{MOI}$, mimicking each of Replogle and Gasperini, and then $G$ and $N$ determine our dataset sizes.  -->
+
+<!-- - Parameters that ... -->
+
+
+<!-- 1. simulate guide-level params -->
+
+<!-- - $\pi \in [0,1]^G$: a prob dist over guides giving their relative (true) infection frequencies. Generated via a single Dirichlet draw. In the fishash paper, Gene's sims, and mine too, it is always $\Dirichlet(\one_G)$, so uniform over the simplex, and it effectively has no hyperparameters (although that Dirichlet could be parameterized). Marginally, each entry of $\pi$ is approximately distributed as $\frac 1G \operatorname{Exp}(1)$, with a mean of $1/G$.  -->
+
+<!-- - $d^{\text{guide}}$: a vector of per-guide UMI scales. Sampled from $\exp(\mathcal N(0, \sigma^2))$, with $\sigma^2 = \frac 14$ as the only value that we or they use.  -->
+
+<!-- - $\chi^a$: a prob dist over guides, giving the relative abundance in the ambient soup, drawn as $\Dirichlet(\mathbf a)$. $\mathbf a$ is a function of $\pi$, $d^{\text{guide}}$ (so $\chi^a$ is conditional on those quantities), and two hyperparameters $a_\text{sum} > 0$ and $a_\text{flat} \in [0,1]$. $\mathbf a^T\one$ is proportional to $a_\text{sum}$, so that parameter controls how concentrated $\chi^a$ is. A large $a_\text{flat}$ pulls us towards $\Dirichlet(a_\text{sum}\one_G)$, which ignores $\pi$ and $d^\text{guide}$, and treats each guide equally. The exact calculation uses the following quantities: let  -->
+
+<!-- $$ -->
+<!-- \pi^{d} := \frac{\pi \odot d^{\text{guide}}}{\langle \pi, d^{\text{guide}}\rangle} -->
+<!-- $$ -->
+<!-- so $\pi^d$ gives a prob dist over guides proportional to the expected magnitude of each guide. Then  -->
+
+<!-- $$ -->
+<!-- \mathbf a := a_\text{sum} \left[(1 - a_\text{flat})  \cdot G \cdot \pi^d + a_\text{flat} \one_G\right] -->
+<!-- $$ -->
+<!-- so $\mathbf a$ is formed by the convex combination of $G \pi^d$ and $\one_G$ (both of which sum to $G$), scaled by $a_\text{sum}$ so that the concentration does not necessarily to increase as more guides are added. If $a_\text{sum}$ and $a_\text{flat}$ are both large, then we have a distribution concentrated symmetrically in the center of the simplex. As $a_\text{flat}$ decreases towards $0$, $\mathbf a$ is increasingly proportional to $\pi^d$.   -->
+
+<!-- --- -->
+
+<!-- $\pi$ and $d^{\text{guide}}$ are orthogonal aspects of the problem, and statistically independent. $\pi$ is how common each guide is, while $d^{\text{guide}}$ is a guide-level scaling factor for when we see each guide. $\chi_g^a$, the relative guide fraction in the ambient soup, depends on those, with the extent of the dependence mediated by its hyperparameters. -->
+
+
+<!-- 2. cell-level parameters -->
+
+<!-- - $\epsilon \in [0,\infty)^N$: scales the signal and ambient distributions, and represents the overall capture efficiency of the data. Each entry is distributed as $\text{Gamma}(\text{shape} = a_\epsilon, \text{rate} = a_\epsilon)$, so that the mean is always 1, but it is increasingly skewed as $a_\epsilon$ decreases. Only $a_\epsilon=50$ is ever used, which is essentially a bell curve centered at 1. I don't think $\epsilon_n$ matters a whole lot with $a_\epsilon=50$. -->
+
+<!-- - $\rho \in [0,1]^N$: controls the trade-off between in-droplet and out-of-droplet values. $\rho_n = 1$ means that a cell's reported UMI count is entirely from exogenous out-of-droplet sources, like chimeras or barcode swapping. They are $\text{Beta}(a_\rho, b_\rho)$. These parameters are completely determined by ones that the user does typically set every time.  -->
+
+<!-- TODO: describe \rho_n params -->
+
+<!-- - In-droplet scaling factors: $d^\text{cell} \in [0,\infty)^N$ scales the magnitude of the signal, i.e. the UMI counts of guides truly being expressed by a cell. Distributed as $\exp(\mathcal N(d_\mu^\text{cell}, \frac 1{2^2}))$. $d^\text{drop} \in [0,\infty)^N$ scales the magnitude of the in-droplet but not-signal UMIs, i.e. the endogeneous error. Distributed as $\exp(\mathcal N(d_\mu^\text{drop}, \frac 1{2^2}))$. They are independent. -->
+
+
+
+
+<!-- Their hyperparameters of $d_\mu^\text{cell}$ and $d_\mu^\text{drop}$ are computed from the user-provided values of $\text{SNR}$, __count_per_cell__, and __frac_noise_endo__, so they are never themselves varied. -->
+
+
+<!-- inputs: -->
+
+<!-- procedure: -->
+
+
