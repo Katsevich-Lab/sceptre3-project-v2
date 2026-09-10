@@ -9,7 +9,7 @@
 suppressPackageStartupMessages({library(Matrix); library(ggplot2); library(patchwork)})
 source(file.path(getwd(), "scripts", "sim_lib.R"))
 source(file.path(getwd(), "scripts", "barnyard_io.R"))
-GA <- normalizePath(file.path(HERE, "..")); source(file.path(GA, "grna-simulator", "sims-for-paper.R"))
+GA <- normalizePath(file.path(HERE, "..")); source(file.path(GA, "grna-simulator", "grna-sim-utils.R"))
 DATA <- paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data")
 SURV <- paste0(.get_config_path("LOCAL_EXTERNAL_DATA_DIR"), "perturbseq-survey"); REPRO <- file.path(HERE, "external", "repro_work")
 OUT  <- SIMFW(); ch <- read.csv(file.path(OUT, "real_characterization.csv"))
