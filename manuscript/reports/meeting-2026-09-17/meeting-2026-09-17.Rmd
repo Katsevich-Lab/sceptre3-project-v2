@@ -1,0 +1,117 @@
+---
+title: "meeting-2026-09-17"
+output: pdf_document
+date: "2026-09-17"
+---
+
+# Assignment computational scaling
+
+Let $G$ be the total number of guides in our screen, and $N$ the total number of cells. $g$ indexes guides and $n$ indexes cells. NNZ denotes the total number of non-zero entries, and the per-guide NNZ is the number of non-zero entries in the gRNA matrix for a given guide. Analogously, denote the total number of perturbed (guide, cell) pairs by NTP ("number of true perturbations"). The per-guide NTP is the number of cells actually expressing a given guide.
+
+In the following section, we give 4 properties that we think a sequence of computational scaling datasets should have, and that allow us to get GuideBender simulations matching our data.
+
+## Deciding what dataset properties to have GuideBender preserve
+
+We want to generate a sequence of datasets with "consistent" properties, so that we can estimate how our methods' costs grow as $N$ and $G$ increase in a "realistic" setting. We will do this by requiring some "realism properties" hold.
+
+__Realism Requirement #1__: MOI stays fixed in our sequence.
+
+Consequence: if we take real data, and downsample the number of guides, then we reduce the MOI because we remove many of the guides that many cells are expressing. So we can only use real data if we do not downsample in guides.
+
+This could work. We could do fixed-$G$ changing-$N$ sequences of datasets. This effectively sweeps out NNZ and NTP, which are likely the biggest parameters controlling the computational cost of each method. I think we'd learn interesting things from doing this, but I don't think we should prioritize this.
+
+My biggest problem with fixed-$G$ changing-$N$ is that I don't think real CRISPR screens would sweep out NNZ and NTP like this. A CRISPR screen is designed to give us enough perturbed cells per guide for our DE testing, which implies a minimum useful sample size and a maximum sample size before we are wasting money. I don't think it's realistic to hold $G$ fixed and sweep out NNZ and NTP. Smaller problems are that I don't like not being able to vary $G$ at all, and this forces us to use real-data-sized $G$ for each scaling dataset, even if we don't need to or want to.
+
+Thus it makes sense to use simulated data instead of real dataset subsets, and I propose
+
+__Realism Requirement #2__: the per-guide NTP stays fixed.
+
+Claim: Realism Requirements #1 and #2 together mean we must have $N/G$ fixed in our scaling datasets.
+
+Proof: We can compute NTP two different ways: by cells first, or by guides first, giving us
+
+$$
+\text{NTP} = G \times \text{per-guide NTP} = N \times \text{per-cell NTP}.
+$$
+The per-cell NTP is just the MOI, so this gives us
+$$
+G  \times \text{per-guide NTP} = N \times \text{MOI}.
+$$
+
+Realism Requirements #1 and #2 mean that the per-guide NTP and MOI are both fixed, so $N/G$ must be fixed too. 
+
+$\square$
+
+
+The data support this: Table 1 shows that Gasperini and Replogle have relatively similar per-guide NTP (using thresholding), despite large variation in MOI and $N/G$.
+
+```{r ntp-invariance, echo=FALSE}
+knitr::kable(
+  data.frame(
+    Screen          = c("Gasperini", "Replogle"),
+    G               = c("13,077", "2,666"),
+    N               = c("207,324", "616,184"),
+    MOI             = c("31.6", "1.3"),
+    `N/G`           = c("15.9", "231.1"),
+    `Per-guide NTP` = c("502", "300"),
+    check.names     = FALSE
+  ),
+  align    = c("l", rep("r", 5)),
+  booktabs = TRUE,
+  caption  = paste("Per-guide NTP's relatively small change across screens whose",
+                   "dimensions differ by more than an order of magnitude.",
+                   "Measured at a threshold of 5 UMIs for Gasperini, and",
+                   "10 UMIs for Replogle, due to differing magnitudes.")
+)
+```
+
+
+The next two requirements help pin down the per-cell signal and error UMI totals. 
+
+__Realism Requirement #3__: the UMI yield per integrated guide does not depend on $N$ or $G$.
+
+I think this is reasonable -- no matter how the number of guides or cells varies, the UMI count from one particular perturbed (guide, cell) pair does not vary. It depends on other factors like sequencing depth per cell, or guide expression level.
+
+Consequence: 
+$$
+\begin{aligned}\text{per-cell signal UMIs} &= \text{avg \# integrations per cell} \times \text{UMI yield per integrated guide} \\
+&\approx \text{MOI} \times \text{UMI yield per integrated guide}
+\end{aligned}
+$$
+since most expressed guides are integrated exactly once for $G$ sufficiently large. This means that the per-cell signal UMI total is essentially invariant in $N$ and $G$.
+
+__Realism Requirement #4__: the per-cell error UMI count does not depend on $N$ or $G$.
+
+The error count is formed from the ambient endogeneous error, and the exogeneous error. For the ambient error, Requirement #4 is justified as follows: for $N$, a larger sample size does not mean that the cellular soup is denser. Cells will (always?) be prepared in more groups (lanes, channels, etc) to keep the density consistent if a bigger $N$ is used. For $G$: much of the gRNA content that is released upon lysis is determined by the MOI and per-guide expression, and this does not depend on $G$. A larger library divides the same mass across more guides; it does not create more of it. As for the exogeneous error, comprising sources like chimeras and barcode swaps, I don't feel confident enough in the biology to say, but I'm guessing we can wave our hands and have some reasons. Like for barcode swapping, the magnitude of such an error should probably be like a different cell's droplet UMI count, and that is invariant in $N$ and $G$.
+
+The consequence of these Realism Requirements together is that neither a cell's signal UMI count, nor its error UMI count, vary with $N$ and $G$. 
+
+Note that #1 and #4 pin per-cell NNZ, because MOI-many entries are non-zero because of signal, and the rest are non-zero because of ambient UMI counts. 
+
+
+
+To conclude this section, we have the following properties:
+
+1. MOI stays fixed
+
+2. The per-guide NTP stays fixed
+
+3. The per-cell signal UMI total stays fixed
+
+4.The per-cell error UMI total stays fixed
+
+and we sweep out datasets with $N/G$ fixed.
+ 
+
+## Connecting to GuideBender
+
+These invariants ($N/G$, MOI, per-cell signal total, and per-cell error total), estimated from real data, are enough to get a specific GuideBender model.
+
+To get the guide parameters specified, we can get the hurdle probability from the fraction of cells estimated to have no perturbed guide. In Gasperini, this is very low, because very few cells are unperturbed. It's higher in Replogle. We can also estimate the concentration parameter $\alpha$ determining how similar guide expressions are from the row sums of our expression matrix. The GuideBender MOI parameter $\lambda$ in the infection simulation can then be chosen to keep the realized MOI at the intended value. We also get the signal-to-noise ratio parameter `snr`, which determines the fraction of the per-cell total UMI count that comes from signal vs error. We can determine it empirically because it affects the realized per-cell NNZ: a high SNR means that we will be close to per-cell NNZ = MOI, while a low SNR means that the UMI total will be spread out over the pool of non-expressed guides. SNR can therefore be chosen so that the realized per-cell NNZ matches the intended value.
+
+All the 8 remaining GuideBender parameters can be left at the value used by the paper.
+
+Also note that everything we are matching is a first moment. That seems reasonable.
+
+To conclude, I have argued that we should use a sequence of simulated datasets with $N/G$ held fixed to a value matching a real dataset. Using an assignment algorithm where needed, we require each dataset to match the following: the real dataset's MOI; the real average number of actually perturbed cells per guide; and the real average per-cell UMI totals from both signal and error. We can approximate these using thresholding. This is enough to pin down the hurdle probability, the guide expression concentration, and the SNR. Keeping the remaining parameters at their defaults gives us a GuideBender dataset sequence matching a real dataset.
+
