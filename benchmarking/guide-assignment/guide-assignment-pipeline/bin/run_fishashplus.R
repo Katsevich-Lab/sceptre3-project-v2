@@ -71,7 +71,10 @@ out <- data.frame(cell_id = colnames(assigned)[trip$j],
                   grna_id = rownames(assigned)[trip$i])
 out <- out[order(out$cell_id, out$grna_id), , drop = FALSE]
 
-write.csv(out, "assignments_fishashplus.csv", row.names = FALSE)
+# Unquoted, like crispat/pertpy, so command-line tools (grep, cut, comm) see the
+# same text across methods. Guide sequences and cell barcodes contain no commas
+# or quotes, so nothing needs quoting.
+write.csv(out, "assignments_fishashplus.csv", row.names = FALSE, quote = FALSE)
 cat("Wrote assignments_fishashplus.csv:", nrow(out), "assignments over",
     length(unique(out$cell_id)), "cells and",
     length(unique(out$grna_id)), "gRNAs\n")
