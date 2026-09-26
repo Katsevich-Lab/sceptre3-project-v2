@@ -6,7 +6,7 @@ process SCEPTRE_ASSIGN {
 
   cpus { resources.cpus }
   memory { resources.memory }
-  time   { resources.time }   // -> SGE -l h_rt AND queue routing (>=4h -> hpc3.q)
+  time   { resources.time }   // -> Slurm --time
 
   stageInMode 'symlink' 
 
@@ -34,8 +34,10 @@ process SCEPTRE_ASSIGN {
   export R_USER="\$PWD"
   export R_LIBS_USER="\$PWD/.Rlibs";   mkdir -p "\$R_LIBS_USER"
 
-  # Run sceptre; --vanilla avoids reading host/user profiles or writing history
-  Rscript --vanilla ${projectDir}/bin/run_sceptre.R ${dataset_dir} ${dataset_id}
+  # Run sceptre; --vanilla avoids reading host/user profiles or writing history.
+  # pin_cores.sh: single-threaded, on exactly 1 core (see nextflow.config).
+  ${projectDir}/bin/pin_cores.sh 1 \\
+    Rscript --vanilla ${projectDir}/bin/run_sceptre.R ${dataset_dir} ${dataset_id}
 
   """
 }

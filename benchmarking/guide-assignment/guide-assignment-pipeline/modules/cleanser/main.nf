@@ -6,7 +6,7 @@ process CLEANSER_ASSIGN {
 
   cpus { resources.cpus }
   memory { resources.memory }
-  time   { resources.time }   // -> SGE -l h_rt AND queue routing (>=4h -> hpc3.q)
+  time   { resources.time }   // -> Slurm --time
 
   input:
   tuple val(dataset_id), path(dataset_dir), val(method), val(resources)
@@ -55,17 +55,18 @@ mkdir -p "\$XDG_CACHE_HOME"
 export TMPDIR="\$PWD/stan_tmp"
 mkdir -p "\$TMPDIR"
 
-# TIMEOUT ENFORCED IN-BAND, not by the scheduler. Measured on HPC3 2026-08-31:
-# a task requesting `-l h_rt=00:03:00` ran for 10m and exited 0, so SGE does NOT
-# enforce h_rt here (h_rt is requestable and short.q caps at 04:05:00, yet the
-# limit never fired). On mem.q -- where every full-dataset task lands -- the
-# ceiling is effectively a year, so an unbounded method would run until the
-# nextflow driver dies and qdel's it. `timeout` exits 124, which reaches the
-# trace as an unambiguous "hit the time limit". /usr/bin/time stays OUTSIDE the
-# timeout so peak-RSS telemetry is still written when the limit fires.
+# TIME LIMIT ENFORCED IN-BAND. Slurm enforces --time (= task.time) by killing
+# the whole job, which shows up in the trace only as an ambiguous scheduler kill.
+# So `timeout` fires 5 minutes earlier and exits 124 -- an unambiguous "hit the
+# time limit". /usr/bin/time stays OUTSIDE the timeout so peak-RSS telemetry is
+# still written when the limit fires.
 # Measure peak memory & elapsed time for cleanser
+# pin_cores.sh: EXACTLY 4 cores, one per MCMC chain, however many the task holds
+# (cmdstanpy runs min(node cores, 4) chains at once; each chain is single-threaded
+# via the env scope in nextflow.config). Fails if the task has fewer than 4 cores.
 /usr/bin/time -v -o cleanser_${dataset_id}.time.txt \\
-  timeout -k 60s ${task.time.toSeconds()}s \\
+  timeout -k 60s ${Math.max(60, task.time.toSeconds() - 300)}s \\
+  ${projectDir}/bin/pin_cores.sh 4 \\
   python "${projectDir}/bin/run_cleanser.py" "${dataset_dir}/grna_matrix.mtx" "${dataset_id}"
 
 # Print a one-line summary into .command.out for convenience

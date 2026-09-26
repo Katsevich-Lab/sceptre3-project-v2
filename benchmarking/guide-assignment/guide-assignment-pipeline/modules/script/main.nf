@@ -3,6 +3,13 @@
 // Runs a "script_*" guide-assignment variant by dispatching to bin/run_script.R,
 // which sources bin/script/{variant}.R based on the method name.
 // Reuses the sceptre.sif container (R + Matrix + sceptre's transitive deps).
+//
+// NOT BENCHMARK-GRADE: unlike the other methods, script_* variants are
+// experimental (statistical results only, not in the paper's runtime
+// benchmarks) and deliberately run in PARALLEL, one R worker per task CPU, to
+// finish fast. So their timings are not comparable to the pinned methods, and
+// every CPU in the run config is actually used: keep `cpus` modest on the
+// shared cluster.
 
 process SCRIPT_ASSIGN {
   tag "${method}/${dataset_id}"
@@ -11,7 +18,7 @@ process SCRIPT_ASSIGN {
 
   cpus { resources.cpus }
   memory { resources.memory }
-  time   { resources.time }   // -> SGE -l h_rt AND queue routing (>=4h -> hpc3.q)
+  time   { resources.time }   // -> Slurm --time
 
   stageInMode 'symlink'
 
@@ -36,6 +43,7 @@ process SCRIPT_ASSIGN {
   echo "dataset_dir: ${dataset_dir}"
   echo "method:      ${method}"
   echo "cpus:        ${task.cpus}"
+  echo "NOTE: script_* runs ${task.cpus} parallel R workers; timings are NOT benchmark-grade."
   ls -l "${dataset_dir}" || true
 
   # R needs writable temp and (if any package tries) a user lib dir

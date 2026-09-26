@@ -47,12 +47,10 @@ workflow {
                 input_subdir = method
             }
             def dataset_dir = file("${params.dataset_base_dir}/${dataset_id}/${input_subdir}")
-            // `time` drives BOTH the SGE -l h_rt AND the queue routing in
-            // ~/.nextflow/config (which sends time >= 4h to hpc3.q). Without it a
-            // sub-14GB task resource-matches onto short.q and is killed at 4h --
-            // which would look like "the method can't handle this dataset" when
-            // it is really a scheduling artifact. Optional column; defaults to
-            // params.default_time for older config CSVs that lack it.
+            // `time` becomes the task's Slurm --time limit (and the in-band
+            // `timeout` in each module fires 5 minutes before it). Optional
+            // column; defaults to params.default_time for older config CSVs
+            // that lack it.
             def resources = [
                 cpus: resource_row.cpus,
                 memory: resource_row.memory,
@@ -112,7 +110,7 @@ workflow.onComplete {
     if (s.failedCount > 0) {
         println "One or more methods did not finish. Per-task status, exit code and"
         println "peak memory are in the trace file; for a task the scheduler killed,"
-        println "look up its native_id with: qacct -j <native_id> | grep -iE 'maxvmem|exit_status|failed'"
+        println "look up its native_id with: sacct -j <native_id> --format=JobID,State,ExitCode,MaxRSS,Elapsed"
     }
     println "Results in: ${params.out_base_dir}/${params.run_id}"
 }
