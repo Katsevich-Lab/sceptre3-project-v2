@@ -39,6 +39,10 @@ process FRPERTURB_POSCTRL {
   export TMPDIR="\$PWD/tmp"
   mkdir -p "\$TMPDIR"
 
+  # scanpy uses numba, which caches compiled code. Keep that cache per task so
+  # every run compiles fresh and runtimes are comparable across runs.
+  export NUMBA_CACHE_DIR="\$PWD/.numba_cache"
+
   # Run FR-Perturb wrapper (outputs frperturb_results.* files to pwd)
   python ${projectDir}/bin/run_frperturb.py ${dataset_dir} ${dataset_id}
 

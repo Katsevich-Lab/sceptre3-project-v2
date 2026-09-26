@@ -18,8 +18,8 @@ OUT_BASE="${LOCAL_BENCHMARKING_DIR}/association/computational/outputs"
 OUT_DIR="${OUT_BASE}/${RUN_ID}"
 mkdir -p "$OUT_DIR" nf-logs
 
-# Clean work directory for fresh benchmark (critical - prevents cached results)
-rm -rf computational-pipeline/work
+# Fresh benchmark: do NOT add -resume below. Without it, every task reruns from
+# scratch, so no cached results can leak into the runtime measurements.
 
 # Copy config file to output directory for record keeping
 cp "computational-pipeline/configs/${RUN_ID}_config.csv" "${OUT_DIR}/"
