@@ -28,12 +28,15 @@ From: rocker/r-ver:4.6.0
     # System deps. procps gives `ps`; `time` gives GNU /usr/bin/time, which the
     # nextflow module wraps the run in for peak-RSS telemetry (the task runs
     # entirely INSIDE this image, so the host's copy is not reachable). The rest
-    # compile fishashplus's C++ and Rhdf5lib (HDF5, for ondisc).
+    # compile fishashplus's C++ and Rhdf5lib (HDF5, for ondisc). Rhdf5lib 2.x builds
+    # HDF5 with CMake (via biocmake), which otherwise downloads its own copy
+    # mid-build; use the system one, as fishash.def does.
     apt-get update
     apt-get install -y --no-install-recommends \
         procps \
         time \
         build-essential \
+        cmake \
         pkg-config \
         zlib1g-dev \
         libcurl4-openssl-dev \
