@@ -6,8 +6,13 @@ from crispat import ga_poisson_gauss
 input_h5ad = sys.argv[1]
 output_dir = "crispat_output/"
 
-# Run CRISPAT guide assignment
-ga_poisson_gauss(input_h5ad, output_dir)
+# Run CRISPAT guide assignment.
+# n_jobs=1: serial, like every benchmarked method (the default today, but pinned
+#   here so a future default can't silently parallelize the fits).
+# make_plots=False: skip the per-gRNA diagnostic PNGs. They don't affect the
+#   assignments, would count toward the measured runtime, and crash on
+#   degenerate guides (e.g. gasperini_small).
+ga_poisson_gauss(input_h5ad, output_dir, n_jobs=1, make_plots=False)
 
 # Post-process output to standardized format
 crispat_output = f"{output_dir}/assignments.csv"

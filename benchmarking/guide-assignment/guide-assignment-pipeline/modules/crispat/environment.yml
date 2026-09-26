@@ -15,8 +15,10 @@ dependencies:
   - scanpy
   - pip
   - pip:
-    # PINNED to an immutable commit. '@benchmark' is a BRANCH -- it can move
-    # under you and silently change the method between runs. This SHA is the
-    # branch tip as of 2026-04-11 ("replace max(selected_guide.toarray()) with
-    # selected_guide.max()").
-    - git+https://github.com/jdeu1023/crispat.git@f870d65c71b9fa66013adbf3c0e85ca920aabf6d
+    # UPSTREAM crispat, PINNED to an immutable commit: a9372b9 is the 0.9.11
+    # version bump (2026-05-29), the tip of velten-group/crispat main.
+    # Until 2026-09 this installed the fork jdeu1023/crispat@f870d65, whose only
+    # change ("replace max(selected_guide.toarray()) with selected_guide.max()")
+    # upstream has since made itself in a7ea84e (numpy >= 2 fix), so the fork
+    # is no longer needed.
+    - git+https://github.com/velten-group/crispat.git@a9372b9cf9b82b7409cc3be4d192056ae57a2673
