@@ -28,7 +28,11 @@ process PERTPY_ASSIGN {
 
   publishDir "${outdir}",
              mode: 'copy',
-             saveAs: { "assignments_pertpy_${dataset_id}.csv" }
+             // Only the CSV: without this guard the .time.txt was ALSO renamed to
+             // this name, and whichever copy landed last won (see crispat module).
+             saveAs: { filename ->
+               filename.endsWith('.csv') ? "assignments_pertpy_${dataset_id}.csv" : null
+             }
 
   publishDir "${outdir}/monitoring",
              mode: 'copy',

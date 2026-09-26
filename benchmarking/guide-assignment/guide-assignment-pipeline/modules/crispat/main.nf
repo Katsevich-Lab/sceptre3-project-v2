@@ -19,7 +19,12 @@ process CRISPAT_ASSIGN {
 
   publishDir "${outdir}",
              mode: 'copy',
-             saveAs: { "assignments_crispat_${dataset_id}.csv" }
+             // Only the CSV: without this guard the .time.txt was ALSO renamed to
+             // this name, and whichever copy landed last won (the timing report
+             // silently replaced the assignments on Betty, 2026-09-26).
+             saveAs: { filename ->
+               filename.endsWith('.csv') ? "assignments_crispat_${dataset_id}.csv" : null
+             }
 
   publishDir "${outdir}/monitoring",
              mode: 'copy',

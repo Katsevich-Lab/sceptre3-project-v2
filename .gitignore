@@ -76,3 +76,6 @@ benchmarking/association/nf-logs
 
 # guide-assignment SGE smoke-test run artifacts (source lives in tests/, output does not)
 benchmarking/guide-assignment/guide-assignment-pipeline/tests/smoke-out/
+
+# temp files conda leaves next to an environment.yml when a pip install is interrupted
+condaenv.*.requirements.txt
