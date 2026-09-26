@@ -1,0 +1,11 @@
+"dataset","step","input","seconds","peak_gib","n_assigned"
+"gasperini","read","mtx",4.42,0.89,NA
+"gasperini","read","odm",11.42,1.29,NA
+"gasperini","fishash","mtx",173.49,5.12,6971335
+"gasperini","fishash_plus","mtx",31.4,1.52,7405792
+"gasperini","fishash_plus","odm",28.72,1.57,7405792
+"replogle","read","mtx",3.55,2.66,NA
+"replogle","read","odm",6.96,3.18,NA
+"replogle","fishash","mtx",104.47,6.55,842834
+"replogle","fishash_plus","mtx",16.44,1.57,944858
+"replogle","fishash_plus","odm",15.61,1.52,944858
