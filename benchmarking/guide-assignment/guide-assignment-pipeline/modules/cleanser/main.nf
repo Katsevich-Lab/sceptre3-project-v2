@@ -1,8 +1,9 @@
 process CLEANSER_ASSIGN {
-  label 'cleanser'
   tag "${dataset_id}"
 
-  conda "${moduleDir}/environment.yml"
+  // Exact lock of the env verified on Betty; environment.yml (next to this file)
+  // holds the requirements and why. The only place this env is chosen.
+  conda "${moduleDir}/environment.lock.yml"
 
   cpus { resources.cpus }
   memory { resources.memory }
@@ -64,6 +65,7 @@ mkdir -p "\$TMPDIR"
 # pin_cores.sh: EXACTLY 4 cores, one per MCMC chain, however many the task holds
 # (cmdstanpy runs min(node cores, 4) chains at once; each chain is single-threaded
 # via the env scope in nextflow.config). Fails if the task has fewer than 4 cores.
+
 /usr/bin/time -v -o cleanser_${dataset_id}.time.txt \\
   timeout -k 60s ${Math.max(60, task.time.toSeconds() - 300)}s \\
   ${projectDir}/bin/pin_cores.sh 4 \\

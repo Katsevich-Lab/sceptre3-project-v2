@@ -56,6 +56,7 @@ export R_LIBS_USER="\$PWD/.Rlibs";   mkdir -p "\$R_LIBS_USER"
 # conda-backed methods this task runs entirely inside the container, so the
 # host's /usr/bin/time is not reachable.
 # pin_cores.sh: single-threaded, on exactly 1 core (see nextflow.config).
+
 /usr/bin/time -v -o fishash_${dataset_id}.time.txt \\
   timeout -k 60s ${Math.max(60, task.time.toSeconds() - 300)}s \\
   ${projectDir}/bin/pin_cores.sh 1 \\

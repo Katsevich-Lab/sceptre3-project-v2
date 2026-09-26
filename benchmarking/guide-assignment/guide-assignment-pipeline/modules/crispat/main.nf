@@ -1,9 +1,9 @@
 process CRISPAT_ASSIGN {
-  label 'crispat'
   tag "${dataset_id}"
 
-  // uses modules/crispat/environment.yml (next to this file)
-  conda "${moduleDir}/environment.yml"
+  // Exact lock of the env verified on Betty; environment.yml (next to this file)
+  // holds the requirements and why. The only place this env is chosen.
+  conda "${moduleDir}/environment.lock.yml"
 
   cpus { resources.cpus }
   memory { resources.memory }
@@ -55,6 +55,7 @@ mkdir -p "\$XDG_CACHE_HOME"
 # still written when the limit fires.
 # Measure peak memory & elapsed time (parity with the cleanser module)
 # pin_cores.sh: single-threaded, on exactly 1 core (see nextflow.config).
+
 /usr/bin/time -v -o crispat_${dataset_id}.time.txt \\
   timeout -k 60s ${Math.max(60, task.time.toSeconds() - 300)}s \\
   ${projectDir}/bin/pin_cores.sh 1 \\

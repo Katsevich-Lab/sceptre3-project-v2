@@ -13,8 +13,8 @@ dependencies:
       # 1.0.6, and in 1.1.0 numpyro/MCMC/NUTS drop to zero occurrences.
       - pertpy==1.0.6
       # Upper bounds on the fast-moving numeric stack. These are NOT a lock:
-      # replace them with a frozen one after the first successful build
-      #   pip freeze > modules/pertpy/requirements.lock
+      # the exact versions the pipeline installs are in environment.lock.yml,
+      # generated from a build of this file that was verified on Betty.
       # pertpy 1.0.6 constrains only arviz>=1.0.0 and scikit-learn>=1.4 -- every
       # other dependency floats to latest. Unbounded, that pulls an Aug-2026
       # anndata/scanpy against a Mar-2026 pertpy. These caps keep the stack

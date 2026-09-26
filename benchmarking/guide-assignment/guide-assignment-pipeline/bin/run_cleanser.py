@@ -29,15 +29,22 @@ else:
 # CLEANSER IS PARALLEL: it uses 4 cores, unlike crispat and pertpy, which are serial.
 # Each guide runs 4 Stan chains at once -- cmdstanpy sets parallel_chains =
 # min(cpu_count, chains) and CLEANSER's chain default is 4. That is intrinsic to HMC
-# and is left alone. `cpus=4` in the config CSVs DESCRIBES this so the SGE request
-# matches; it is not a knob, and nothing here reads it.
+# and is left alone. `cpus` in the config CSVs must be at least 4 so the Slurm task
+# holds the chain cores (the module's pin_cores.sh 4 enforces this); nothing here
+# reads it.
 #
 # -p 1 is the knob. -p is the outer loop over guides -- data parallelism the other
 # methods don't use -- and its default is a bare mp.cpu_count() (constants.py:10),
 # i.e. the whole node. Pinning it to 1 keeps the footprint at the 4 chain cores.
+#
+# -s: a FIXED seed. CLEANSER's default is DEFAULT_SEED = randint(0, 2^32-1)
+# (constants.py:12), a new random seed every run, so unseeded runs are not
+# reproducible (verified on Betty: two runs gave posteriors differing by up to
+# 0.01). Each guide's Stan chains are seeded from this as seed + guide_id.
+SEED = 2024
 subprocess.run([
     "cleanser", "-i", input_mtx, "-o", f"{output_dir}/posteriors.csv", flag,
-    "-p", "1"
+    "-p", "1", "-s", str(SEED)
 ], check=True)
 
 # Process CLEANSER output to standardized format

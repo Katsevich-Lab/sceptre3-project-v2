@@ -2,7 +2,7 @@
 process MIXSCALE_POSCTRL {
   tag "${dataset_id}"
 
-  container "${moduleDir}/mixscale.sif"
+  container "${params.mixscale_sif}"
 
   cpus { resources.cpus }
   memory { resources.memory }

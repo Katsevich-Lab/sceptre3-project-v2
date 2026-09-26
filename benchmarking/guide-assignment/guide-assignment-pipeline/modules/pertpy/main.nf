@@ -5,10 +5,11 @@
 // task may need several CPUs even though it uses only one.
 
 process PERTPY_ASSIGN {
-  label 'pertpy'
   tag "${dataset_id}"
   stageInMode 'symlink'
-  conda "${moduleDir}/environment.yml"
+  // Exact lock of the env verified on Betty; environment.yml (next to this file)
+  // holds the requirements and why. The only place this env is chosen.
+  conda "${moduleDir}/environment.lock.yml"
 
   cpus   { resources.cpus }
   memory { resources.memory }
@@ -56,6 +57,7 @@ process PERTPY_ASSIGN {
   # Run pertpy guide assignment, measuring peak memory & elapsed time
   # (parity with the cleanser module)
   # pin_cores.sh: single-threaded, on exactly 1 core (see nextflow.config).
+
   /usr/bin/time -v -o pertpy_${dataset_id}.time.txt \\
     timeout -k 60s ${Math.max(60, task.time.toSeconds() - 300)}s \\
     ${projectDir}/bin/pin_cores.sh 1 \\
