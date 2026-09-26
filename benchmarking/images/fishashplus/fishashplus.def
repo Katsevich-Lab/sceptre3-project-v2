@@ -1,0 +1,103 @@
+Bootstrap: docker
+# Pins R 4.6.0 and the CRAN snapshot of 2026-06-23, which rocker sets in Rprofile.site.
+# Same base as fishash.def.
+From: rocker/r-ver:4.6.0
+
+# fishashplus lives in a PRIVATE repo (github.com/jdeu1023/fishashplus), so it is
+# not installed from GitHub here -- that would need credentials inside the build.
+# build-fishashplus-container.sh packs the pinned commit (see %test) from a local
+# clone into fishashplus-src.tar.gz and records it in fishashplus-src.commit, in a
+# temporary build directory outside the repo; both are copied in here, and the
+# commit is checked against the pin in %test.
+%files
+    fishashplus-src.tar.gz /opt/fishashplus/fishashplus-src.tar.gz
+    fishashplus-src.commit /opt/fishashplus/fishashplus-src.commit
+
+%labels
+    Author Louis
+    Description fishash+ guide assignment. fishashplus commit 87d95ac9 (v0.1.0), ondisc 1.3.5, R 4.6.0, CRAN 2026-06-23, Bioconductor 3.23.
+    Version 1.0
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    # Compile packages in parallel on however many cores the build has. Speeds up
+    # the build only; compiler flags (and so the result) are unchanged.
+    export MAKEFLAGS="-j$(nproc)"
+
+    # System deps. procps gives `ps`; `time` gives GNU /usr/bin/time, which the
+    # nextflow module wraps the run in for peak-RSS telemetry (the task runs
+    # entirely INSIDE this image, so the host's copy is not reachable). The rest
+    # compile fishashplus's C++ and Rhdf5lib (HDF5, for ondisc).
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        procps \
+        time \
+        build-essential \
+        pkg-config \
+        zlib1g-dev \
+        libcurl4-openssl-dev \
+        libssl-dev
+    rm -rf /var/lib/apt/lists/*
+
+    R --slave -e 'install.packages("BiocManager")'
+
+    # ondisc reads .odm files. Not needed for the pipeline (which reads .rds), but
+    # kept so this image can also run on ondisc-backed data. ondisc 1.3.5 is the
+    # CRAN release (2026-06-17) and the version sceptre.sif has, i.e. the one that
+    # wrote the pipeline's .odm files. It links against Rhdf5lib from
+    # Bioconductor (3.23 for R 4.6.0), so install that first. update = FALSE keeps
+    # this from moving anything already installed.
+    R --slave -e 'BiocManager::install("Rhdf5lib", ask = FALSE, update = FALSE)'
+    R --slave -e 'install.packages("ondisc")'
+
+    # fishashplus Imports: Matrix, methods, Rcpp, stats, tools. Matrix and the base
+    # packages ship with R; Rcpp comes from the CRAN snapshot.
+    R --slave -e 'install.packages("Rcpp")'
+
+    # Build fishashplus with R's default compiler flags for this image (-O2; see
+    # %test), i.e. an ordinary optimized install, NOT pkgload::load_all(), which
+    # compiles with -O0. No ~/.R/Makevars exists here to override them.
+    R CMD INSTALL --no-docs /opt/fishashplus/fishashplus-src.tar.gz
+
+    # install.packages and BiocManager::install only warn when an installation
+    # fails, so R exits 0 and set -e does not catch it. Check the packages are
+    # present.
+    R --slave -e 'req <- c("fishashplus", "ondisc", "Rhdf5lib", "Rcpp", "Matrix"); miss <- req[!vapply(req, requireNamespace, logical(1), quietly = TRUE)]; if (length(miss)) stop("missing packages: ", paste(miss, collapse = ", "))'
+
+    # Catch version drift here, where the failing step is still in view.
+    R --slave -e 'v <- as.character(packageVersion("ondisc")); if (v != "1.3.5") stop("expected ondisc 1.3.5, got ", v)'
+    R --slave -e 'v <- as.character(packageVersion("fishashplus")); if (v != "0.1.0") stop("expected fishashplus 0.1.0 (commit 87d95ac9), got ", v)'
+
+%runscript
+    # Pass-through so `ps`, `bash`, `Rscript`, etc. all work with `apptainer run`
+    exec "$@"
+
+%environment
+    export LC_ALL=C
+    export PATH=/usr/local/bin:$PATH
+    # Avoid reading host user libraries when using --cleanenv
+    export R_LIBS_USER=
+
+%test
+    # Any failing check below aborts the build (apptainer otherwise takes only the
+    # last command's exit status).
+    set -e
+    which ps
+    ps -o pid,comm | head -n 2
+    # The nextflow module wraps the run in `/usr/bin/time -v`. Fail the build if it
+    # is missing, rather than losing the memory telemetry at run time.
+    /usr/bin/time -v true
+    # The source must be the pinned commit.
+    c=$(cat /opt/fishashplus/fishashplus-src.commit)
+    [ "$c" = "87d95ac9ba9ea3f0c217f651db508142c7a3b7a0" ] || { echo "expected fishashplus commit 87d95ac9, got $c"; exit 1; }
+    echo "fishashplus source commit $c OK"
+    # Record the compiler and flags the package was built with; fail if not -O2.
+    echo "CXX: $(R CMD config CXX)"; echo "CXXFLAGS: $(R CMD config CXXFLAGS)"
+    R CMD config CXXFLAGS | grep -q -- '-O2' || { echo "expected -O2 in CXXFLAGS"; exit 1; }
+    # Fail unless fishashplus actually runs and recovers a planted signal, on
+    # simulated data with a known truth; and unless read_grna_matrix() round-trips
+    # an .rds with its dimnames (the pipeline's input path) and ondisc loads.
+    R --quiet -e 'suppressPackageStartupMessages({library(fishashplus); library(Matrix)}); stopifnot(as.character(packageVersion("fishashplus")) == "0.1.0", as.character(packageVersion("ondisc")) == "1.3.5"); sim <- simulate_grna_counts(n_guides = 40, n_cells = 200, moi = 5, seed = 1); a <- fishash_plus(sim$counts); tp <- sum(a & sim$ground_truth); stopifnot(identical(dim(a), dim(sim$counts)), sum(a) > 0, tp > 0); m <- sim$counts; dimnames(m) <- list(paste0("g", seq_len(nrow(m))), paste0("c", seq_len(ncol(m)))); f <- tempfile(fileext = ".rds"); saveRDS(m, f); r <- read_grna_matrix(f); stopifnot(identical(dimnames(r), dimnames(m))); invisible(requireNamespace("ondisc")); cat("fishashplus", as.character(packageVersion("fishashplus")), "OK -- simulated 40x200 assigned", sum(a), "pairs, precision", round(tp / sum(a), 3), "| ondisc", as.character(packageVersion("ondisc")), "\n")'
+    # Record R and every installed package version in the build log.
+    R --quiet -e 'cat(R.version.string, "\n"); cat("Bioconductor", as.character(BiocManager::version()), "\n"); ip <- as.data.frame(installed.packages()[, c("Package","Version")], stringsAsFactors=FALSE); print(ip[order(ip$Package), ], row.names=FALSE)'
