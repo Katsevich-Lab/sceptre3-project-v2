@@ -301,8 +301,14 @@ plot_umi_histogram_real_vs_sim <- function(
 # Two knobs are calibrated rather than set, because the simulator does not take
 # the measured quantity directly (calibrate):
 #   snr    - held equal across rungs, so ambient UMIs per cell are equal across
-#            rungs. Solved once, by simulating at the real dataset's number of
-#            guides and matching its nonzeros per cell.
+#            rungs. Solved once, by matching the real matrix's nonzeros per cell.
+#            Solved at the LARGEST rung's number of guides rather than at each
+#            rung's: nonzeros per cell carry a collision term A/(1 + A/G), so the
+#            same ambient UMI count A yields fewer nonzeros at small G, and
+#            matching at a small G would recover an inflated A. Collisions
+#            saturate well below the real number of guides, so the largest rung
+#            stands in for it and nothing is ever simulated at a size the rungs
+#            do not use.
 #   lambda - simulate_guidebender2's `moi`: the rate of the Poisson draw of
 #            infections per cell, before zero truncation, the hurdle, and repeated
 #            draws of the same guide. Solved at each rung so the thresholded MOI
@@ -318,13 +324,32 @@ plot_umi_histogram_real_vs_sim <- function(
 # the id. The threshold is higher for replogle because its perturbed entries carry
 # far more UMIs: measure-real-targets.R reports a mean of 1,405 at a perturbed
 # entry for replogle-rd7 against 21 for gasperini.
+#
+# n_cal, n_seeds and cal_tol set how precisely calibration can hit its targets.
+# A calibration run estimates a per-cell mean from n_cal cells, so it carries
+# sampling error of roughly sd/(mean * sqrt(n_cal * n_seeds)); asking for a
+# tolerance below that leaves the solver chasing noise and never converging.
+# Replogle needs more of both because its MOI is ~1.3 rather than ~32, so the
+# same relative precision takes far more cells.
+#
+# The rungs are sized by cleanser, the most expensive method: its cost is about
+# 11.4 ms per nonzero entry (from the warm-up runs), so a wall-clock budget is
+# really a budget on total nonzeros. Each ladder spans 2 h to 8 h of cleanser,
+# i.e. 0.64M to 2.5M nonzeros. The 2 h floor is what keeps replogle's smallest
+# rung at G = 156 rather than G = 31: ambient molecules collide onto the same
+# guide when guides are scarce, which costs nonzeros, and nonzeros are the cost
+# driver being measured.
+#
+# These rungs are too small to time the fast methods usefully -- fishash+ does
+# 2.5M nonzeros in a few seconds -- so fishash and fishash+ are measured on the
+# real matrices directly instead.
 SCALING_REGIMES <- list(
   gasperini = list(real_dataset = "gasperini",    threshold = 5L,
-                   n_cells = c(3000L, 6000L, 12000L, 24000L, 48000L),
-                   n_cal   = 4000L),
+                   n_cells = c(11000L, 16000L, 22000L, 31000L, 43000L),
+                   n_cal   = 4000L,  n_seeds = 1L, cal_tol = 0.005),
   replogle  = list(real_dataset = "replogle-rd7", threshold = 10L,
-                   n_cells = c(12000L, 24000L, 48000L, 96000L, 192000L),
-                   n_cal   = 10000L)
+                   n_cells = c(36000L, 49000L, 66000L, 89000L, 119000L),
+                   n_cal   = 10000L, n_seeds = 4L, cal_tol = 0.010)
 )
 
 # The methods the datasets are built for, and the input each reads:
@@ -436,25 +461,34 @@ solve_log <- function(f, target, x0, dir) {
                      extendInt = dir, tol = 1e-3)$root)
 }
 
-#' Calibrate snr (once, at the real number of guides) and lambda (per rung).
-#' Returns one row per calibration: the real-G solve, then each rung.
-calibrate <- function(reg, tg, rungs, seed) {
+#' Calibrate snr (once, at cal_n_guides) and lambda (per rung). `cal_n_guides` is
+#' the largest rung of the whole regime, so it does not move when only some rungs
+#' are being generated. Returns the snr solve, then one row per rung.
+calibrate <- function(reg, tg, rungs, cal_n_guides, seed) {
+  # Averaged over n_seeds independent runs. Each run redraws the guide-level
+  # latents too, so guide-level sampling error averages out rather than sitting
+  # as a fixed offset the solver cannot see.
+  n_seeds <- if (is.null(reg$n_seeds)) 1L else reg$n_seeds
+  tol     <- if (is.null(reg$cal_tol)) SCALING_CAL_TOL else reg$cal_tol
   evaluate <- function(G, lambda, snr) {
-    sim <- simulate_regime(tg, G, reg$n_cal, lambda, snr, seed)
-    cal_stats(SummarizedExperiment::assay(sim, "counts"), reg$threshold)
+    rowMeans(vapply(seq_len(n_seeds), function(k) {
+      sim <- simulate_regime(tg, G, reg$n_cal, lambda, snr, seed + k - 1L)
+      cal_stats(SummarizedExperiment::assay(sim, "counts"), reg$threshold)
+    }, numeric(2)))
   }
   target <- c(moi = tg$moi, nnz_per_cell = tg$nnz_per_cell)
   within <- function(st, which = names(target))
-    all(abs(st[which] / target[which] - 1) < SCALING_CAL_TOL)
+    all(abs(st[which] / target[which] - 1) < tol)
   row <- function(role, dataset, G, lambda, snr, st)
     data.frame(role = role, dataset = dataset, n_guides = G, lambda = lambda, snr = snr,
                cal_moi = st[["moi"]], cal_nnz_per_cell = st[["nnz_per_cell"]])
 
-  # snr and lambda together, at the real number of guides
-  G0 <- tg$n_guides
+  # snr and lambda together, at the largest rung's number of guides
+  G0 <- cal_n_guides
   snr <- tg$snr_start
   lambda <- tg$moi / (1 - tg$hurdle_prob)
-  cat(sprintf("\n[calibrate] snr at the real G = %d (%d cells per run)\n", G0, reg$n_cal))
+  cat(sprintf("\n[calibrate] snr at G = %d, the largest rung (%d cells per run)\n",
+              G0, reg$n_cal))
   for (pass in seq_len(SCALING_CAL_PASSES)) {
     lambda <- solve_log(function(l) evaluate(G0, l, snr)[["moi"]],
                         target[["moi"]], lambda, "upX")
@@ -467,9 +501,11 @@ calibrate <- function(reg, tg, rungs, seed) {
     if (within(st)) break
   }
   if (!within(st))
-    stop("snr calibration did not reach ", SCALING_CAL_TOL * 100, "% in ",
-         SCALING_CAL_PASSES, " passes")
-  cal <- row("real_G", NA_character_, G0, lambda, snr, st)
+    stop("snr calibration did not reach ", tol * 100, "% in ", SCALING_CAL_PASSES,
+         " passes. If the printed values oscillate around the targets rather than ",
+         "drifting, the tolerance is under the sampling noise of an n_cal run: ",
+         "raise n_cal or n_seeds, or loosen cal_tol, for this regime.")
+  cal <- row("snr", NA_character_, G0, lambda, snr, st)
 
   # lambda at each rung, snr held at the value above
   cat(sprintf("\n[calibrate] lambda per rung (snr fixed at %.3f)\n", snr))

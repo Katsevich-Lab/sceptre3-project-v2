@@ -52,14 +52,15 @@ cat(sprintf(paste0("  n_cells/n_guides %.3f | moi %.3f | nnz/cell %.3f | median 
             tg$n_over_g, tg$moi, tg$nnz_per_cell, tg$count_per_cell,
             tg$hurdle_prob, tg$alpha, tg$snr_start))
 
-rungs <- regime_rungs(reg, tg$n_over_g, name)
-if (length(pick)) rungs <- rungs[pick, , drop = FALSE]
+all_rungs <- regime_rungs(reg, tg$n_over_g, name)
+cal_n_guides <- max(all_rungs$n_guides)   # from every rung, not just the selected ones
+rungs <- if (length(pick)) all_rungs[pick, , drop = FALSE] else all_rungs
 print(rungs, row.names = FALSE)
 
 
 # ---- 2. calibrate ----------------------------------------------------------
 t0  <- Sys.time()
-cal <- calibrate(reg, tg, rungs, SEED_CAL)
+cal <- calibrate(reg, tg, rungs, cal_n_guides, SEED_CAL)
 cat(sprintf("  calibration took %.1f min\n", as.numeric(difftime(Sys.time(), t0, units = "mins"))))
 cal_fp <- file.path(out_root, sprintf("sim_scaling_calibration_%s.csv", name))
 write.csv(cal, cal_fp, row.names = FALSE)
