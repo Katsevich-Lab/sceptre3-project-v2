@@ -9,6 +9,7 @@ include { PERTPY_ASSIGN } from './modules/pertpy'
 include { SCEPTRE_ASSIGN } from './modules/sceptre'
 include { SCRIPT_ASSIGN } from './modules/script'
 include { FISHASH_ASSIGN } from './modules/fishash'
+include { FISHASHPLUS_ASSIGN } from './modules/fishashplus'
 // TODO: Add more methods as needed
 
 workflow {
@@ -35,11 +36,12 @@ workflow {
             def dataset_id = resource_row.dataset
             def method = resource_row.method
             // All script_* variants consume the same R input format as sceptre,
-            // so they share the sceptre/ input subdirectory. fishash() takes a
-            // bare count matrix, which is what cleanser's Matrix Market file
-            // already holds, so it reads that rather than an input of its own.
+            // so they share the sceptre/ input subdirectory; so does fishashplus,
+            // which reads sceptre's grna_matrix.rds. fishash() takes a bare count
+            // matrix, which is what cleanser's Matrix Market file already holds,
+            // so it reads that rather than an input of its own.
             def input_subdir
-            if (method.startsWith('script_')) {
+            if (method.startsWith('script_') || method == 'fishashplus') {
                 input_subdir = 'sceptre'
             } else if (method == 'fishash') {
                 input_subdir = 'cleanser'
@@ -69,6 +71,7 @@ workflow {
         pertpy: it[2] == 'pertpy'
         sceptre: it[2] == 'sceptre'
         fishash: it[2] == 'fishash'
+        fishashplus: it[2] == 'fishashplus'
         script: it[2].startsWith('script_')
         // TODO: Add more methods here
     }
@@ -87,6 +90,9 @@ workflow {
 
     // Run fishash with explicit output directory
     fishash_results = FISHASH_ASSIGN(branched_ch.fishash, outdir)
+
+    // Run fishashplus (fishash+) with explicit output directory
+    fishashplus_results = FISHASHPLUS_ASSIGN(branched_ch.fishashplus, outdir)
 
     // Run script_* variants (all share the SCRIPT_ASSIGN process; the wrapper
     // dispatches to bin/script/{variant}.R based on the method name)
