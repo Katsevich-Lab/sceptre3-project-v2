@@ -1,8 +1,8 @@
 // modules/fishashplus/main.nf
 //
-// Runs fishash+ via bin/run_fishashplus.R. Reads the sceptre/ input subdirectory
-// (grna_matrix.rds, the same matrix sceptre gets; see the input_subdir mapping in
-// main.nf) and writes assignments by guide/cell NAME.
+// Runs fishash+ via bin/run_fishashplus.R. Reads its own fishashplus/ input
+// subdirectory (grna_matrix.rds, guides x cells with dimnames) and writes
+// assignments by guide/cell NAME.
 
 process FISHASHPLUS_ASSIGN {
   tag "${dataset_id}"

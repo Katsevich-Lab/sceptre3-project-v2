@@ -103,6 +103,12 @@ check(all(file.exists(file.path(tmp, c("crispat", "pertpy"), "grna_matrix.h5ad")
       "crispat and pertpy .h5ad written")
 check(!dir.exists(file.path(tmp, "fishash")),
       "fishash gets no directory of its own (main.nf maps it to cleanser/)")
+fp_rds <- readRDS(file.path(tmp, "fishashplus", "grna_matrix.rds"))
+check(identical(fp_rds, counts), "fishashplus .rds is the counts matrix, dimnames included")
+check(!dir.exists(file.path(tmp, "sceptre")), "nothing is written to sceptre/")
+unnamed <- counts; dimnames(unnamed) <- NULL
+check(inherits(try(write_method_inputs(unnamed, tmp, "fishashplus"), silent = TRUE), "try-error"),
+      "the fishashplus .rds refuses a matrix without names")
 check(inherits(try(write_method_inputs(counts, tmp, "not_a_method"), silent = TRUE), "try-error"),
       "an unregistered method errors")
 saved <- SCALING_METHODS

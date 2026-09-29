@@ -4,9 +4,9 @@
 #
 #   Rscript run_fishashplus.R <grna_matrix.rds> <dataset_id>
 #
-# Reads the same guides x cells gRNA count matrix sceptre does
-# (<dataset>/sceptre/grna_matrix.rds), via fishashplus::read_grna_matrix(). The
-# .rds carries real dimnames (guide IDs, cell barcodes), which fishash_plus()
+# Reads the guides x cells gRNA count matrix in <dataset>/fishashplus/grna_matrix.rds,
+# via fishashplus::read_grna_matrix(). The .rds carries dimnames (guide and
+# cell names), which fishash_plus()
 # passes through, so assignments are written by NAME -- unlike fishash, whose
 # .mtx input has no names and is written by row/column index.
 #

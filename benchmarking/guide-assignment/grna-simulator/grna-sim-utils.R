@@ -355,14 +355,18 @@ SCALING_REGIMES <- list(
 # The methods the datasets are built for, and the input each reads:
 #   "h5ad" - <dataset>/<method>/grna_matrix.h5ad, cells x guides
 #   "mtx"  - <dataset>/cleanser/grna_matrix.mtx, guides x cells
+#   "rds"  - <dataset>/<method>/grna_matrix.rds, guides x cells, with dimnames
 # fishash has no input directory of its own: main.nf maps it to cleanser/, since
-# fishash() takes the same Matrix Market count matrix. A new method is added here,
-# and write_method_inputs() stops on any input type it has no writer for.
+# fishash() takes the same Matrix Market count matrix. fishashplus requires guide
+# and cell names, which .mtx cannot store, so it reads an .rds. A new method is
+# added here, and write_method_inputs() stops on any input type it has no writer
+# for.
 SCALING_METHODS <- list(
-  crispat  = list(input = "h5ad"),
-  pertpy   = list(input = "h5ad"),
-  cleanser = list(input = "mtx"),
-  fishash  = list(input = "mtx")
+  crispat     = list(input = "h5ad"),
+  pertpy      = list(input = "h5ad"),
+  cleanser    = list(input = "mtx"),
+  fishash     = list(input = "mtx"),
+  fishashplus = list(input = "rds")
 )
 
 # Held fixed in both regimes: the fishash package defaults, except
@@ -531,7 +535,17 @@ write_method_inputs <- function(counts, ds_dir, methods = names(SCALING_METHODS)
   inputs <- vapply(SCALING_METHODS[methods], `[[`, character(1), "input")
   writers <- list(
     h5ad = function(m) write_h5ad_methods(counts, ds_dir, m),
-    mtx  = function(m) write_cleanser_method(counts, ds_dir)
+    mtx  = function(m) write_cleanser_method(counts, ds_dir),
+    rds  = function(m) {
+      if (is.null(rownames(counts)) || is.null(colnames(counts)))
+        stop("the rds input needs guide and cell names (fishashplus requires them)")
+      for (method in m) {
+        d <- file.path(ds_dir, method)
+        dir.create(d, recursive = TRUE, showWarnings = FALSE)
+        cat("  writing", method, "rds ->", file.path(d, "grna_matrix.rds"), "\n")
+        saveRDS(counts, file.path(d, "grna_matrix.rds"))
+      }
+    }
   )
   missing <- setdiff(unique(inputs), names(writers))
   if (length(missing)) stop("no writer for input type: ", paste(missing, collapse = ", "))

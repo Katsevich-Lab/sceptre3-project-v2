@@ -36,12 +36,12 @@ workflow {
             def dataset_id = resource_row.dataset
             def method = resource_row.method
             // All script_* variants consume the same R input format as sceptre,
-            // so they share the sceptre/ input subdirectory; so does fishashplus,
-            // which reads sceptre's grna_matrix.rds. fishash() takes a bare count
-            // matrix, which is what cleanser's Matrix Market file already holds,
-            // so it reads that rather than an input of its own.
+            // so they share the sceptre/ input subdirectory. fishash() takes a
+            // bare count matrix, which is what cleanser's Matrix Market file
+            // already holds, so it reads that rather than an input of its own.
+            // fishashplus reads its own fishashplus/grna_matrix.rds.
             def input_subdir
-            if (method.startsWith('script_') || method == 'fishashplus') {
+            if (method.startsWith('script_')) {
                 input_subdir = 'sceptre'
             } else if (method == 'fishash') {
                 input_subdir = 'cleanser'
