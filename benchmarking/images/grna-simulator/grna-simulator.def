@@ -1,0 +1,137 @@
+Bootstrap: docker
+# Pins R 4.6.0 and the CRAN snapshot of 2026-06-23, which rocker sets in Rprofile.site.
+# Same base as fishash.def.
+From: rocker/r-ver:4.6.0
+
+# Environment for benchmarking/guide-assignment/grna-simulator/: generating the
+# GuideBender scaling datasets (fishash::simulate_guidebender2), writing every
+# method's input for them, their tests, and quick analysis of the results. This
+# is NOT a benchmarked method's image -- nothing here is timed -- so it is kept
+# separate from fishash.sif, which it must never replace in the pipeline.
+#
+# fishash is pinned to the same commit as fishash.def, so simulated data made
+# here comes from the same simulator the method image carries.
+
+%labels
+    Author Louis
+    Description gRNA scaling-dataset simulator. fishash commit 9b6eabc1 (v0.99.3, 2026-08-23) plus zellkonverter (with its Python env built in), R 4.6.0, CRAN 2026-06-23, Bioconductor 3.23.
+    Version 1.0
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    # Compile packages in parallel on however many cores the build has. Speeds up
+    # the build only; compiler flags (and so the result) are unchanged.
+    export MAKEFLAGS="-j$(nproc)"
+    # ...and install independent packages in parallel (install.packages installs
+    # one at a time by default). Set through a throwaway profile, removed at the
+    # end of %post, so the image's runtime R carries no build-time core count.
+    echo "options(Ncpus = $(nproc))" > /tmp/build.Rprofile
+    export R_PROFILE_USER=/tmp/build.Rprofile
+
+    # System deps: the same set as fishash.def (fishash is installed with its
+    # Suggests, which pull in packages that need the font/image libraries), plus
+    # bzip2 for unpacking the conda packages basilisk installs below.
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        procps \
+        time \
+        build-essential \
+        cmake \
+        curl \
+        git \
+        bzip2 \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libxml2-dev \
+        zlib1g-dev \
+        libfontconfig1-dev \
+        libfreetype6-dev \
+        libfribidi-dev \
+        libharfbuzz-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libtiff5-dev \
+        pkg-config
+    rm -rf /var/lib/apt/lists/*
+
+    R --slave -e 'install.packages("remotes")'
+    R --slave -e 'install.packages("BiocManager")'
+
+    # fishash, exactly as in fishash.def: its Bioconductor imports first, then the
+    # pinned commit. R 4.6.0 maps to Bioc 3.23. Bioconductor has no dated
+    # snapshots, so these versions are not pinned; %test records every installed
+    # version in the build log. update = FALSE keeps this from moving anything
+    # installed above.
+    R --slave -e 'BiocManager::install(c("SummarizedExperiment", "SingleCellExperiment", "S4Vectors", "sparseMatrixStats"), ask = FALSE, update = FALSE)'
+    R --slave -e 'remotes::install_github("jackkamm/fishash@9b6eabc11632bc250a5d88f76a6e428b57793386", dependencies = TRUE, upgrade = "never")'
+
+    # zellkonverter writes the crispat/pertpy .h5ad files (R_to_h5ad() in
+    # data-preprocessing/convert_odm_to_h5ad.R). It runs Python's anndata in a
+    # conda env that basilisk creates. By default basilisk creates that env on
+    # first use, under the user's ~/.cache, downloading it from the internet --
+    # which would make the image depend on the network and on the user's home at
+    # run time. BASILISK_USE_SYSTEM_DIR=1 makes basilisk build the env into the R
+    # library during installation instead, i.e. into the image. It must be set
+    # both here and at run time (%environment), or basilisk looks in ~/.cache.
+    #
+    # basilisk 1.24 builds these envs with pyenv, compiling Python from source
+    # into /root/.pyenv in the image, and it builds every env the package
+    # declares. zellkonverter 1.22 declares two, anndata 0.10.2 on Python 3.11
+    # and anndata 0.10.6 on Python 3.12, so two Pythons are compiled here.
+    # zellkonverter uses the newest (0.10.6) unless told otherwise.
+    export BASILISK_USE_SYSTEM_DIR=1
+    R --slave -e 'BiocManager::install("zellkonverter", ask = FALSE, update = FALSE)'
+    # Write one .h5ad now, while the image is still writable, so that if this
+    # basilisk version creates the env lazily rather than at install time, it is
+    # created here, inside the image. %test checks nothing is created at run time.
+    R --slave -e 'suppressPackageStartupMessages({library(SingleCellExperiment); library(zellkonverter)}); m <- Matrix::rsparsematrix(5, 4, 0.5); dimnames(m) <- list(paste0("g", 1:5), paste0("c", 1:4)); f <- tempfile(fileext = ".h5ad"); writeH5AD(SingleCellExperiment(assays = list(counts = m)), f); unlink(f)'
+
+    # Used by the simulator's tests (extraDistr), its plotting helper (ggplot2,
+    # scales), and for analysing results (data.table). From the CRAN snapshot.
+    R --slave -e 'install.packages(c("extraDistr", "ggplot2", "scales", "data.table"))'
+
+    # install_github, BiocManager::install and install.packages only warn when an
+    # installation fails, so R exits 0 and set -e does not catch it. Check the
+    # packages are present.
+    R --slave -e 'req <- c("fishash", "SummarizedExperiment", "SingleCellExperiment", "S4Vectors", "sparseMatrixStats", "Matrix", "zellkonverter", "basilisk", "reticulate", "extraDistr", "ggplot2", "scales", "data.table"); miss <- req[!vapply(req, requireNamespace, logical(1), quietly = TRUE)]; if (length(miss)) stop("missing packages: ", paste(miss, collapse = ", "))'
+
+    # Catch a version drift here, where the failing step is still in view, rather
+    # than only at %test.
+    R --slave -e 'v <- as.character(packageVersion("fishash")); if (v != "0.99.3") stop("expected fishash 0.99.3 (commit 9b6eabc1), got ", v)'
+
+    rm -f /tmp/build.Rprofile
+
+%runscript
+    # Pass-through so `Rscript`, `bash`, etc. all work with `apptainer run`
+    exec "$@"
+
+%environment
+    export LC_ALL=C
+    export PATH=/usr/local/bin:$PATH
+    # Avoid reading host user libraries when using --cleanenv
+    export R_LIBS_USER=
+    # Use the anndata env built into the image (see %post), never one in ~/.cache.
+    export BASILISK_USE_SYSTEM_DIR=1
+
+%test
+    # Any failing check below aborts the build (apptainer otherwise takes only the
+    # last command's exit status).
+    set -e
+    # Run with an empty home, so a basilisk env created at run time -- i.e. one
+    # that is not in the image -- shows up as files in it.
+    export HOME=$(mktemp -d)
+    # fishash is the pinned version, and simulate_guidebender2 runs and returns
+    # the counts and ground truth the simulator uses.
+    R --quiet -e 'suppressPackageStartupMessages({library(fishash); library(SummarizedExperiment)}); v <- as.character(packageVersion("fishash")); if (v != "0.99.3") stop("expected fishash 0.99.3 (commit 9b6eabc1), got ", v); set.seed(1); sim <- simulate_guidebender2(n_guides = 20, n_cells = 1000, moi = 2, snr = 4, count_per_cell = 100, hurdle_prob = 0.1, frac_noise_endo = 0.75, return_sparse_only = TRUE, chunk_cells = 1000); ct <- assay(sim, "counts"); tr <- assay(sim, "ground_truth"); stopifnot(identical(dim(ct), c(20L, 1000L)), identical(dim(tr), dim(ct)), sum(ct) > 0, sum(tr) > 0); cat("fishash", v, "OK -- simulate_guidebender2 gave", sum(tr), "true perturbations\n")'
+    # .h5ad and .mtx round-trip the same matrix, as the simulator writes them.
+    R --quiet -e 'suppressPackageStartupMessages({library(SingleCellExperiment); library(zellkonverter); library(Matrix)}); set.seed(2); m <- rsparsematrix(30, 50, 0.2); m@x <- round(abs(m@x) * 10) + 1; dimnames(m) <- list(paste0("grna_", 1:30), paste0("CELL_", 1:50)); f <- tempfile(fileext = ".h5ad"); writeH5AD(SingleCellExperiment(assays = list(counts = m)), f); a <- assay(readH5AD(f), 1L); stopifnot(identical(dim(a), dim(m)), all(as.matrix(a) == as.matrix(m))); g <- tempfile(fileext = ".mtx"); writeMM(m, g); stopifnot(all(as.matrix(readMM(g)) == as.matrix(m))); cat("zellkonverter", as.character(packageVersion("zellkonverter")), "and Matrix Market round-trips OK\n")'
+    leftover=$(find "$HOME" -mindepth 1 | head -n 5)
+    if [ -n "$leftover" ]; then
+        echo "FAIL: writing .h5ad created files under \$HOME, so the anndata env is not in the image:"
+        echo "$leftover"
+        exit 1
+    fi
+    echo "anndata env is in the image (nothing created under \$HOME)"
+    # Record R and every installed package version in the build log.
+    R --quiet -e 'cat(R.version.string, "\n"); cat("Bioconductor", as.character(BiocManager::version()), "\n"); ip <- as.data.frame(installed.packages()[, c("Package","Version")], stringsAsFactors=FALSE); print(ip[order(ip$Package), ], row.names=FALSE)'

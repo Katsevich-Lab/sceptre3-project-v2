@@ -6,7 +6,7 @@
 #   e.g. sbatch benchmarking/images/build-on-betty.sbatch fishashplus
 #
 # Runs images/<name>/build-<name>-container.sh --fakeroot, which must support that
-# flag (so far: fishashplus). The .sif is written to images/<name>/ as on a laptop
+# flag (so far: fishashplus, grna-simulator). The .sif is written to images/<name>/ as on a laptop
 # build; then copy it to the pipeline-images directory and add its sha256sum to
 # images/SHA256SUMS.
 #
