@@ -1,0 +1,407 @@
+---
+title: "meeting 2026-09-29"
+output: pdf_document
+date: "2026-09-29"
+---
+Outline
+
+1. The full GuideBender model
+
+2. How we get our computational datasets
+
+3. Computational scaling results
+
+
+
+
+# 1. The full GuideBender model
+
+In this section I give a full end-to-end description of the GuideBender model, as it is actually implemented in the code, rather than the simplified version presented in the paper. 
+
+Let $g \in \{1,2,\dots,G\}$ index guide and $n \in \{1,2,\dots,N\}$ index cell. $N_{gn}$ denotes the observed UMI count of guide $g$ in cell $n$, i.e. the actual entry of the gRNA matrix. We model it as coming from three separate sources:
+$$
+\begin{aligned}
+N_{gn} = N_{gc}^{\text{signal}} + N_{gn}^{\text{endo}} + N_{gn}^{\text{exo}}.
+\end{aligned}
+$$
+
+These respectively represent the contribution of actual expression; ambient noise; and sequencing errors like barcode swaps or PCR chimeras. Cell $n$'s total number of infections $K_n$ is given by a HurdlePoisson, and this total number is distributed among the available guides (multiple infections are possible). 
+
+
+To actual sample from this model, we can group the parameters and quantities as follows:
+
+
+
+
+
+1. Guide-specific: 
+
+These quantities are drawn once per dataset, and shared between cells.
+
+key quantities:
+
+- $\mathbf w \in [0,1]^G$ gives a probability distribution over guides, representing relative infection frequency. 
+
+- $\mathbf d^\text{guide} \in (0,\infty)^G$ controls the magnitude of each guide's signal UMI counts
+
+- $\chi^a \in [0,1]^G$ gives a different probability distribution over guides, representing the relative appearance of each guide in the ambient soup. It is based on both $\mathbf w$ and $\mathbf d^\text{guide}$ (since ambient quantity depends on infection frequency and expression amount).
+
+
+These are constructed as follows:
+
+
+$$
+\mathbf w \sim \operatorname{Dirichlet}(\alpha \mathbf 1_G)
+$$
+so the parameter $\alpha$ governs how uniform $\mathbf w$ is.
+
+$$
+\log d^\text{guide}_g \stackrel{\text{iid}}\sim \mathcal N(0, \sigma^2_\text{guide})
+$$
+
+so $\sigma^2_\text{guide}$ determines the spread of the guide magnitudes.  
+
+Finally, for $\chi^a$, we begin by constructing the distribution $\mathbf p$ over guides, which combines $\mathbf w$ and $\mathbf d^\text{guide}$:
+$$
+\mathbf p := \frac{\mathbf w \odot \mathbf d^\text{guide}}{\mathbf w^T \mathbf d^\text{guide}}.
+$$
+Next, we introduce parameters $f \in [0,1]$ and $s > 0$, called the endogeneous shape parameters, and we construct 
+
+$$
+\mathbf a := (1 - f)\, G\, s\, \mathbf p + f\, s \mathbf 1_G
+$$
+so $\mathbf a$ is a convex combination of $G \mathbf p$ and $\mathbf 1_G$ (both sum to $G$), with $f$ pulling us towards symmetry, then scaled by $s$ to further control concentration. Finally, we obtain
+$$
+\chi^a \mid \mathbf w, \mathbf d^\text{guide} \sim \text{Dirichlet}(\mathbf a).
+$$
+
+In practice, in both the `fishash` code and my code, we always use $\sigma^2_\text{guide} = \frac 14$, $s = 1$, and $f = 0$. So really we have
+
+$$
+\chi^a \mid \mathbf w, \mathbf d^\text{guide} \sim \text{Dirichlet}\left(G \frac{\mathbf w \odot \mathbf d^\text{guide}}{\mathbf w^T \mathbf d^\text{guide}}\right),
+$$
+
+so the relative amounts of each guide in the ambient soup directly depend on their relative frequency and expression magnitudes (in expectation; the realized $\chi^a$ can vary from this). 
+
+In my computational scaling datasets, $\alpha$ is the only one of these parameters that is adjusted to fit a real dataset.
+
+
+
+2. Cell-specific
+
+- $K_n \in \mathbb N$ is the total number of infections in cell $n$. We use $K_n \stackrel{\text{iid}}\sim \text{HurdlePois}(\pi, \lambda)$, so $P(K_n = 0) = \pi$, and $K_n$ is from a zero-truncated Poisson with rate $\lambda$ otherwise. 
+
+- From $K_n$ we get $\mathbf J_n$, the actual number of each infection: $\mathbf J_n \mid K_n, \mathbf w \sim \text{Mult}(K_n, \mathbf w)$ [this is the guide-level parameter $\mathbf w$, so technically this is not purely cell-level, but it makes sense here]
+
+- $\mathbf d^\text{cell} \in (0,\infty)^N$: cell-level scaling factors for signal UMIs. 
+
+- $\mathbf d^\text{drop} \in (0,\infty)^N$: cell-level scaling factors for ambient (endo) UMIs.
+
+- $\rho_n \in [0,1]$ determines what fraction of a cell's UMIs come from exogeneous error vs droplet measurements. $\rho_n=0$ means that the observed UMI count is entirely droplet, while $\rho_n=1$ means the observed UMI count is entirely exogeneous error. 
+
+- $\epsilon_n > 0$ determines the capture efficiency of each droplet, and scales the mean of every term. We have $\epsilon_n \overset{\text{iid}}{\sim} \text{Gamma}(\kappa,\kappa)$ (shape-rate) where $\kappa = 50$ is always used in practice, producing a bell-shaped curve centered at $1$.  
+
+
+
+Additional details:
+
+We need some user-provided inputs to actually obtain the parameters for these quantities. We need
+
+- `snr`, the signal:noise ratio, which controls how much of the total per-cell UMI budget goes to signal 
+
+- `frac_noise_endo`, the fraction of the error that is endogenous
+
+- `count_per_cell`: the target median (within each 1000 cell chunk, to be discussed later) of each cell's total UMI over all sources (signal, endo, and exo)
+
+- $\pi$ and $\lambda$
+
+- `rho_sum` (controlling $\rho_n$'s concentration; technically user-provided, but always set to $10$ in practice)
+
+
+From these, we derive the following:
+$$
+\phi_s = \frac{\texttt{snr}}{1 + \texttt{snr}}, \qquad
+\phi_e = \texttt{frac\_noise\_endo}\cdot (1 - \phi_s), \qquad
+\phi_x = 1 - \phi_s - \phi_e
+$$
+
+These give a partition of total per-cell UMIs into signal, endo, and exo. 
+
+
+
+For the scaling factors $\mathbf d^\text{cell} \in (0,\infty)^N$ and $\mathbf d^\text{drop} \in (0,\infty)^N$, we have
+$$
+\begin{aligned}
+\log d_n^\text{cell} & \stackrel{\text{iid}}\sim\mathcal N\left(\mu_\text{cell}, \frac 1{2^2}\right) \\
+\log d_n^\text{drop} & \stackrel{\text{iid}}\sim\mathcal N\left(\mu_\text{drop}, \frac 1{2^2}\right).
+\end{aligned}
+$$
+
+The parameters of $\mu_\text{cell}$ and $\mu_\text{drop}$ are then derived in a pretty complicated way. We do it by using the fact that the ratio of signal to endo should be around $\phi_s / \phi_e$, while the per-cell UMI total should be around `count_per_cell`. Hard-coding all lognormal variance terms to 1/4, we get
+
+
+$$
+\begin{aligned}
+\mu_\text{drop} &= \log\left( \frac{C\, \phi_e}{\phi_s + \phi_e} \right) - \frac{1}{8}, \\
+\mu_\text{cell} &= \log\left( \frac{C\, \phi_s}{(\phi_s + \phi_e)\, \mu_K} \right) - \frac{1}{4}
+\end{aligned}
+$$
+
+where $C$ is `count_per_cell` and $\mu_K$, the expected number of infections, can be shown to be
+
+$$
+\mu_K = \frac{(1-\pi)\lambda}{1 - e^{-\lambda}}.
+$$
+
+The GuideBender code seems to have a bug where one of the lognormal variances is missing the $\div 2$, although the chunk median rescaling prevents it from mattering. 
+
+Then for $\rho_n$, we compute 
+$$
+\rho_\alpha = \phi_x \cdot \texttt{rho\_sum}, \qquad \rho_\beta = \texttt{rho\_sum} - \rho_\alpha
+$$
+and realize
+
+$$
+\rho_n \overset{\text{iid}}{\sim} \operatorname{Beta}(\rho_\alpha, \rho_\beta), \qquad
+\mathbb{E}[\rho_n] = \frac{\rho_\alpha}{\rho_\alpha + \rho_\beta} = \phi_x.
+$$
+
+
+
+
+3. cell and guide level
+
+Everything in this section is an $G \times N$ matrix indexed by guide $g$ and cell $n$. For now we describe it as if all $N$ cells were simulated together; chunking is added at the end.
+
+The expected signal for guide $g$ in cell $n$ is
+$$
+\mu^\text{s}_{gn} = J_{gn}\; d^\text{guide}_g \;(1-\rho_n)\;\epsilon_n\; d^\text{cell}_n .
+$$
+
+This is the only place $d^\text{guide}$ appears. 
+
+They use a Poisson-Gamma formulation to get the NegBin signal distribution. Draw the signal rate $\lambda^{\text s}_{gn}$ as
+$$
+\lambda^\text{s}_{gn} \mid \mu^\text{s}_{gn} \sim \text{Gamma}\!\left(\text{shape } \frac{1}{\Phi_\text{cell}},\ \text{scale } \Phi_\text{cell}\,\mu^\text{s}_{gn}\right),
+$$
+so that $\mathbb E[\lambda^\text{s}_{gn} \mid \mu^\text{s}_{gn}] = \mu^\text{s}_{gn}$ and $\text{Var}(\lambda^\text{s}_{gn} \mid \mu^\text{s}_{gn}) = \Phi_\text{cell}\,(\mu^\text{s}_{gn})^2$. We always use $\Phi_\text{cell} = 1$, which makes $\lambda^\text{s}_{gn}$ exponential with mean $\mu^\text{s}_{gn}$. When $J_{gn} = 0$ the scale is $0$ and $\lambda^\text{s}_{gn} = 0$, so uninfected guides get no signal.
+
+
+For endo, the expected endogenous (ambient) noise is
+$$
+\lambda^\text{e}_{gn} = \chi^a_g \;(1-\rho_n)\;\epsilon_n\; d^\text{drop}_n .
+$$
+This is the only place $\chi^a$ appears. This term also does not depend on the infection status of cell $n$.
+
+
+For exo, first add the two "droplet" (endogenous) sources:
+$$
+\lambda^\text{endo}_{gn} = \lambda^\text{s}_{gn} + \lambda^\text{e}_{gn},
+$$
+and take its row totals, column totals and grand total:
+$$
+R_g = \sum_{n} \lambda^\text{endo}_{gn}, \qquad
+C_n = \sum_{g} \lambda^\text{endo}_{gn}, \qquad
+S = \sum_{g} R_g .
+$$
+In the code, they compute the expected exogenous noise by
+$$
+\lambda^\text{x}_{gn} = \frac{R_g\, C_n}{S}\cdot\frac{\rho_n}{1-\rho_n}.
+$$
+
+It's definitely what the code does, but I haven't verified correctness. Claude thinks it's good though.
+
+Taking that as correct, we have the total noise rate as
+$$
+\lambda^\text{n}_{gn} = \lambda^\text{e}_{gn} + \lambda^\text{x}_{gn}.
+$$
+
+
+Next, we will enforce that `count_per_cell` really is the median. We do this by effectively dividing the means by their median and then multiplying by `count_per_cell`:
+
+$$
+r := \frac{\texttt{count\_per\_cell}}{\operatorname{median}_n \sum_g \left(\lambda^\text{s}_{gn} + \lambda^\text{n}_{gn}\right)},
+\qquad \text{set} \;\;
+\lambda^\text{s}_{gn} \leftarrow r\,\lambda^\text{s}_{gn}, \quad
+\lambda^\text{n}_{gn} \leftarrow r\,\lambda^\text{n}_{gn}.
+$$
+After this, the median over cells of the total **expected** count equals `count_per_cell` exactly; the median of the realized counts will be close but not equal. Because the same $r$ multiplies everything, it sets the overall level without changing any proportions (signal vs noise, guide vs guide, cell vs cell). This is why only the difference $\mu_\text{cell} - \mu_\text{drop}$ from Section 2 matters in practice.
+
+Finally, to realize this model, we sample
+$$
+N^\text{signal}_{gn} \sim \text{Pois}(\lambda^\text{s}_{gn}), \qquad
+(N^\text{endo}_{gn} + N^\text{exo}_{gn} ) \sim \text{Pois}(\lambda^\text{n}_{gn}), 
+$$
+since $\lambda^\text{n}_{gn}$ is the mean of the endo and exo together. These are drawn independently over all $g, n$ given the rates. The marginalization gives us the NegBin for the signal.
+
+Note that an infection can still have $N_{gn} = 0$. There might always be a gap between the true MOI and the MOI as we would ever estimate it in practice (guide-cell pairs with 0 UMIs are never getting called perturbed). 
+
+In practice the $N$ cells are split into chunks of 1000 (`chunk_cells`), and everything in this section is computed separately in each chunk. The guide-level quantities ($\mathbf w$, $d^\text{guide}$, $\chi^a$) and cell-level quantities ($K_n$, $\mathbf J_n$, $\rho_n$, $\epsilon_n$, $d^\text{cell}_n$, $d^\text{drop}_n$) are drawn once for all cells beforehand. Chunking changes exactly two things:
+
+1. In the exogenous term, $R_g$, $C_n$ and $S$ are totals within the chunk, not over all $N$ cells. $C_n$ is a per-cell total, so it is unaffected; $R_g / S$ becomes the chunk's own endogenous guide profile.
+
+2. The median in $r$ is over the chunk's 1000 cells, so each chunk gets its own $r$, and `count_per_cell` is hit chunk by chunk.
+
+
+
+
+# 2. Computational scaling datasets
+
+We want to use a real dataset to pick good GuideBender parameters, while satisfying the realism requirements that I previously presented. These are
+
+1. MOI stays constant
+
+2. per-guide true perturbations doesn't vary with $N$ and $G$
+
+3. the per-cell total signal and error UMI counts do not meaningfully vary with $N$ and $G$
+
+As a consequence, we use a sequence of datasets with $N$ and $G$ fixed.
+
+The following GuideBender parameters are never changed:
+
+
+| Code argument | Symbol | Value | Role |
+|:--------------------|:-----------------|:------|:------------------------------------------------------|
+| `Phi_cell`          | $\Phi_\text{cell}$         | 1    | Gamma overdispersion of the signal rate $\lambda^\text{s}_{gn}$ |
+| `Phi_noise`         | $\Phi_\text{noise}$        | 0    | Gamma overdispersion of the noise rate $\lambda^\text{n}_{gn}$ (0 = none) |
+| `rho_sum`           | $\rho_\alpha + \rho_\beta$ | 10   | Concentration of $\rho_n \sim \text{Beta}(\rho_\alpha, \rho_\beta)$ |
+| `eps_alpha`         | $\kappa$                   | 50   | Shape and rate of $\epsilon_n \sim \text{Gamma}(\kappa, \kappa)$ |
+| `d_sigma_guide`     | $\sigma_\text{guide}$      | 0.5  | SD of $\log d^\text{guide}_g$ |
+| `d_sigma_cell`      | $\sigma_\text{cell}$       | 0.5  | SD of $\log d^\text{cell}_n$ |
+| `d_sigma_drop`      | $\sigma_\text{drop}$       | 0.5  | SD of $\log d^\text{drop}_n$ |
+| `endo_shape_sum`    | $s$                        | 1    | Total concentration of the Dirichlet for $\boldsymbol\chi^a$ |
+| `endo_shape_flat`   | $f$                        | 0    | Uniform component of the Dirichlet for $\boldsymbol\chi^a$ |
+| `use_median`        | --                         | TRUE | Rescale rates so the chunk median of per-cell totals is `count_per_cell` |
+
+The following are the parameters we set:
+
+| Code argument | Symbol | How we set it | Role |
+|:----------------------|:----------|:---------------------------|:-------------------------------------------|
+| `n_guides`              | $G$       | Per rung: $\operatorname{round}(N \cdot G_0/N_0)$ | Number of guides |
+| `n_cells`               | $N$       | Per rung: chosen | Number of cells |
+| `moi`                   | $\lambda$ | Calibrated per rung | Rate of the Poisson in the hurdle Poisson for $K_n$ |
+| `hurdle_prob`           | $\pi$     | Measured from the real matrix | $P(K_n = 0)$ |
+| `snr`                   | --        | Calibrated once per regime | Sets $\phi_s = \texttt{snr}/(1+\texttt{snr})$ |
+| `count_per_cell`        | $C$       | Measured from the real matrix | Target median of per-cell totals |
+| `guide_infection_alpha` | $\alpha$  | Measured from the real matrix | Concentration of $\mathbf w \sim \text{Dirichlet}(\alpha \mathbf 1_G)$ |
+| `frac_noise_endo`       | --        | Chosen: 0.75 | Endogenous share of the noise; sets $\phi_e$ and $\phi_x$. Very important but hard to pick. |
+| `chunk_cells`           | --        | Chosen: 1000 | Cells per chunk, avoids a $G\times N$ dense matrix |
+
+How we set or chose these:
+
+Let $Y$ be the real count matrix, with $G_0$ guides and $N_0$ cells. We need to know which guide-cell pairs are perturbed, so we use thresholding. Gasperini gets a threshold of 5, and Replogle of 10.
+
+**Measured from the real matrix**
+
+- **`count_per_cell`** ($C$): the median of the per-cell UMI totals 
+- **`hurdle_prob`** ($\pi$): a cell with no guides flagged as perturbed in our assignment is determined to have $K_n=0$, so we estimate $\pi$ as the fraction of cells with zero UMIs hitting the threshold.
+- **`guide_infection_alpha`** ($\alpha$): [Claude did this] let $m_g$ be the number of cells in which guide $g$ is called perturbed, with mean $\bar m$ and coefficient of variation $\text{CV}_m$ across the $G_0$ guides. Subtract the sampling variance of the counts, $\text{CV}_w^2 = \text{CV}_m^2 - 1/\bar m$, and solve the Dirichlet relation $\text{CV}_w^2 = (G_0 - 1)/(G_0\alpha + 1)$ for $\alpha$:
+$$
+\alpha = \frac{1}{G_0}\left(\frac{G_0 - 1}{\text{CV}_w^2} - 1\right).
+$$
+- **`n_guides`** ($G$): for each rung's chosen number of cells $N$, $G = \operatorname{round}(N \cdot G_0 / N_0)$, which keeps the real cells-per-guide ratio.
+
+
+
+
+
+
+**Calibrated by simulation**
+
+Two statistics are matched, each computed the same way on real and simulated matrices: the thresholded MOI and the number of nonzeros per cell,
+$$
+M_t = \frac{1}{N}\sum_{g,n} \mathbb 1\{Y_{gn} \ge t\},
+\qquad
+Z = \frac{1}{N}\sum_{g,n} \mathbb 1\{Y_{gn} > 0\}.
+$$
+Each evaluation simulates $n_\text{cal}$ cells ($4{,}000$ for Gasperini, $10{,}000$ for Replogle) and averages $M_t$ and $Z$ over $n_\text{seeds}$ independent simulations (1 for Gasperini, 4 for Replogle). These use seeds $11, 12, \dots$, and the same seeds are reused at every evaluation. All other inputs are set as above.
+
+- **`snr`** (Stage 1): solved jointly with $\lambda$ at $G^\ast$, the largest rung's number of guides.
+    - Starting values: $\texttt{snr}$ is the real matrix's mean per-cell UMIs in entries called perturbed, divided by its mean per-cell UMIs in nonzero entries not called perturbed; $\lambda = M_t / (1 - \pi)$.
+    - Each pass first solves for $\lambda$ so that the simulated $M_t$ equals the real value, holding $\texttt{snr}$ fixed, then solves for $\texttt{snr}$ so that the simulated $Z$ equals the real value, holding $\lambda$ fixed. Each solve is a one-dimensional root-finding (`uniroot`) on the log scale.
+    - Passes stop once both $M_t$ and $Z$ are within a relative tolerance of their targets (0.5% for Gasperini, 1% for Replogle); after 6 passes without convergence, the code stops with an error.
+    - The resulting $\texttt{snr}$ is used at every rung. The $\lambda$ from this stage is only a starting value for Stage 2.
+- **`moi`** ($\lambda$) (Stage 2): with $\texttt{snr}$ fixed at its Stage 1 value, $\lambda$ is solved separately at each rung's $G$ so that the simulated $M_t$ equals the real value. The search starts from the Stage 1 $\lambda$ at the first rung and from the previous rung's solution after that. The code stops with an error if $M_t$ is not within tolerance. $Z$ is not a target in this stage.
+
+
+
+## results
+
+
+
+
+
+```{r gb-scaling-plot, fig.width = 9, fig.height = 7, message = FALSE, echo=FALSE}
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+trace_file <- "~/data/projects/sceptre3/benchmarking/guide_assignment/outputs/gb_vs_rs_c1/gb_vs_rs_c1_trace.tsv"
+
+# Nextflow durations look like "2h 43m 19s", "42.5s", "850ms"; returns seconds.
+parse_duration <- function(x) {
+  unit_sec <- c(d = 86400, h = 3600, m = 60, s = 1, ms = 0.001)
+  vapply(strsplit(x, " "), function(parts) {
+    num  <- as.numeric(sub("[a-z]+$", "", parts))
+    unit <- sub("^[0-9.]+", "", parts)
+    sum(num * unit_sec[unit])
+  }, numeric(1))
+}
+
+
+# Nextflow memory looks like "3.5 GB", "617.4 MB" (binary units); returns GB.
+parse_memory <- function(x) {
+  unit_bytes <- c(B = 1, KB = 1024, MB = 1024^2, GB = 1024^3, TB = 1024^4)
+  vapply(strsplit(x, " "), function(p) as.numeric(p[1]) * unit_bytes[[p[2]]],
+         numeric(1)) / 1024^3
+}
+
+# Seconds -> "hh:mm:ss".
+format_hms <- function(sec) {
+  sec <- round(sec)
+  sprintf("%02d:%02d:%02d", sec %/% 3600, (sec %% 3600) %/% 60, sec %% 60)
+}
+
+# Cells -> "11k", "130k" (two significant digits).
+format_k <- function(n) paste0(signif(n / 1000, 2), "k")
+
+runs <- read.delim(trace_file, check.names = FALSE, stringsAsFactors = FALSE) |>
+  filter(status == "COMPLETED", startsWith(tag, "sim_")) |>
+  transmute(
+    method      = tolower(sub("_ASSIGN$", "", sub(".*:", "", process))),
+    screen      = ifelse(grepl("gasperini", tag), "Gasperini-based", "Replogle-based"),
+    n_guides    = as.integer(sub(".*_g([0-9]+)_c.*", "\\1", tag)),
+    n_cells     = as.integer(sub(".*_c([0-9]+)$", "\\1", tag)),
+    runtime_sec = parse_duration(realtime),
+    memory_gb   = parse_memory(peak_rss)
+  )
+
+cell_breaks    <- sort(unique(runs$n_cells))
+runtime_breaks <- c(1, 10, 60, 600, 3600, 3 * 3600, 6 * 3600, 12 * 3600)
+
+base_plot <- function(y) {
+  ggplot(runs, aes(x = n_cells, y = .data[[y]], colour = method)) +
+    geom_line() +
+    geom_point() +
+    facet_wrap(~ screen, scales = "free_x") +
+    scale_x_log10(breaks = cell_breaks, labels = format_k) +
+    labs(x = "Cells (guides scaled at the real cells-per-guide ratio)",
+         colour = "Method") +
+    theme_bw()
+}
+
+p_runtime <- base_plot("runtime_sec") +
+  scale_y_log10(breaks = runtime_breaks, labels = format_hms) +
+  labs(x = NULL, y = "Runtime (hh:mm:ss)") +
+  theme(legend.position = "none")
+
+p_memory <- base_plot("memory_gb") +
+  scale_y_log10() +
+  labs(y = "Peak memory (GB)") +
+  theme(legend.position = "bottom")
+
+plot_grid(p_runtime, p_memory, ncol = 1, align = "v", axis = "lr",
+          rel_heights = c(1, 1.15))
+```
+
+
+Most of this looks as expected. fishash+ does great. The one concerning thing is how CLEANSER jumps way up in memory for the Replogle data, but this turns out to be a genuine result. CLEANSER is very sensitive to the guide with the most non-zeros. The real Replogle has a guide that is about 17\% non-zero, which is very dense, and leads to huge memory use on Replogle. These simulated datasets preserve that property, which is why Replogle is so costly for CLEANSER. 
