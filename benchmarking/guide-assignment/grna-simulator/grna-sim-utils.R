@@ -332,23 +332,20 @@ plot_umi_histogram_real_vs_sim <- function(
 # Replogle needs more of both because its MOI is ~1.3 rather than ~32, so the
 # same relative precision takes far more cells.
 #
-# The rungs are sized by cleanser, the most expensive method: its cost is about
-# 11.4 ms per nonzero entry (from the warm-up runs), so a wall-clock budget is
-# really a budget on total nonzeros. Each ladder spans 2 h to 8 h of cleanser,
-# i.e. 0.64M to 2.5M nonzeros. The 2 h floor is what keeps replogle's smallest
-# rung at G = 156 rather than G = 31: ambient molecules collide onto the same
-# guide when guides are scarce, which costs nonzeros, and nonzeros are the cost
-# driver being measured.
-#
-# These rungs are too small to time the fast methods usefully -- fishash+ does
-# 2.5M nonzeros in a few seconds -- so fishash and fishash+ are measured on the
-# real matrices directly instead.
+# The rungs are the paper's: doubling where the budget allows, with each top rung
+# at about 12 h for the slowest method, measured on Betty (Gasperini 88,000 cells:
+# pertpy ~12.8 h, cleanser ~11.4 h; Replogle 185,000 cells: cleanser ~13.5 h).
+# Replogle's smallest rung is kept near G = 300: below that, ambient molecules
+# collide onto the same guides often enough that nonzeros per cell fall along
+# the ladder (measured with --calibrate-only: 17% lower at G = 156 than at 515,
+# 6% at 286), which would bias a cost-vs-size curve. Gasperini shows no such
+# drift across 694 to 2,712 guides. chunk_cells must divide every n_cells.
 SCALING_REGIMES <- list(
   gasperini = list(real_dataset = "gasperini",    threshold = 5L,
-                   n_cells = c(11000L, 16000L, 22000L, 31000L, 43000L),
+                   n_cells = c(11000L, 22000L, 44000L, 88000L),
                    n_cal   = 4000L,  n_seeds = 1L, cal_tol = 0.005),
   replogle  = list(real_dataset = "replogle-rd7", threshold = 10L,
-                   n_cells = c(36000L, 49000L, 66000L, 89000L, 119000L),
+                   n_cells = c(69000L, 92000L, 129000L, 185000L),
                    n_cal   = 10000L, n_seeds = 4L, cal_tol = 0.010)
 )
 
