@@ -300,24 +300,23 @@ plot_umi_histogram_real_vs_sim <- function(
 #
 # Two knobs are calibrated rather than set, because the simulator does not take
 # the measured quantity directly (calibrate):
-#   snr    - held equal across rungs, so ambient UMIs per cell are equal across
-#            rungs. Solved once, by matching the real matrix's nonzeros per cell.
-#            Solved at the LARGEST rung's number of guides rather than at each
-#            rung's: nonzeros per cell carry a collision term A/(1 + A/G), so the
-#            same ambient UMI count A yields fewer nonzeros at small G, and
-#            matching at a small G would recover an inflated A. Collisions
-#            saturate well below the real number of guides, so the largest rung
-#            stands in for it and nothing is ever simulated at a size the rungs
-#            do not use.
-#   lambda - simulate_guidebender2's `moi`: the rate of the Poisson draw of
-#            infections per cell, before zero truncation, the hurdle, and repeated
-#            draws of the same guide. Solved at each rung so the thresholded MOI
-#            of the simulated counts equals the real one.
+#   lambda - simulate_guidebender2's `moi`: the rate of the Poisson in the hurdle
+#            Poisson for infections per cell. Solved at each rung so the
+#            thresholded MOI of the simulated counts equals the real one.
+#   snr    - the ratio of expected signal to expected noise UMIs. Solved by
+#            matching the real matrix's nonzeros per cell, in one of two modes:
+#     "shared"   - solved once, at the LARGEST rung's number of guides, and held
+#                  equal across rungs, so the signal/noise split is the same at
+#                  every rung. Nonzeros per cell then fall below the target at
+#                  smaller rungs: with fewer guides, noise UMIs land on the same
+#                  guide more often (Replogle G = 299 was 14% low).
+#     "per_rung" - solved jointly with lambda at each rung, so nonzeros per cell
+#                  match at every rung and the signal/noise split varies instead.
 #
 # Cells are drawn independently given the guide-level latents, and chunk-level
 # quantities depend only on the cells in the chunk, so the distribution of a
 # per-cell statistic does not depend on n_cells. Calibration runs therefore use
-# n_cal cells whatever the rung, and every evaluation reuses one seed.
+# n_cal cells whatever the rung, and every evaluation reuses the same seeds.
 
 # Dataset ids keep the regime name because run_cleanser.py chooses its CROP-seq
 # (--cs) or direct-capture (--dc) model by matching "gasperini" / "replogle" in
@@ -388,6 +387,8 @@ SCALING_PARAMS_SHARED <- list(
 
 SCALING_CAL_TOL    <- 0.005   # calibration stops within 0.5% of each target
 SCALING_CAL_PASSES <- 6L
+SCALING_LAMBDA_RANGE <- c(1e-3, 1e3)   # where calibration searches; fitted values
+SCALING_SNR_RANGE    <- c(1e-2, 1e5)   # so far are lambda 0.85-60, snr 74-105
 
 
 #' guide_infection_alpha from the measured spread of perturbed cells per guide.
@@ -453,19 +454,48 @@ cal_stats <- function(counts, threshold) {
   c(moi = sum(x >= threshold) / ncol(counts), nnz_per_cell = length(x) / ncol(counts))
 }
 
-#' Root of f(x) = target, searched on a log scale from x0. `dir` is "upX" when f
-#' increases in x and "downX" when it decreases, so uniroot extends the bracket
-#' the right way.
-solve_log <- function(f, target, x0, dir) {
-  exp(stats::uniroot(function(lx) f(exp(lx)) - target,
-                     lower = log(x0) - 0.2, upper = log(x0) + 0.2,
-                     extendInt = dir, tol = 1e-3)$root)
+#' Root of f(x) = target, searched on a log scale from x0 within [lower, upper].
+#' `dir` is "upX" when f increases in x and "downX" when it decreases. The
+#' bracket starts at x0 * exp(+-0.2) and widens, doubling its step, toward the
+#' side the root must be on. If the target is out of f's range on [lower, upper],
+#' it stops and says so, rather than handing the simulator a value it cannot use
+#' (a target below the MOI that noise alone produces once sent lambda to 0).
+#' `what` names x in that message.
+solve_log <- function(f, target, x0, dir, lower, upper, what) {
+  sgn <- switch(dir, upX = 1, downX = -1, stop("dir must be \"upX\" or \"downX\""))
+  g   <- function(lx) sgn * (f(exp(lx)) - target)        # increasing in lx
+  llo <- log(lower); lhi <- log(upper)
+  lo  <- max(log(x0) - 0.2, llo); hi <- min(log(x0) + 0.2, lhi)
+  g_lo <- g(lo); g_hi <- g(hi); step <- 0.4
+  while (g_lo > 0 && lo > llo) {                          # root below the bracket
+    hi <- lo; g_hi <- g_lo
+    lo <- max(lo - step, llo); g_lo <- g(lo); step <- 2 * step
+  }
+  while (g_hi < 0 && hi < lhi) {                          # root above the bracket
+    lo <- hi; g_lo <- g_hi
+    hi <- min(hi + step, lhi); g_hi <- g(hi); step <- 2 * step
+  }
+  if (g_lo > 0)
+    stop(sprintf("%s: target %g not reached; at the lower bound %g the value is still %g",
+                 what, target, lower, target + g_lo / sgn), call. = FALSE)
+  if (g_hi < 0)
+    stop(sprintf("%s: target %g not reached; at the upper bound %g the value is still %g",
+                 what, target, upper, target + g_hi / sgn), call. = FALSE)
+  exp(stats::uniroot(g, c(lo, hi), f.lower = g_lo, f.upper = g_hi, tol = 1e-3)$root)
 }
 
-#' Calibrate snr (once, at cal_n_guides) and lambda (per rung). `cal_n_guides` is
-#' the largest rung of the whole regime, so it does not move when only some rungs
-#' are being generated. Returns the snr solve, then one row per rung.
-calibrate <- function(reg, tg, rungs, cal_n_guides, seed) {
+#' Calibrate lambda and snr; see "Two knobs" above for the two snr modes.
+#'   snr_mode     "shared": snr solved once at cal_n_guides, then lambda per rung.
+#'                "per_rung": lambda and snr solved jointly at each rung.
+#'   cal_n_guides for "shared" only: the largest rung of the whole regime, so it
+#'                does not move when only some rungs are being generated.
+#' Every joint solve starts from the same values, so a rung's result does not
+#' depend on which other rungs are being calibrated. Returns one row per rung,
+#' preceded in "shared" mode by the row of the snr solve.
+calibrate <- function(reg, tg, rungs, seed, snr_mode, cal_n_guides = NULL) {
+  snr_mode <- match.arg(snr_mode, c("shared", "per_rung"))
+  if (snr_mode == "shared" && is.null(cal_n_guides))
+    stop("snr_mode \"shared\" needs cal_n_guides")
   # Averaged over n_seeds independent runs. Each run redraws the guide-level
   # latents too, so guide-level sampling error averages out rather than sitting
   # as a fixed offset the solver cannot see.
@@ -481,39 +511,67 @@ calibrate <- function(reg, tg, rungs, cal_n_guides, seed) {
   within <- function(st, which = names(target))
     all(abs(st[which] / target[which] - 1) < tol)
   row <- function(role, dataset, G, lambda, snr, st)
-    data.frame(role = role, dataset = dataset, n_guides = G, lambda = lambda, snr = snr,
+    data.frame(role = role, dataset = dataset, n_guides = G, snr_mode = snr_mode,
+               lambda = lambda, snr = snr,
                cal_moi = st[["moi"]], cal_nnz_per_cell = st[["nnz_per_cell"]])
 
-  # snr and lambda together, at the largest rung's number of guides
-  G0 <- cal_n_guides
-  snr <- tg$snr_start
-  lambda <- tg$moi / (1 - tg$hurdle_prob)
-  cat(sprintf("\n[calibrate] snr at G = %d, the largest rung (%d cells per run)\n",
-              G0, reg$n_cal))
-  for (pass in seq_len(SCALING_CAL_PASSES)) {
-    lambda <- solve_log(function(l) evaluate(G0, l, snr)[["moi"]],
-                        target[["moi"]], lambda, "upX")
-    snr    <- solve_log(function(s) evaluate(G0, lambda, s)[["nnz_per_cell"]],
-                        target[["nnz_per_cell"]], snr, "downX")
-    st <- evaluate(G0, lambda, snr)
-    cat(sprintf("  pass %d: lambda %.4f  snr %.3f  ->  moi %.3f (target %.3f)  nnz/cell %.3f (target %.3f)\n",
-                pass, lambda, snr, st[["moi"]], target[["moi"]],
-                st[["nnz_per_cell"]], target[["nnz_per_cell"]]))
-    if (within(st)) break
-  }
-  if (!within(st))
-    stop("snr calibration did not reach ", tol * 100, "% in ", SCALING_CAL_PASSES,
-         " passes. If the printed values oscillate around the targets rather than ",
-         "drifting, the tolerance is under the sampling noise of an n_cal run: ",
-         "raise n_cal or n_seeds, or loosen cal_tol, for this regime.")
-  cal <- row("snr", NA_character_, G0, lambda, snr, st)
+  solve_lambda <- function(G, lambda, snr)
+    solve_log(function(l) evaluate(G, l, snr)[["moi"]], target[["moi"]], lambda, "upX",
+              SCALING_LAMBDA_RANGE[1], SCALING_LAMBDA_RANGE[2], sprintf("lambda at G = %d", G))
+  solve_snr <- function(G, lambda, snr)
+    solve_log(function(s) evaluate(G, lambda, s)[["nnz_per_cell"]], target[["nnz_per_cell"]],
+              snr, "downX", SCALING_SNR_RANGE[1], SCALING_SNR_RANGE[2], sprintf("snr at G = %d", G))
 
-  # lambda at each rung, snr held at the value above
+  # lambda and snr together at G: alternate the two 1-D solves until both
+  # targets are within tolerance.
+  #   - snr is solved once before the first pass: at a noisy starting snr, noise
+  #     entries alone can exceed the MOI target, leaving no lambda that reaches it.
+  #   - Each pass then solves lambda, then snr. snr goes last because nonzeros
+  #     per cell respond smoothly to it but not to lambda: changing lambda changes
+  #     infection counts and so every random draw after them, so ending on a
+  #     lambda solve left nonzeros per cell jumping by ~1.5% between passes.
+  solve_joint <- function(G, label) {
+    snr    <- tg$snr_start
+    lambda <- tg$moi / (1 - tg$hurdle_prob)
+    cat(sprintf("\n[calibrate] %s: lambda and snr at G = %d (%d cells per run)\n",
+                label, G, reg$n_cal))
+    snr <- solve_snr(G, lambda, snr)
+    for (pass in seq_len(SCALING_CAL_PASSES)) {
+      lambda <- solve_lambda(G, lambda, snr)
+      snr    <- solve_snr(G, lambda, snr)
+      st <- evaluate(G, lambda, snr)
+      cat(sprintf("  pass %d: lambda %.4f  snr %.3f  ->  moi %.3f (target %.3f)  nnz/cell %.3f (target %.3f)\n",
+                  pass, lambda, snr, st[["moi"]], target[["moi"]],
+                  st[["nnz_per_cell"]], target[["nnz_per_cell"]]))
+      if (within(st)) break
+    }
+    if (!within(st))
+      stop("calibration did not reach ", tol * 100, "% in ", SCALING_CAL_PASSES,
+           " passes at G = ", G, ". If the printed values oscillate around the targets ",
+           "rather than drifting, the tolerance is under the sampling noise of an n_cal ",
+           "run: raise n_cal or n_seeds, or loosen cal_tol, for this regime.")
+    list(lambda = lambda, snr = snr, st = st)
+  }
+
+  if (snr_mode == "per_rung") {
+    cal <- NULL
+    for (i in seq_len(nrow(rungs))) {
+      j <- solve_joint(rungs$n_guides[i], rungs$dataset[i])
+      cal <- rbind(cal, row("rung", rungs$dataset[i], rungs$n_guides[i], j$lambda, j$snr, j$st))
+    }
+    return(cal)
+  }
+
+  # "shared": snr solved once at the largest rung, then lambda at each rung with
+  # snr held at that value
+  j   <- solve_joint(cal_n_guides, "shared snr, at the largest rung")
+  snr <- j$snr
+  cal <- row("snr", NA_character_, cal_n_guides, j$lambda, snr, j$st)
   cat(sprintf("\n[calibrate] lambda per rung (snr fixed at %.3f)\n", snr))
-  lam <- lambda
+  lam <- j$lambda
   for (i in seq_len(nrow(rungs))) {
     G <- rungs$n_guides[i]
-    lam <- solve_log(function(l) evaluate(G, l, snr)[["moi"]], target[["moi"]], lam, "upX")
+    lam <- solve_lambda(G, lam, snr)
     st <- evaluate(G, lam, snr)
     if (!within(st, "moi")) stop("lambda calibration missed the MOI target at G = ", G)
     cat(sprintf("  G = %5d: lambda %.4f  ->  moi %.3f  nnz/cell %.3f\n",
@@ -558,7 +616,7 @@ SCALING_MANIFEST_COLS <- c(
 #' Simulate one rung, write every method's input for it, and return its manifest
 #' row.
 generate_rung <- function(name, reg, tg, dataset, n_guides, n_cells, lambda, snr,
-                          seed, out_root, methods = names(SCALING_METHODS)) {
+                          snr_mode, seed, out_root, methods = names(SCALING_METHODS)) {
   t0 <- Sys.time()
   sim <- simulate_regime(tg, n_guides, n_cells, lambda, snr, seed)
   gen_min <- as.numeric(difftime(Sys.time(), t0, units = "mins"))
@@ -575,6 +633,7 @@ generate_rung <- function(name, reg, tg, dataset, n_guides, n_cells, lambda, snr
   saveRDS(c(SCALING_PARAMS_SHARED,
             list(regime = name, real_dataset = reg$real_dataset, threshold = reg$threshold,
                  n_guides = n_guides, n_cells = n_cells, moi = lambda, snr = snr,
+                 snr_mode = snr_mode,
                  count_per_cell = tg$count_per_cell, hurdle_prob = tg$hurdle_prob,
                  guide_infection_alpha = tg$alpha, seed = seed, methods = methods,
                  targets = tg[setdiff(names(tg), "stats")])),
@@ -586,7 +645,8 @@ generate_rung <- function(name, reg, tg, dataset, n_guides, n_cells, lambda, snr
   out$moi_truth            <- s_truth$moi
   out$pert_per_guide_truth <- s_truth$pert_per_guide
   out$lambda  <- lambda
-  out$snr     <- snr
-  out$gen_min <- round(gen_min, 2)
+  out$snr      <- snr
+  out$snr_mode <- snr_mode
+  out$gen_min  <- round(gen_min, 2)
   out
 }

@@ -1,9 +1,13 @@
 #!/usr/bin/env Rscript
 # Generate the computational-scaling datasets for one regime.
 #
-#   Rscript simulate-scaling-datasets.R gasperini                   # every rung
-#   Rscript simulate-scaling-datasets.R replogle 1 2                # rungs 1 and 2 only
-#   Rscript simulate-scaling-datasets.R gasperini --calibrate-only  # measure + calibrate
+#   Rscript simulate-scaling-datasets.R gasperini --snr=per-rung                  # every rung
+#   Rscript simulate-scaling-datasets.R replogle --snr=shared 1 2                 # rungs 1 and 2 only
+#   Rscript simulate-scaling-datasets.R gasperini --snr=per-rung --calibrate-only # measure + calibrate
+#
+# --snr is required: "shared" solves snr once at the largest rung and holds it
+# across rungs; "per-rung" solves it at each rung (see calibrate() in
+# grna-sim-utils.R).
 #
 # Needs the R_461 renv library (fishash, zellkonverter, Matrix):
 #   R_LIBS_USER=~/katsevich-lab/R_461/renv/library/linux-ubuntu-jammy/R-4.6/x86_64-pc-linux-gnu
@@ -32,14 +36,18 @@ source(file.path(dp, "lib_make_guide_data.R"))           # write_h5ad_methods(),
 SEED_CAL <- 11L
 SEED_GEN <- 1L
 
-args <- commandArgs(trailingOnly = TRUE)
-if (!length(args) || !args[1] %in% names(SCALING_REGIMES))
-  stop("usage: simulate-scaling-datasets.R <", paste(names(SCALING_REGIMES), collapse = "|"),
-       "> [rung numbers] [--calibrate-only]")
+args  <- commandArgs(trailingOnly = TRUE)
+usage <- paste0("usage: simulate-scaling-datasets.R <", paste(names(SCALING_REGIMES), collapse = "|"),
+                "> --snr=<shared|per-rung> [rung numbers] [--calibrate-only]")
+if (!length(args) || !args[1] %in% names(SCALING_REGIMES)) stop(usage)
 name <- args[1]
 reg  <- SCALING_REGIMES[[name]]
+snr_arg <- grep("^--snr=", args, value = TRUE)
+if (length(snr_arg) != 1) stop(usage)
+snr_mode <- switch(sub("^--snr=", "", snr_arg),
+                   "shared" = "shared", "per-rung" = "per_rung", stop(usage))
 calibrate_only <- "--calibrate-only" %in% args
-pick <- suppressWarnings(as.integer(setdiff(args[-1], "--calibrate-only")))
+pick <- suppressWarnings(as.integer(args[-1][!startsWith(args[-1], "--")]))
 
 out_root <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment", "input_data")
 
@@ -59,8 +67,10 @@ print(rungs, row.names = FALSE)
 
 
 # ---- 2. calibrate ----------------------------------------------------------
+cat(sprintf("\nsnr mode: %s\n", snr_mode))
 t0  <- Sys.time()
-cal <- calibrate(reg, tg, rungs, cal_n_guides, SEED_CAL)
+cal <- calibrate(reg, tg, rungs, SEED_CAL, snr_mode,
+                 cal_n_guides = if (snr_mode == "shared") cal_n_guides else NULL)
 cat(sprintf("  calibration took %.1f min\n", as.numeric(difftime(Sys.time(), t0, units = "mins"))))
 cal_fp <- file.path(out_root, sprintf("sim_scaling_calibration_%s.csv", name))
 write.csv(cal, cal_fp, row.names = FALSE)
@@ -76,7 +86,7 @@ for (i in seq_len(nrow(rungs))) {
   cat(sprintf("\n=== %s (%d guides x %d cells, lambda %.4f, snr %.3f) ===\n",
               r$dataset, r$n_guides, r$n_cells, cal$lambda[k], cal$snr[k]))
   manifest[[i + 1L]] <- generate_rung(name, reg, tg, r$dataset, r$n_guides, r$n_cells,
-                                      cal$lambda[k], cal$snr[k], SEED_GEN, out_root)
+                                      cal$lambda[k], cal$snr[k], snr_mode, SEED_GEN, out_root)
   invisible(gc())
 }
 

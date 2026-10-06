@@ -117,4 +117,73 @@ check(inherits(try(write_method_inputs(counts, tmp, "fake"), silent = TRUE), "tr
       "a registered method with no writer for its input type errors")
 SCALING_METHODS <- saved
 
+
+# ---- 7. solve_log finds known roots ----------------------------------------
+# The starting bracket is x0 * exp(+-0.2); every root here lies outside it, so
+# uniroot has to extend the bracket in the stated direction.
+cat("\n[7] solve_log finds the root of a known monotone function\n")
+cases <- list(
+  list(f = function(x) x^2, target = 50,   x0 = 1, dir = "upX",   root = sqrt(50), what = "increasing, root above the start"),
+  list(f = function(x) x,   target = 0.02, x0 = 1, dir = "upX",   root = 0.02,     what = "increasing, root below the start"),
+  list(f = function(x) 1/x, target = 0.01, x0 = 1, dir = "downX", root = 100,      what = "decreasing, root above the start")
+)
+for (cs in cases) {
+  est <- solve_log(cs$f, cs$target, cs$x0, cs$dir, 1e-6, 1e6, "x")
+  check(near(est, cs$root, 0.005), sprintf("%s: %.4g found for %.4g (within 0.5%%)", cs$what, est, cs$root))
+}
+# A target out of reach inside the bounds must stop with a message, from either side.
+check(inherits(try(solve_log(function(x) x, 5, 0.5, "upX", 1e-3, 1, "x"), silent = TRUE), "try-error"),
+      "target above f's range on [lower, upper] errors")
+check(inherits(try(solve_log(function(x) 2 + x, 1, 0.5, "upX", 1e-3, 1, "x"), silent = TRUE), "try-error"),
+      "target below f's range on [lower, upper] errors (the lambda-to-0 case)")
+
+
+# ---- 8. calibrate recovers known parameters --------------------------------
+# The targets are simulated at (lambda0, snr0) with the same seed and n_cal that
+# calibrate's evaluations use, so the targets are exactly reachable at the true
+# parameters: this tests the solver, not sampling error. The starting snr is
+# far from the truth.
+cat("\n[8] calibrate recovers lambda and snr from targets they produced\n")
+G <- 100L; lambda0 <- 4; snr0 <- 20; seed <- 11L
+reg <- list(threshold = 5L, n_cal = 4000L, n_seeds = 1L, cal_tol = 0.005)
+tg  <- list(count_per_cell = 200, hurdle_prob = 0.1, alpha = 2, snr_start = 5)
+st0 <- cal_stats(assay(simulate_regime(tg, G, reg$n_cal, lambda0, snr0, seed), "counts"),
+                 reg$threshold)
+tg$moi <- st0[["moi"]]; tg$nnz_per_cell <- st0[["nnz_per_cell"]]
+rungs <- data.frame(n_guides = G, dataset = "test_rung")
+cal <- calibrate(reg, tg, rungs, seed, "per_rung")
+r <- cal[cal$role == "rung", ]
+check(nrow(r) == 1, "one row for the one rung")
+check(near(r$cal_moi, tg$moi, reg$cal_tol), sprintf("MOI %.4f matches target %.4f", r$cal_moi, tg$moi))
+check(near(r$cal_nnz_per_cell, tg$nnz_per_cell, reg$cal_tol),
+      sprintf("nonzeros per cell %.4f matches target %.4f", r$cal_nnz_per_cell, tg$nnz_per_cell))
+check(near(r$lambda, lambda0, 0.05), sprintf("lambda %.4f recovered for %g (within 5%%)", r$lambda, lambda0))
+check(near(r$snr, snr0, 0.10), sprintf("snr %.3f recovered for %g (within 10%%)", r$snr, snr0))
+
+
+# ---- 9. the two snr modes across two rungs ---------------------------------
+# Same targets as [8], now at two numbers of guides. "per_rung" must match both
+# targets at every rung; "shared" must use one snr everywhere and match MOI at
+# every rung (nonzeros per cell only at the rung where snr was solved).
+cat("\n[9] snr modes across two rungs\n")
+rungs2 <- data.frame(n_guides = c(60L, 150L), dataset = c("test_g60", "test_g150"))
+pr <- calibrate(reg, tg, rungs2, seed, "per_rung")
+check(identical(pr$role, c("rung", "rung")), "per_rung: one row per rung and no snr row")
+for (i in 1:2) {
+  check(near(pr$cal_moi[i], tg$moi, reg$cal_tol),
+        sprintf("per_rung, G = %d: MOI %.4f matches target", pr$n_guides[i], pr$cal_moi[i]))
+  check(near(pr$cal_nnz_per_cell[i], tg$nnz_per_cell, reg$cal_tol),
+        sprintf("per_rung, G = %d: nonzeros per cell %.4f matches target", pr$n_guides[i],
+                pr$cal_nnz_per_cell[i]))
+}
+cat(sprintf("  (per_rung snr: %.3f at G = 60, %.3f at G = 150)\n", pr$snr[1], pr$snr[2]))
+sh <- calibrate(reg, tg, rungs2, seed, "shared", cal_n_guides = 150L)
+shr <- sh[sh$role == "rung", ]
+check(sh$role[1] == "snr" && nrow(shr) == 2, "shared: the snr row, then one row per rung")
+check(length(unique(sh$snr)) == 1, "shared: one snr on every row")
+check(all(near(shr$cal_moi, tg$moi, reg$cal_tol)), "shared: MOI matches target at every rung")
+check(all(sh$snr_mode == "shared") && all(pr$snr_mode == "per_rung"), "snr_mode recorded on every row")
+check(inherits(try(calibrate(reg, tg, rungs2, seed, "shared"), silent = TRUE), "try-error"),
+      "shared without cal_n_guides errors")
+
 cat("\nAll tests passed.\n")
