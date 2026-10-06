@@ -331,9 +331,10 @@ plot_umi_histogram_real_vs_sim <- function(
 # Replogle needs more of both because its MOI is ~1.3 rather than ~32, so the
 # same relative precision takes far more cells.
 #
-# The rungs are the paper's: doubling where the budget allows, with each top rung
-# at about 12 h for the slowest method, measured on Betty (Gasperini 88,000 cells:
+# The rungs are the paper's: doubling where the budget allows, up to one rung
+# past where the slowest method takes about 12 h on Betty (Gasperini 88,000 cells:
 # pertpy ~12.8 h, cleanser ~11.4 h; Replogle 185,000 cells: cleanser ~13.5 h).
+# The ray ends at the real matrix itself, which is not simulated here.
 # Replogle's smallest rung is kept near G = 300: below that, ambient molecules
 # collide onto the same guides often enough that nonzeros per cell fall along
 # the ladder (measured with --calibrate-only: 17% lower at G = 156 than at 515,
@@ -341,10 +342,10 @@ plot_umi_histogram_real_vs_sim <- function(
 # drift across 694 to 2,712 guides. chunk_cells must divide every n_cells.
 SCALING_REGIMES <- list(
   gasperini = list(real_dataset = "gasperini",    threshold = 5L,
-                   n_cells = c(11000L, 22000L, 44000L, 88000L),
+                   n_cells = c(11000L, 22000L, 44000L, 88000L, 176000L),
                    n_cal   = 4000L,  n_seeds = 1L, cal_tol = 0.005),
   replogle  = list(real_dataset = "replogle-rd7", threshold = 10L,
-                   n_cells = c(69000L, 92000L, 129000L, 185000L),
+                   n_cells = c(69000L, 92000L, 129000L, 185000L, 370000L),
                    n_cal   = 10000L, n_seeds = 4L, cal_tol = 0.010)
 )
 
