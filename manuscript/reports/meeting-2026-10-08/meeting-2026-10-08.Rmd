@@ -1,6 +1,8 @@
 ---
 title: "meeting-2026-10-08"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 date: "2026-10-05"
 ---
 
@@ -8,8 +10,15 @@ date: "2026-10-05"
 # 1. bigger computational results
 
 
-plot TODO
-- improve axis ticks
+main takeaways
+
+- fishash+ is by far the fastest
+
+- fishash isn't as great for memory
+
+- fishash+ and crispat end up basically agreeing for memory. This will be included in memory investigation.
+
+- our curves basically end at the real datasets, so that is good for our scaling datasets.
 
 ```{r gb-scaling-plot, fig.width = 9, fig.height = 7, message = FALSE, echo=FALSE}
 rm(list=ls())
@@ -70,7 +79,7 @@ panel <- function(scr, y, y_scale) {
   ggplot(d, aes(x = n_cells, y = .data[[y]], colour = method)) +
     geom_line(data = filter(d, data == "Simulated")) +
     geom_point(aes(shape = data), size = 2) +
-    scale_shape_manual(values = c(Simulated = 16, Real = 4)) +
+    scale_shape_manual(values = c(Simulated = 16, Real = 8)) +
     scale_x_log10(breaks = sort(unique(d$n_cells)), labels = format_k,
                   guide = guide_axis(n.dodge = 2)) +
     y_scale +
@@ -95,3 +104,24 @@ legend <- get_legend(p_memory[[1]] + theme(legend.position = "bottom"))
 plot_grid(plot_grid(plotlist = c(p_runtime, p_memory), ncol = 2, align = "hv"),
           legend, ncol = 1, rel_heights = c(1, 0.08))
 ```
+
+# statistical benchmarking
+
+Gene did an experiment a month ago, where he varied MOI and showed that fishash+ increasingly outperforms fishash.
+
+In GuideBender, if we vary *only* the MOI parameter $\lambda$ (which is the rate of the Poisson in the Hurdle-Poisson, not the actual expected MOI), we get other behavior changes. When $\lambda$ increases in GuideBender, with all else (including `snr` and `count_per_cell`) held fixed, then there is a decrease in the typical UMI count for each infection. The expected per-cell signal total stays fixed because we are adding up more smaller UMI counts. The per-cell SNR [the ratio of expected per-cell signal to expected per-cell noise] is unchanged, but the per-guide SNR decreases as the problem becomes less separated in each guide.
+
+The math of the model shows this too, where `d_mu_cell_drop_diff` (the expected difference between a signal cell-level scaling factor $d_c^\text{cell}$ and endogenous error magnitude $d_c^\text{drop}$) is equal to `-log(avg_infections)` up to a constant in $\lambda$. This means that doubling `avg_infections` makes `d_mu_cell_drop_diff` smaller by $\log 2$. Signal and endo are less separated.
+
+This also increases the amount of "co-occurrences", where a cell expressing many guides has a very high expected count in fishash, and so recall suffers.
+
+So in GuideBender, I want to vary MOI separate from the hardness of each problem. For my statistical benchmarking, I want a univariate measure of problem hardness. With all else fixed, Claude proposed `ambient_per_cell`, the expected total ambient (endogenous) noise for each cell, and I like this so far. I want the mixture models to overlap more, and increasing the ambient magnitude is a reasonable way to do so.
+
+These parameters interact, as described above, so we need to take that into account when determining their relationship. In particular, `snr` and `count_per_cell` will change as either MOI or `ambient_per_cell` change.
+
+I am running this right now.
+
+
+
+
+
