@@ -46,41 +46,52 @@ format_hms <- function(sec) {
 # Cells -> "11k", "130k" (two significant digits).
 format_k <- function(n) paste0(signif(n / 1000, 2), "k")
 
+# The real matrices end each ray; their tags carry no cell count.
+real_cells <- c("gasperini" = 207324L, "replogle-rd7" = 616184L)
+
 runs <- read.delim(trace_file, check.names = FALSE, stringsAsFactors = FALSE) |>
-  filter(status == "COMPLETED", startsWith(tag, "sim_")) |>
+  filter(status == "COMPLETED") |>
   transmute(
     method      = tolower(sub("_ASSIGN$", "", sub(".*:", "", process))),
     screen      = ifelse(grepl("gasperini", tag), "Gasperini-based", "Replogle-based"),
-    n_guides    = as.integer(sub(".*_g([0-9]+)_c.*", "\\1", tag)),
-    n_cells     = as.integer(sub(".*_c([0-9]+)$", "\\1", tag)),
+    data        = ifelse(tag %in% names(real_cells), "Real", "Simulated"),
+    n_cells     = ifelse(tag %in% names(real_cells), real_cells[tag],
+                         suppressWarnings(as.integer(sub(".*_c([0-9]+)$", "\\1", tag)))),
     runtime_sec = parse_duration(realtime),
     memory_gb   = parse_memory(peak_rss)
   )
 
-cell_breaks    <- sort(unique(runs$n_cells))
-runtime_breaks <- c(1, 10, 60, 600, 3600, 3 * 3600, 6 * 3600, 12 * 3600)
+runtime_breaks <- c(1, 10, 60, 600, 3600, 3 * 3600, 6 * 3600, 12 * 3600, 24 * 3600, 48 * 3600)
 
-base_plot <- function(y) {
-  ggplot(runs, aes(x = n_cells, y = .data[[y]], colour = method)) +
-    geom_line() +
-    geom_point() +
-    facet_wrap(~ screen, scales = "free_x") +
-    scale_x_log10(breaks = cell_breaks, labels = format_k) +
-    labs(x = "Cells (guides scaled at the real cells-per-guide ratio)",
-         colour = "Method") +
-    theme_bw()
+# One plot per screen and metric, so each screen gets its own x breaks. The
+# y range is shared across screens so the two columns compare directly.
+panel <- function(scr, y, y_scale) {
+  d <- filter(runs, screen == scr)
+  ggplot(d, aes(x = n_cells, y = .data[[y]], colour = method)) +
+    geom_line(data = filter(d, data == "Simulated")) +
+    geom_point(aes(shape = data), size = 2) +
+    scale_shape_manual(values = c(Simulated = 16, Real = 4)) +
+    scale_x_log10(breaks = sort(unique(d$n_cells)), labels = format_k,
+                  guide = guide_axis(n.dodge = 2)) +
+    y_scale +
+    labs(x = NULL, y = NULL, colour = "Method", shape = NULL) +
+    theme_bw() +
+    theme(legend.position = "none")
 }
+runtime_scale <- scale_y_log10(breaks = runtime_breaks, labels = format_hms,
+                               limits = range(runs$runtime_sec))
+memory_scale  <- scale_y_log10(limits = range(runs$memory_gb))
 
-p_runtime <- base_plot("runtime_sec") +
-  scale_y_log10(breaks = runtime_breaks, labels = format_hms) +
-  labs(x = NULL, y = "Runtime (hh:mm:ss)") +
-  theme(legend.position = "none")
+screens <- c("Gasperini-based", "Replogle-based")
+p_runtime <- lapply(screens, function(s)
+  panel(s, "runtime_sec", runtime_scale) + labs(title = s))
+p_memory  <- lapply(screens, function(s)
+  panel(s, "memory_gb", memory_scale) +
+    labs(x = "Cells (guides scaled at the real cells-per-guide ratio)"))
+p_runtime[[1]] <- p_runtime[[1]] + labs(y = "Runtime (hh:mm:ss)")
+p_memory[[1]]  <- p_memory[[1]] + labs(y = "Peak memory (GB)")
 
-p_memory <- base_plot("memory_gb") +
-  scale_y_log10() +
-  labs(y = "Peak memory (GB)") +
-  theme(legend.position = "bottom")
-
-plot_grid(p_runtime, p_memory, ncol = 1, align = "v", axis = "lr",
-          rel_heights = c(1, 1.15))
+legend <- get_legend(p_memory[[1]] + theme(legend.position = "bottom"))
+plot_grid(plot_grid(plotlist = c(p_runtime, p_memory), ncol = 2, align = "hv"),
+          legend, ncol = 1, rel_heights = c(1, 0.08))
 ```
