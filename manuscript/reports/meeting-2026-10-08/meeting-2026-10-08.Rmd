@@ -1,0 +1,86 @@
+---
+title: "meeting-2026-10-08"
+output: html_document
+date: "2026-10-05"
+---
+
+
+# 1. bigger computational results
+
+
+plot TODO
+- improve axis ticks
+
+```{r gb-scaling-plot, fig.width = 9, fig.height = 7, message = FALSE, echo=FALSE}
+rm(list=ls())
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+
+trace_file <- "~/data/projects/sceptre3/benchmarking/guide_assignment/outputs/gb_c1_full/trace.tsv"
+
+# Nextflow durations look like "2h 43m 19s", "42.5s", "850ms"; returns seconds.
+parse_duration <- function(x) {
+  unit_sec <- c(d = 86400, h = 3600, m = 60, s = 1, ms = 0.001)
+  vapply(strsplit(x, " "), function(parts) {
+    num  <- as.numeric(sub("[a-z]+$", "", parts))
+    unit <- sub("^[0-9.]+", "", parts)
+    sum(num * unit_sec[unit])
+  }, numeric(1))
+}
+
+
+# Nextflow memory looks like "3.5 GB", "617.4 MB" (binary units); returns GB.
+parse_memory <- function(x) {
+  unit_bytes <- c(B = 1, KB = 1024, MB = 1024^2, GB = 1024^3, TB = 1024^4)
+  vapply(strsplit(x, " "), function(p) as.numeric(p[1]) * unit_bytes[[p[2]]],
+         numeric(1)) / 1024^3
+}
+
+# Seconds -> "hh:mm:ss".
+format_hms <- function(sec) {
+  sec <- round(sec)
+  sprintf("%02d:%02d:%02d", sec %/% 3600, (sec %% 3600) %/% 60, sec %% 60)
+}
+
+# Cells -> "11k", "130k" (two significant digits).
+format_k <- function(n) paste0(signif(n / 1000, 2), "k")
+
+runs <- read.delim(trace_file, check.names = FALSE, stringsAsFactors = FALSE) |>
+  filter(status == "COMPLETED", startsWith(tag, "sim_")) |>
+  transmute(
+    method      = tolower(sub("_ASSIGN$", "", sub(".*:", "", process))),
+    screen      = ifelse(grepl("gasperini", tag), "Gasperini-based", "Replogle-based"),
+    n_guides    = as.integer(sub(".*_g([0-9]+)_c.*", "\\1", tag)),
+    n_cells     = as.integer(sub(".*_c([0-9]+)$", "\\1", tag)),
+    runtime_sec = parse_duration(realtime),
+    memory_gb   = parse_memory(peak_rss)
+  )
+
+cell_breaks    <- sort(unique(runs$n_cells))
+runtime_breaks <- c(1, 10, 60, 600, 3600, 3 * 3600, 6 * 3600, 12 * 3600)
+
+base_plot <- function(y) {
+  ggplot(runs, aes(x = n_cells, y = .data[[y]], colour = method)) +
+    geom_line() +
+    geom_point() +
+    facet_wrap(~ screen, scales = "free_x") +
+    scale_x_log10(breaks = cell_breaks, labels = format_k) +
+    labs(x = "Cells (guides scaled at the real cells-per-guide ratio)",
+         colour = "Method") +
+    theme_bw()
+}
+
+p_runtime <- base_plot("runtime_sec") +
+  scale_y_log10(breaks = runtime_breaks, labels = format_hms) +
+  labs(x = NULL, y = "Runtime (hh:mm:ss)") +
+  theme(legend.position = "none")
+
+p_memory <- base_plot("memory_gb") +
+  scale_y_log10() +
+  labs(y = "Peak memory (GB)") +
+  theme(legend.position = "bottom")
+
+plot_grid(p_runtime, p_memory, ncol = 1, align = "v", axis = "lr",
+          rel_heights = c(1, 1.15))
+```
