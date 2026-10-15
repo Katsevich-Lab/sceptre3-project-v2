@@ -1,0 +1,444 @@
+---
+title: "meeting-2026-10-15"
+output:
+  pdf_document: default
+date: "2026-10-13"
+---
+
+```{r, echo=FALSE}
+suppressPackageStartupMessages(library(tidyverse))
+```
+
+
+-----------------------------
+
+
+
+
+Outline:
+
+1. The GuideBender model for statistical benchmarking
+
+2. Our specific choices
+
+3. Results
+
+
+# 1. GuideBender for statistical benchmarking
+
+
+I am going to review the GuideBender model again, so we have a reference for everything I am talking about. We have $G$ guides and $N$ cells. I will use hard-coded values for parameters that are never changed, to keep the presentation simpler.
+
+We observe
+$$
+Y_{gn} = \underbrace{\text{Pois}(\lambda^\text{i}_{gn})}_{\text{signal}} + \underbrace{\text{Pois}(\lambda^\text{b}_{gn} )}_{\text{error}}.
+$$
+
+For the signal, $\lambda^\text{i}_{gn}$ is the rate for the UMI count when guide $g$ is integrated in cell $n$ [hence the superscript $\text{i}$]. $\lambda^\text{i}_{gn} = 0$ if $g$ is not integrated in $n$. Letting $\text{E}[\lambda^\text{i}_{gn} \mid  \mu^\text{i}_{gn}] = \mu^\text{i}_{gn}$, we sample our signal rates via
+$$
+\lambda^\text{i}_{gn} \mid \mu^\text{i}_{gn} \sim \text{Gamma}\left(\text{shape}=\Phi_\text{cell}^{-1},\;\text{scale}= \Phi_\text{cell}\,\mu^\text{i}_{gn}\right),
+$$
+so when $\Phi_\text{cell} > 0$, we will have a Gamma-Poisson and the signal UMI count $Y_{gn}^\text{i} \mid  \mu^\text{i}_{gn}$ is NegBin (marginal over $\lambda^\text{i}_{gn}$). In practice, we hard-code $\Phi_\text{cell} = 1$, so we actually are doing
+$$
+\lambda^\text{i}_{gn} \mid \mu^\text{i}_{gn} \sim \text{Exp}(\text{mean} = \mu^\text{i}_{gn})
+$$
+and  $Y_{gn}^\text{i} \mid  \mu^\text{i}_{gn}$ is geometric. I will give the specifics of $\mu^\text{i}_{gn}$ once we have defined more pieces of this model.
+
+
+
+For the error, $\lambda^\text{b}_{gn}$ is the rate for the background noise, i.e. the total error. This rate is based on the sum of the endo and exo error rates. Let $\lambda_{gn}^\text{d}$ be the endo (droplet) error rate, with $\text{d}$ for enDo or Droplet, equivalently. Also let $\lambda^\text{x}_{gn}$ be the exo error rate. Then
+$$
+\lambda^\text{b}_{gn} \mid \lambda^\text{d}_{gn}, \lambda^\text{x}_{gn}\sim \text{Gamma}\left(\text{shape} = \Phi_\text{noise}^{-1}, \;\text{scale} = \Phi_\text{noise}(\lambda^\text{d}_{gn} + \lambda^\text{x}_{gn}) \right),
+$$
+so $\text{E}[\lambda^\text{b}_{gn} \mid \lambda^\text{d}_{gn}, \lambda^\text{x}_{gn}] = \lambda^\text{d}_{gn} + \lambda^\text{x}_{gn}$ and $\text{Var}[\lambda^\text{b}_{gn} \mid \lambda^\text{d}_{gn}, \lambda^\text{x}_{gn}] = \Phi_\text{noise}(\lambda^\text{d}_{gn} + \lambda^\text{x}_{gn})^2$. When $\Phi_\text{noise} = 0$, as is the default, then we just have $\lambda^\text{b}_{gn} = \lambda^\text{d}_{gn} + \lambda^\text{x}_{gn}$, and the background noise is Poisson given $\lambda^\text{d}_{gn}$ and  $\lambda^\text{x}_{gn}$. When $\Phi_\text{noise} > 0$, it is conditionally NegBin.
+
+To understand how the rates $\lambda^\text{i}_{gn}$, $\lambda^\text{d}_{gn}$, and $\lambda^\text{x}_{gn}$ are computed, we need to define several quantities. 
+
+
+## 1. Guide-specific factors
+
+These factors are simulated once per dataset. We have
+
+1. $\boldsymbol{\pi} = (\pi_1, \dots, \pi_G)$ where $\pi_g$ is the probability that a given integration is guide $g$. It directly appears when determining how many times each guide is integrated in each cell.
+
+2. $d^\text{guide}_g$ is an expression factor, determining the magnitude of the expression of guide $g$ when its integrated. It directly appears in the mean of the integrated rate $\lambda^\text{i}_{gn}$.
+
+3. $\chi^a_g$ gives guide $g$'s fraction of the ambient soup, and directly appears in $\lambda^\text{d}_{gn}$.
+
+
+Details:
+
+We obtain a $\boldsymbol{\pi}$ for a given dataset via $\boldsymbol{\pi} \sim \text{Dirichlet}(\mathbf 1_G)$, which is uniform on the (G-1)-simplex, so no guide is initially favored. Note that $\pi_g \sim \text{Beta}(1, G-1)$, so for large $G$ this is close to $\pi_g \sim \text{Exp}(\text{mean} = 1/G)$.
+
+Next, we do
+$$
+\log d^\text{guide}_g \stackrel{\text{iid}}\sim \mathcal N\left(0,\frac{1}{2^2}\right)
+$$
+
+so the guide-specific expression factors are lognormal.
+
+Finally, $\chi^a$ is also Dirichlet. The idea here is that a guide's presence in the ambient soup should be related to both how often it is integrated, and how highly expressed it is upon being integrated. This is achieved by first computing
+$$
+\mathbf p = \frac{d^\text{guide} \odot \boldsymbol{\pi}}{\langle d^\text{guide}, \boldsymbol{\pi}\rangle}, 
+$$
+so $p_g = d^\text{guide}_g \pi_g / \sum_{g'} d^\text{guide}_{g'} \pi_{g'}$, and $\mathbf p$ is a probability distribution over guides that weights $\boldsymbol{\pi}$ by $d^\text{guide}$. We then sample
+$$
+\chi^a \mid \mathbf p  \sim\text{Dirichlet}\left(G \cdot \mathbf p\right),
+$$
+so for each coordinate we have
+$$
+\chi^a_g \mid  p_g \sim \text{Beta}(G p_g, G (1-p_g)).
+$$
+This means $\text{E}[\chi^a_g\mid p_g] = p_g$, and $\text{Var}[\chi^a_g\mid p_g] = p_g(1-p_g)/(G+1)$. Marginally, $\chi^a_g$ is a Beta mixture. 
+
+
+## 2. Cell-specific factors
+
+These factors are sampled once per cell, independently. 
+
+1. $K_n$ is the total number of integrations cell $n$ has. It depends on parameters $\lambda_\text{MOI}$ (controlling the number of integrations, given that at least one guide is integrated), and $\zeta$ (the probability a cell has no integrations). In our statistical benchmarking, $\lambda_\text{MOI}$ is one of the two parameters we sweep. We set $\zeta = 0.1$ matching the fishash authors. 
+
+2. $\mathbf J_{n}$ is the vector counting the number of times each particular guide is integrated in cell $n$; it sums to $K_n$.
+
+3. $\rho_n$ determines the fraction of the expected UMI total for cell $n$ that is due to exo error, like barcode swapping or PCR chimeras. It affects every rate.
+
+4. expression magnitude factors: $d^\text{cell}_n$ scales the integrated UMI counts in cell $n$ (and thus appears in the mean of $\lambda^\text{i}_{gn}$), while $d^\text{drop}_n$ scales the ambient UMI counts in cell $n$ (and appears in $\lambda^\text{d}_{gn}$). These are sampled independently, so a cell's signal magnitude and ambient magnitude are not directly related (they are indirectly related through other factors like exo error).
+
+5. $\epsilon_n$ is the capture efficiency. It scales both the mean of $\lambda^\text{i}_{gn}$, and $\lambda^\text{d}_{gn}$. Like the fishash authors, we do not vary its governing parameters, so it is fairly concentrated near $1$ (which is also its mean) and is not very important. 
+
+
+
+$\rho_n$, $d^\text{cell}$, and $d^\text{drop}$ depend on the following additional parameters:
+
+- $B$, the expected per-cell total background (error) UMIs. We set $B=25$ in all simulations here.
+
+- $x$, the fraction of background noise that is due to exo error. $x=0.25$ is used in our simulations, matching the fishash authors' "high expression" regime. 
+
+- $s$, the expected UMI count for each integration. This is the other parameter we vary in our simulations. It is one measure of "problem hardness" because it controls how far away the distribution of the perturbed UMIs are from the ambient UMIs.  
+
+
+Details:
+
+We determine the total number of infections via $K_n \sim \text{ZeroTruncPois}(\lambda_\text{MOI})$, with $K_n$ set to zero with probability $\zeta$, so this is a HurdlePoisson that is equal to 0 w.p. $\zeta$, and is non-zero otherwise. We allocate these $K_n$ total infections to specific guides via
+$$
+\mathbf J_n\mid K_n, \boldsymbol{\pi} \sim \text{Multinomial}(K_n, \boldsymbol{\pi})
+$$
+where $\boldsymbol{\pi}$ are the integration probabilities from before. 
+
+For the exo fraction $\rho_n$, we are able to solve for the expected exo fraction as a function of the above parameters. We can fisrt compute the expected number of integrations
+$$
+\mu_K := \text{E}[K_n] = (1-\zeta)\frac{\lambda_{\text{MOI}}}{1-e^{-\lambda_{\text{MOI}}}} .
+$$
+
+$s$ is the parameter giving our expected UMI count per integration, so our expected total signal UMI count is $\mu_K s$. $B$ gives the expected background UMI total, so $x B$ is the expected exo total, and $(1-x)B$ is the expected endo total. The expected overall UMI total is therefore $\mu_K s + B$. This means we want
+$$
+\mu_\rho := \text{E}[\rho_n] = \frac{xB}{\mu_K s + B}
+$$
+so $\mu_\rho$ is the expected fraction of UMI counts that are from exo error. We therefore use
+$$
+\rho_n\stackrel{\text{iid}}\sim \text{Beta}\left(\frac 12, \frac 12 \frac{1-\mu_\rho}{\mu_\rho}\right).
+$$
+The $\frac 12$ is hard-coded. 
+
+```{r, echo=FALSE}
+alpha_rho <- 1 / 2
+mu_rho    <- c(0.1, 0.25, 0.5, 0.75, 0.9)
+
+grid <- expand.grid(rho = seq(0.001, 0.999, length.out = 2000), mu_rho = mu_rho)
+grid$beta    <- alpha_rho * (1 - grid$mu_rho) / grid$mu_rho
+grid$density <- dbeta(grid$rho, shape1 = alpha_rho, shape2 = grid$beta)
+grid$mu_lab  <- factor(sprintf("mu[rho] == %g", grid$mu_rho),
+                       levels = sprintf("mu[rho] == %g", mu_rho))
+
+ggplot(grid, aes(x = rho, y = density, colour = mu_lab)) +
+  geom_line(linewidth = 0.8) +
+  # shape 1/2 < 1, so every density diverges at 0; cap the y axis to see the bodies
+  coord_cartesian(ylim = c(0, 6)) +
+  scale_colour_viridis_d(labels = scales::label_parse(), end = 0.9) +
+  labs(x = expression(rho[n]), y = "Density", colour = NULL,
+       title = expression(rho[n] %~% "Beta(1/2, " * beta * "), " ~ E(rho[n]) == mu[rho])) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+
+For the expression magnitudes, we use
+$$
+\begin{aligned}
+\log d_n^\text{cell} &\stackrel{\text{iid}}\sim \mathcal N\left(\mu_\text{cell},\frac{1}{2^2}\right) \\
+\log d_n^\text{drop} &\stackrel{\text{iid}}\sim \mathcal N\left(\mu_\text{drop},1\right).
+\end{aligned}
+$$
+The default is for $\text{Var}[\log d_g^\text{drop}] = \frac 14$ also, but I chose to increase this, otherwise the ambient distributions were not quite as variable as i wanted. It's the same issue I had when using the CLEANSER model to simulate, where the ambient distribution often ended up so concentrated near zero that essentially no ambient UMIs exceeding 5 were produced.
+
+<!-- That makes it so that there are very few false positive assignments, and then our simulations are mostly just evaluating recall, and precision remains relatively unexplored. Some guide UMI distribution histograms are shown later. -->
+
+$\mu_\text{cell}$ and $\mu_\text{drop}$ are functions of our other parameters. We can solve for these in terms of our parameters:
+
+$$
+\begin{aligned}
+\mu_{\text{cell}} &= \log\frac{s}{1-\mu_{\rho}} - \frac{1}{4} \\
+\mu_{\text{drop}} &= \log\frac{(1-x) B}{1-\mu_{\rho}} - \frac{1}{2}.
+\end{aligned}
+$$
+
+## 3. Defining $\lambda^\text{i}$, $\lambda^\text{d}$, and $\lambda^\text{x}$
+
+
+We now have enough to finish defining our model. For $\mu^\text{i}_{gn}$, we use
+$$
+\mu^\text{i}_{gn} := J_{gn}\, d^{\text{guide}}_{g}\, d^{\text{cell}}_{n}\, (1-\rho_{n})\, \epsilon_{n}.
+$$
+This means the mean matrix  $\boldsymbol{\mu^\text{i}}$ is the element-wise product of the integration count matrix $\mathbf{J}$ with the rank-1 matrix with elements $d^{\text{guide}}_{g}\, d^{\text{cell}}_{n}\, (1-\rho_{n})\, \varepsilon_{n}$. When $G$ is large, so collisions are unlikely, then $\mathbf J$ effectively acts as a random boolean mask for the rank-1 mean matrix $d^\text{guide} (d^\text{cell} \odot (1-\rho) \odot \epsilon)^\top$.
+
+The endo and exo rates do not have additional randomness themselves. For the endo rate, we simply do
+$$
+\lambda^\text{d}_{gn} = \chi^{a}_{g} \cdot (1-\rho_{n})\, \epsilon_{n}\, d^{\text{drop}}_{n}.
+$$
+Thus our droplet mean matrix is rank-1, and formed by $\chi^a ((1-\rho)\odot \epsilon \odot d^\text{drop})^\top$.
+
+Finally, for the exo rate, we need to pool our rates. Define row and column totals
+$$
+R_{g} = \sum_{n'} \left(\lambda^\text{i}_{gn'} + \lambda^\text{d}_{gn'}\right),\quad
+C_{n} = \sum_{g'} \left(\lambda^\text{i}_{g'n} + \lambda^\text{d}_{g'n}\right),\quad
+$$
+so these are like the per-guide and per-cell total rates before exo contamination, respectively. Define the total $S := \sum_{g'} R_{g'} = \sum_{n'}C_{n'}$. Then we have 
+
+
+$$
+\lambda^\text{x}_{gn} = \frac{R_{g}\, C_{n}}{S} \cdot \frac{\rho_{n}}{1-\rho_{n}}.
+$$
+The first term is like the expected count under independence (chi-squared test style), and the second term incorporates the exo fraction. Note that $\rho_n \to 1$ drives $\lambda^\text{i}_{gn} + \lambda^\text{d}_{gn}$ down, so this doesn't blow up in that case. 
+
+
+# Choosing statistical benchmarking datasets
+
+
+The reason I wanted to work through the model so carefully is that there can be unintended behavior when sweeping out parameters.
+
+In the fishash authors' varyMOI scenario, they sweep $\lambda_\text{MOI} \in \{0.1, 0.3, 0.5, 1, 2, 3, 5, 10\}$, with $G = 200$, $N = 20,000$, $\zeta = 0.1$, and everything else fixed. 
+
+One consequence of this: the per-cell expected total integrated UMI count is $\mu_K s$. This is one of the quantities that stays fixed (per the `count_per_cell` and `snr` parameters), so the UMI count per integration necessarily decreases like $1 / \mu_K$. As more integrations happen, the signal per integration decreases. This means that the per-guide problem gets harder, since the UMI counts for integrations of one particular guide are smaller. So MOI is confounded with problem hardness in that simulation. This is the kind of thing that I am most concerned about. We could think that a method's performance degrades with MOI when maybe instead it is that it is more sensitive to the signal UMI distribution being squashed towards that of the ambient. Replogle and Gasperini also do not show this signal dilution, so this is an unrealistic benchmarking feature.
+
+We will also get many more "dropouts", where a true integration produces a UMI count small enough (e.g. $< 2$) that it is never detected as a true integration by some methods.
+
+They also have an issue where the median rescaling causes $B$ to drift. I want the amount of background UMIs to stay constant otherwise the problem difficulty is again changing.
+
+How we are addressing these shortcomings:
+
+To address these things, I set $s$ and $B$ directly, with no median rescaling and no chunking. Raising $\lambda_\text{MOI}$ then changes only the number of integrations per cell, plus what's inherent to that: prevalence, per-guide cell counts and cell totals.
+
+We also need to acount for another thing: in our design, a cell's expected total $\mu_K s + B$ grows with $\lambda_\text{MOI}$ (more integrations) and with $s$ (more UMIs per integration). If $\mu_\rho$ stayed fixed, i.e. the expected fraction of UMIs that are exo noise, then the amount of exogenous background UMIs would grow with the total: cells at high MOI or strong signal would carry more exogenous noise UMIs. This effect would be confounded with both of our axes, and I think that's bad.
+
+So I hold the expected exogenous background fixed instead, at $xB = 6.25$ UMIs per cell. That forces the fraction to shrink as the total grows:
+$$
+\mu_\rho = \frac{xB}{\mu_K s + B}.
+$$
+This is ultimately a biology question. This exo error stuff is pretty nuanced.
+
+So, in summary: for these datasets, I sweep over $\lambda_\text{MOI}$ and $s$ (the expected per-integration UMI count). I do this without the median rescaling and chunking that the fishash authors do, since that introduces some drift and noise. By explicitly setting $s$, I also avoid the signal dilution that happens to the fishash authors. 
+
+For these results, I swept over $\lambda_\text{MOI} \in \{0.3, 3, 10, 30\}$ and $s\in\{5,20,80\}$.
+
+Other params:
+
+- $G = 500$ guides, $N = 50k$ cells (fixed across MOI), $\zeta = 0.1$;
+
+- $B = 25$ background UMIs per cell, $x = 0.25$;
+
+- log-SD of $d^\text{drop}$ is 1 (raised from the default 1/2), $\rho_n$'s Beta shape 1/2, $\Phi_\text{cell} = 1$;
+
+- 3 replicates per grid point at $\Phi_\text{noise} = 0$, and one replicate with $\Phi_\text{noise} = 1$ using the same seed, so the truth and signal are the same
+
+I increased to $G=500$ over their $G=200$ to get the screens slightly more realistic. $G=200$ starts to get pretty artificial. 
+
+## EDA
+
+```{r, echo=FALSE}
+library(Matrix)
+library(dplyr)
+library(ggplot2)
+
+in_root <- "~/data/projects/sceptre3/benchmarking/guide_assignment/input_data"
+
+grid <- expand.grid(s = c(80, 20, 5), moi = c(0.3, 3, 10, 30))
+guide_quantiles <- c(0.1, 0.5, 0.9)   # of perturbed cells per guide, in the Phi_noise = 0 dataset
+k_exact <- 10L                         # exact bins 0..10, then doubling
+noise_levels <- c("Phi_noise = 0", "Phi_noise = 1")
+
+# Exact bins 0..k_exact, then bins doubling in width until max_x is covered.
+mixed_bins <- function(max_x, k_exact) {
+  upper <- 0:k_exact; width <- 2L
+  while (tail(upper, 1L) < max_x) { upper <- c(upper, tail(upper, 1L) + width); width <- width * 2L }
+  lower <- c(0L, head(upper, -1L) + 1L)
+  tibble(bin_id = seq_along(upper), upper = upper,
+         label = ifelse(lower == upper, as.character(upper), paste0(lower, "-", upper)))
+}
+
+# Three guides from the Phi_noise = 0 dataset, and the same guides in its Phi_noise = 1
+# pair (same seed: identical truth and signal, different background).
+read_pair <- function(moi, s) {
+  ds0 <- sprintf("stat_grid_moi%g_s%g_rep01", moi, s)
+  ds1 <- sprintf("stat_grid_phi1_moi%g_s%g_rep01", moi, s)
+  truth  <- readRDS(file.path(in_root, ds0, "true_pert_matrix.rds"))
+  stopifnot(identical(truth, readRDS(file.path(in_root, ds1, "true_pert_matrix.rds"))))
+  n_pert <- Matrix::rowSums(truth)
+  ord    <- order(n_pert)
+  idx    <- unique(ord[pmax(1L, round(guide_quantiles * length(ord)))])
+  bind_rows(lapply(seq_along(noise_levels), function(k) {
+    counts <- readRDS(file.path(in_root, c(ds0, ds1)[k], "fishashplus", "grna_matrix.rds"))
+    bind_rows(lapply(idx, function(g) tibble(
+      moi = moi, s = s, noise = noise_levels[k],
+      guide = rownames(counts)[g], n_pert = n_pert[g],
+      umi = as.integer(counts[g, ]), pert = as.logical(truth[g, ]))))
+  }))
+}
+
+cells <- bind_rows(Map(read_pair, grid$moi, grid$s))
+bins  <- mixed_bins(max(cells$umi), k_exact)            # one bin structure for everything
+
+hist_df <- cells |>
+  mutate(bin_id = cut(umi, breaks = c(-1, bins$upper), labels = FALSE, right = TRUE),
+         status = factor(ifelse(pert, "Perturbed", "Background"),
+                         levels = c("Background", "Perturbed")),
+         noise  = factor(noise, levels = noise_levels)) |>
+  count(moi, s, noise, guide, n_pert, bin_id, status) |>
+  arrange(moi, s, noise, guide, bin_id, status) |>
+  group_by(moi, s, noise, guide, bin_id) |>
+  mutate(y1 = cumsum(n), y0 = y1 - n) |>                 # background first, perturbed on top
+  ungroup()
+
+logp1    <- function(x) log10(x + 1)
+y_breaks <- c(0, 1, 5, 10, 50, 100, 500, 1e3, 5e3, 1e4, 5e4)
+x_keep   <- bins$bin_id[(bins$upper <= k_exact & bins$upper %% 2 == 0) | bins$upper > k_exact]
+
+# 2 x 3: columns are the three guides, rows are Phi_noise = 0 (top) and 1 (bottom).
+plot_pair <- function(moi, s, title) {
+  d <- hist_df[hist_df$moi == moi & hist_df$s == s, ] |>
+    mutate(panel = sprintf("%s (%d perturbed)", guide, n_pert),
+           panel = factor(panel, levels = unique(panel[order(n_pert)])))
+  yb <- y_breaks[y_breaks <= max(d$y1)]
+  ggplot(d) +
+    geom_rect(aes(xmin = bin_id - 0.45, xmax = bin_id + 0.45,
+                  ymin = logp1(y0), ymax = logp1(y1), fill = status),
+              colour = "black", linewidth = 0.15) +
+    facet_grid(noise ~ panel) +
+    scale_fill_manual(values = c(Background = "#00BFC4", Perturbed = "#F8766D")) +
+    scale_x_continuous(breaks = x_keep, labels = bins$label[match(x_keep, bins$bin_id)],
+                       limits = c(0.4, nrow(bins) + 0.6), expand = c(0, 0)) +
+    scale_y_continuous(breaks = logp1(yb), labels = scales::label_comma()(yb)) +
+    labs(title = title, x = "gRNA UMI count", y = "Number of cells", fill = NULL) +
+    theme_bw(base_size = 9) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 5),
+          panel.grid.minor = element_blank(), legend.position = "bottom")
+}
+```
+
+
+
+```{r, echo=FALSE}
+plot_pair(0.3, 80, "MOI 0.3, s = 80")
+```
+
+```{r, echo=FALSE}
+plot_pair(0.3, 20, "MOI 0.3, s = 20")
+```
+
+```{r, echo=FALSE}
+plot_pair(0.3, 5, "MOI 0.3, s = 5")
+```
+
+```{r, echo=FALSE}
+plot_pair(3, 80, "MOI 3, s = 80")
+```
+
+```{r, echo=FALSE}
+plot_pair(3, 20, "MOI 3, s = 20")
+```
+
+```{r, echo=FALSE}
+plot_pair(3, 5, "MOI 3, s = 5")
+```
+
+```{r, echo=FALSE}
+plot_pair(10, 80, "MOI 10, s = 80")
+```
+
+```{r, echo=FALSE}
+plot_pair(10, 20, "MOI 10, s = 20")
+```
+
+```{r, echo=FALSE}
+plot_pair(10, 5, "MOI 10, s = 5")
+```
+
+```{r, echo=FALSE}
+plot_pair(30, 80, "MOI 30, s = 80")
+```
+
+```{r, echo=FALSE}
+plot_pair(30, 5, "MOI 30, s = 5")
+```
+
+
+```{r, echo=FALSE, message=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+scores <- read.csv("~/data/projects/sceptre3/benchmarking/guide_assignment/outputs/stat_grid/stat_grid_scores.csv")
+
+method_labels <- c(fishash = "fishash", fishashplus = "fishash+", crispat = "crispat",
+                   cleanser = "CLEANSER", pertpy = "pertpy")
+metric_labels <- c(F1 = "F1", Precision = "Precision", Recall = "Recall",
+                   recall_obs2 = "Recall (count >= 2)")
+
+long <- scores |>
+  pivot_longer(c(F1, Precision, Recall, recall_obs2), names_to = "metric", values_to = "value") |>
+  mutate(method = factor(method_labels[method], levels = method_labels),
+         metric = factor(metric_labels[metric], levels = metric_labels),
+         s_lab  = factor(sprintf("s = %g", signal_per_integration),
+                         levels = sprintf("s = %g", c(80, 20, 5))),
+         rep01  = grepl("_rep01$", dataset))
+
+# Phi_noise = 0: mean over the 3 replicates, with the min-max range.
+summ <- long |>
+  filter(phi_noise == 0) |>
+  group_by(moi, s_lab, method, metric) |>
+  summarise(mean = mean(value), lo = min(value), hi = max(value), .groups = "drop")
+
+moi_breaks <- c(0.3, 3, 10, 30)
+```
+
+
+```{r, echo=FALSE, fig.width=8, fig.height=8}
+ggplot(summ, aes(moi, mean, colour = method)) +
+  geom_line() +
+  geom_point(size = 1.5) +
+  geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.06) +
+  scale_x_log10(breaks = moi_breaks, labels = moi_breaks) +
+  facet_grid(metric ~ s_lab, scales = "free_y") +
+  labs(x = expression(lambda[MOI]), y = NULL, colour = NULL,
+       title = "Assignment accuracy across MOI and signal per integration") +
+  theme_bw(base_size = 10) +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank())
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=8}
+summ |>
+  filter(method != "pertpy") |>
+ggplot(aes(moi, mean, colour = method)) +
+  geom_line() +
+  geom_point(size = 1.5) +
+  geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.06) +
+  scale_x_log10(breaks = moi_breaks, labels = moi_breaks) +
+  facet_grid(metric ~ s_lab, scales = "free_y") +
+  labs(x = expression(lambda[MOI]), y = NULL, colour = NULL,
+       title = "Assignment accuracy across MOI and signal per integration") +
+  theme_bw(base_size = 10) +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank())
+```
+
+
+
+
