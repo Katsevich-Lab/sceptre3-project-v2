@@ -1,0 +1,50 @@
+#!/usr/bin/env Rscript
+suppressPackageStartupMessages(library(Matrix))
+out<-paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+              "association/pos-control/fishashplus-comparison-20261008")
+arms<-c('threshold5','mixture','fishashplus')
+dat<-readRDS(file.path(out,'paired_inputs.rds'))
+mix<-readRDS(paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                    "guide_assignment/outputs/gasperini/fishashplus-poisson-20261008/mixture_assignment_matrix_aligned.rds"))
+dat$mixture<-mix[match(dat$targets$grna_id,rownames(mix)),]
+rm(mix)
+results<-lapply(arms,function(arm){
+  r<-as.data.frame(readRDS(file.path(out,paste0('full_',arm,'_results.rds'))))
+  stopifnot(nrow(r)==377L,all(r$pass_qc),all(is.finite(r$p_value)),
+            all(is.finite(r$log_2_fold_change)),!anyDuplicated(r[c('response_id','grna_target')]))
+  r$bh_adjusted_p<-p.adjust(r$p_value,'BH')
+  r$n_treated<-vapply(r$grna_target,function(g){
+    idx<-which(dat$targets$grna_target==g)
+    sum(colSums(dat[[arm]][idx,,drop=FALSE])>0)
+  },numeric(1))
+  r$p_at_floor<-r$p_value<=1.01e-250
+  r
+});names(results)<-arms
+summaries<-do.call(rbind,lapply(arms,function(a){
+  r<-results[[a]]
+  data.frame(method=a,n_pairs=nrow(r),median_log2_fold_change=median(r$log_2_fold_change),
+    median_neg_log10_p=median(-log10(r$p_value)),bh10_detected=sum(r$bh_adjusted_p<=.1),
+    negative_effects=sum(r$log_2_fold_change<0),p_at_floor=sum(r$p_at_floor),
+    median_treated_cells=median(r$n_treated))
+}))
+keys<-c('response_id','grna_target')
+joint<-results[[1]][keys]
+for(a in arms){r<-results[[a]];names(r)[!names(r)%in%keys]<-paste0(names(r)[!names(r)%in%keys],'_',a)
+  joint<-merge(joint,r,by=keys,sort=FALSE)}
+stopifnot(nrow(joint)==377L)
+pair_stats<-do.call(rbind,lapply(list(c('threshold5','mixture'),c('threshold5','fishashplus'),c('mixture','fishashplus')),function(ab){
+  a<-ab[1];b<-ab[2];va<-joint[[paste0('log_2_fold_change_',a)]];vb<-joint[[paste0('log_2_fold_change_',b)]]
+  pa<-joint[[paste0('p_value_',a)]];pb<-joint[[paste0('p_value_',b)]]
+  qa<-joint[[paste0('bh_adjusted_p_',a)]];qb<-joint[[paste0('bh_adjusted_p_',b)]]
+  joint[[paste0('delta_log2fc_',b,'_minus_',a)]]<<-vb-va
+  data.frame(baseline=a,comparison=b,median_delta_log2fc=median(vb-va),
+    fold_change_spearman=cor(va,vb,method='spearman'),
+    smaller_p_values=sum(pb<pa),larger_p_values=sum(pb>pa),tied_p_values=sum(pb==pa),
+    gained_bh10=sum(qb<=.1 & qa>.1),lost_bh10=sum(qb>.1 & qa<=.1))
+}))
+write.csv(joint,file.path(out,'three_method_positive_controls.csv'),row.names=FALSE)
+saveRDS(joint,file.path(out,'three_method_positive_controls.rds'))
+write.csv(summaries,file.path(out,'three_method_summary.csv'),row.names=FALSE)
+write.csv(pair_stats,file.path(out,'three_method_pairwise_summary.csv'),row.names=FALSE)
+print(summaries);print(pair_stats)
+capture.output({print(summaries);print(pair_stats)},file=file.path(out,'three_method_summary.txt'))

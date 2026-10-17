@@ -15,7 +15,7 @@
 
 .GA_EXT <- .get_config_path("LOCAL_EXTERNAL_DATA_DIR")                       # ~/data/external/
 .GA_IN  <- paste0(.get_config_path("LOCAL_BENCHMARKING_DIR"), "guide_assignment/input_data")
-.GA_SUR <- paste0(.GA_EXT, "perturbseq-survey")
+.GA_SUR <- paste0(.get_config_path("LOCAL_SCEPTRE3_DATA_DIR"), "perturbseq-survey")
 
 # The 17 real gRNA-count datasets (guides x cells). Named list of grna_matrix.rds paths.
 dataset_paths <- function() list(
