@@ -7,6 +7,23 @@ the user's R startup profile and paths in `~/.research_config`; do not run with
 dependencies include Matrix, sceptre, ondisc, ggplot2 and sparseMatrixStats
 (see each driver's imports).
 
+## The 17-dataset survey
+
+For the broader dataset landscape and comparison of Fishash, Fishash+ and
+CLEANSER, see [Guide assignment across datasets: how datasets vary, how methods
+compare](../method_comparison_2.qmd) ([rendered HTML](../method_comparison_2.html)).
+That writeup surveys 17 real gRNA-count datasets; it does not run a positive-control
+association benchmark across all 17. The completed comparisons documented below
+cover Gasperini and high-MOI DC-TAP K562.
+
+The 10 survey dataset directories are available on Betty under
+`LOCAL_SCEPTRE3_DATA_DIR/perturbseq-survey/`, currently
+`/vast/projects/ekatsevi/wharton/data/projects/sceptre3/perturbseq-survey/`.
+Gasperini and Replogle inputs are in the separate configured benchmarking tree;
+barnyard and McCutcheon are also separate from this survey directory. Not every
+dataset has a prepared expression matrix or curated positive-control pair list;
+see [expression-data status](../DE_DATASETS_STATUS.md) for preparation caveats.
+
 ## DC-TAP K562 high MOI
 
 The shared `datasets.R` loader resolves inputs under
@@ -58,6 +75,37 @@ Rscript benchmarking/guide-assignment/grna-count-modeling/scripts/plot_positive_
 The summary and plotting drivers use that same configured output directory.
 The Gasperini analysis tests 377 self-targeting promoter-positive-control pairs;
 it does not test the globin enhancer controls discussed separately.
+
+## Additional positive-control pairs to investigate
+
+Other datasets in the survey may provide useful perturbation-to-gene positive
+controls, including effects on genes other than the perturbation's own target.
+The following candidates came from checking published experiments and source
+annotations. They are **not additional completed analyses in these drivers**.
+
+| Dataset | Candidate pairs or reference set | Evidence and next step |
+|---|---|---|
+| Gasperini | Globin LCR HS1–HS4 perturbations versus globin genes, including HBE1, HBG1 and HBG2 | The original [GSE120861](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE120861) `all_deg_results.at_scale` table has a `positive_ctrl` category containing both enhancer and promoter guide groups. Curate the intended enhancer–gene links: not every gene tested against a control perturbation is a positive pair. These are separate from the 377 `selfTSS` controls analyzed above. |
+| DC-TAP K562 low MOI | e-GATA1 → GATA1; e-HDAC6 → HDAC6; MYC-e2 → MYC | The local guide annotations contain the same three enhancer controls, with two guides per enhancer, as the high-MOI dataset. Extend the matched analysis to low MOI. The high-MOI individual-guide tests already include these six enhancer guides. |
+| McCutcheon CD8 T cells | DNMT1 knockdown → decreased CCR7; FOXO1 knockdown → decreased CCR7 | [McCutcheon et al., Fig. 2 and Supplementary Fig. 7](https://pmc.ncbi.nlm.nih.gov/articles/PMC10703699/) report confirmation in individual-guide experiments. These provide non-self trans-response candidates; distinguish the protein-based validation readout from the RNA endpoint being benchmarked. |
+| Zhu CD4 T cells | Published arrayed validation set of nine regulators and 12 interactions involving IL10/IL21; additional trans effects compared with a separate arrayed knockout RNA-seq study | [Zhu et al., Fig. 2 and validation methods](https://pmc.ncbi.nlm.nih.gov/articles/PMC13614707/) report two guides per target, bulk RNA-seq and protein measurements. All 12 RNA effects agreed in direction; 10 were significant at FDR <10%. Extract the exact supported pairs and match stimulation condition and donor/replicate coverage before use. Our prepared expression copy covers one replicate. |
+
+For the McCutcheon study, separate BATF3 overexpression experiments also support
+BATF3 → IL7R regulation, but overexpression is a different intervention from our
+local CRISPRi sample and should not automatically define its expected response.
+A549/MethNet is another regulatory-element screen, but we have not established
+an independently validated positive-control subset for it.
+
+Outside the 17-dataset collection, [Alda-Catalinas et al. (2024), primary T-cell
+crisprQTL](https://pmc.ncbi.nlm.nih.gov/articles/PMC10835965/), is a possible extension:
+three CD2 LCR elements → CD2 and 28 enhancer–gene pairs previously identified in
+Gasperini's K562 screen. The latter require a cell-type-transfer caveat (17 of
+26 evaluable pairs reproduced in primary CD4 T cells). This dataset is not part
+of the survey directory transferred to Betty.
+
+Here, independent validation means separate experimental measurements, which may
+be within the same paper; it need not mean a different laboratory. A supported
+perturbation–response pair need not represent direct molecular regulation.
 
 ## Reruns and interpretation
 
