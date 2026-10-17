@@ -1,6 +1,6 @@
 # Fishash+ positive-control comparisons
 
-Retained drivers for the October 8, 2026 analyses. Data and generated results
+Drivers for preliminary positive control analyses. Data and generated results
 live outside Git. These scripts use the lab's `.get_config_path()` helper from
 the user's R startup profile and paths in `~/.research_config`; do not run with
 `Rscript --vanilla`. The recorded analyses used SCEPTRE 0.99.0. R package
