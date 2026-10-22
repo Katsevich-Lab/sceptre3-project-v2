@@ -19,12 +19,27 @@ os.makedirs(output_dir, exist_ok=True)
 #   --dc  ambient ~ NB(n_nbMean * L, n_nbDisp)  -- scales with the cell
 # Since --cs ambient ignores L, its decision boundary is flat in library size,
 # which makes it close to a fixed marginal UMI threshold (~6 at CLEANSER's priors).
+# Barnyard (Liu 2025, GSE272457): the LRB100 samples are CROP-seq and the MCH2
+# samples direct capture, as labelled in the Fishash Table 2 reproduction
+# (grna-count-modeling/external/repro_work/build_inputs.py).
 if "replogle" in dataset_id.lower():
     flag = "--dc"
 elif "gasperini" in dataset_id.lower():
     flag = "--cs"
+elif "barnyard_lrb100" in dataset_id.lower():
+    flag = "--cs"
+elif "barnyard_mch2" in dataset_id.lower():
+    flag = "--dc"
+# GuideBender statistical-benchmarking grid (grna-simulator/simulate-stat-grid.R).
+# Its ambient varies across cells (lognormal droplet factor, sd 1, plus exogenous
+# noise proportional to the cell's library), which --dc's library-scaled NB models
+# and --cs's single Poisson rate does not.
+elif dataset_id.lower().startswith("stat_grid"):
+    flag = "--dc"
 else:
-    raise ValueError(f"Unknown dataset '{dataset_id}'. Expected 'replogle' or 'gasperini' in dataset name.")
+    raise ValueError(f"Unknown dataset '{dataset_id}'. Expected 'replogle', 'gasperini', "
+                     "'barnyard_lrb100' or 'barnyard_mch2' in dataset name, or a "
+                     "'stat_grid' prefix.")
 
 # CLEANSER IS PARALLEL: it uses 4 cores, unlike crispat and pertpy, which are serial.
 # Each guide runs 4 Stan chains at once -- cmdstanpy sets parallel_chains =
