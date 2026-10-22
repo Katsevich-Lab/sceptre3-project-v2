@@ -370,4 +370,81 @@ ggplot(z_df, aes(x = z_before, y = z_after, colour = pair_group, shape = pair_gr
   theme(legend.position = "bottom")
 ```
 
+The same unassignment on the 377 TSS positive controls (each target's promoter guides tested against that target gene). Here too fishash's assignments are nested in fishash+'s for all 754 guides, so unassigning all of fishash+'s extra calls gives exactly fishash's assignment.
+
+```{r load-unassign-tss}
+tss_dir <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                     "association", "assign-pos-control", "outputs", "gasperini_allcells")
+tss_before <- map(c("none", "default"), \(q)
+  read_csv(file.path(tss_dir, paste0("fishashplus_", q), "association_on_target.csv"),
+           show_col_types = FALSE)) |>
+  bind_rows() |>
+  select(grna_target, response_id, qc, p_before = p_value, z_before = z_orig)
+tss_after <- map2(unassign_runs$qc, unassign_runs$t, \(q, t)
+  read_csv(file.path(tss_dir, paste0("fishashplus_", q, "_unassign", t), "association_on_target.csv"),
+           col_types = cols(unassign = col_character()), show_col_types = FALSE)) |>
+  bind_rows()
+stopifnot(nrow(tss_before) == 2 * 377, nrow(tss_after) == 6 * 377,
+          all(count(tss_after, qc, unassign)$n == 377))
+
+tss_unassign_df <- tss_after |>
+  select(grna_target, response_id, qc, unassign, p_after = p_value, z_after = z_orig) |>
+  left_join(tss_before, by = c("grna_target", "response_id", "qc")) |>
+  mutate(qc = factor(qc, levels = c("none", "default"), labels = c("No cell QC", "Default cell QC")),
+         unassign = factor(unassign, levels = c("3", "4", "inf"),
+                           labels = c("unassign count < 3", "unassign count < 4", "unassign all (= fishash)")))
+stopifnot(!anyNA(tss_unassign_df$p_before))
+```
+
+Points below the diagonal: fishash+ before unassigning has the smaller p.
+
+```{r unassign-logp-tss, fig.width = 9, fig.height = 13}
+tss_counts_p <- tss_unassign_df |>
+  group_by(unassign, qc) |>
+  summarise(before_smaller = sum(p_before < p_after),
+            after_smaller  = sum(p_before > p_after),
+            ties           = sum(p_before == p_after), .groups = "drop") |>
+  mutate(label = paste0("before smaller p (below): ", before_smaller,
+                        "\nafter smaller p (above): ", after_smaller,
+                        "\nties (incl. both at 1e-250): ", ties))
+
+ggplot(tss_unassign_df, aes(x = -log10(p_before), y = -log10(p_after))) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_point(alpha = 0.5, size = 1.2) +
+  geom_text(data = tss_counts_p, aes(label = label), x = -Inf, y = Inf,
+            hjust = -0.05, vjust = 1.2, size = 2.5, inherit.aes = FALSE) +
+  facet_grid(unassign ~ qc) +
+  coord_equal() +
+  labs(x = "fishash+ -log10 p (before)", y = "-log10 p after unassigning") +
+  theme_bw()
+```
+
+Knockdown gives negative z, so for those pairs a point above the diagonal means fishash+ before unassigning has the stronger (more negative) z.
+
+```{r unassign-z-tss, fig.width = 9, fig.height = 13}
+TSS_Z_MAX <- Inf   # keep pairs with |z| <= TSS_Z_MAX both before and after; Inf keeps all
+
+tss_z_df <- tss_unassign_df |> filter(abs(z_before) <= TSS_Z_MAX, abs(z_after) <= TSS_Z_MAX)
+
+tss_counts_z <- tss_z_df |>
+  group_by(unassign, qc) |>
+  summarise(before_larger = sum(abs(z_before) > abs(z_after)),
+            after_larger  = sum(abs(z_before) < abs(z_after)),
+            ties          = sum(abs(z_before) == abs(z_after)), .groups = "drop") |>
+  mutate(label = paste0("before larger |z|: ", before_larger,
+                        "\nafter larger |z|: ", after_larger, "\nties: ", ties))
+
+ggplot(tss_z_df, aes(x = z_before, y = z_after)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_hline(yintercept = 0, colour = "grey85") +
+  geom_vline(xintercept = 0, colour = "grey85") +
+  geom_point(alpha = 0.5, size = 1.2) +
+  geom_text(data = tss_counts_z, aes(label = label), x = -Inf, y = Inf,
+            hjust = -0.05, vjust = 1.2, size = 2.5, inherit.aes = FALSE) +
+  facet_grid(unassign ~ qc) +
+  coord_equal() +
+  labs(x = "fishash+ z (before)", y = "z after unassigning") +
+  theme_bw()
+```
+
 
