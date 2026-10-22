@@ -1,12 +1,22 @@
 #!/usr/bin/env Rscript
-# Build the full-Gasperini positive-control dataset for comparing guide-assignment
+# Build a full-Gasperini positive-control dataset for comparing guide-assignment
 # methods: one shared response matrix + covariates, and one binary gRNA matrix
 # per assignment method. Cells: all 207,324 (no assignment-based selection).
-# Targets: the 377 TSS (ENSG) targets, 754 guides; no NT guides (high MOI uses
-# the complement control group, so NT rows would not change any p-value).
+# No NT guides (high MOI uses the complement control group, so NT rows would not
+# change any p-value).
 #
 #   SIF=<pipeline-images>/sceptre.sif \
-#     sbatch -c 2 -t 1:00:00 ../../guide-assignment/grna-simulator/run-in-image.sh build-dataset.R
+#     sbatch -c 2 -t 1:00:00 ../../guide-assignment/grna-simulator/run-in-image.sh build-dataset.R <dataset>
+#
+# <dataset> picks the guides, their targets and the genes:
+#   gasperini_allcells         the 377 TSS (ENSG) targets, 754 guides; gene = target.
+#                              sceptre builds these pairs itself
+#                              (construct_positive_control_pairs).
+#   gasperini_allcells_globin  the globin LCR enhancer / promoter controls: 14 guides
+#                              in 10 targets, 13 genes, 130 pairs, read from
+#                              <out_root>/spec/{grna_target_data_frame.csv,
+#                              discovery_pairs.rds}, written by
+#                              determine-enhancer-promoter-pos-ctrl-pairs.R.
 #
 # Inputs (checked by check-inputs.R, job 9173649, all PASS):
 #   guide_assignment/input_data/gasperini/sceptre-pipeline/{sceptre_object.rds, response.odm, grna.odm}
@@ -17,15 +27,16 @@
 #   guide_assignment/outputs/gasperini_fishashplus_refit100/assignments_fishashplus_gasperini.csv
 #     cell CELL_j == column j; guide by ID; converged at REFIT = 100
 #
-# Writes <LOCAL_BENCHMARKING_DIR>/association/assign-pos-control/input_data/gasperini_allcells/:
-#   shared/response_matrix.rds        377 genes x 207,324 cells, raw counts
+# Writes <out_root> = <LOCAL_BENCHMARKING_DIR>/association/assign-pos-control/input_data/<dataset>/:
+#   shared/response_matrix.rds        genes x 207,324 cells, raw counts
 #   shared/cell_covariates.csv        cell_id + the 4 *_full covariates + prep_batch
-#   shared/grna_target_data_frame.csv 754 guides: grna_id, grna_target, chr, start, end
+#   shared/grna_target_data_frame.csv the dataset's guides and their targets
+#   shared/discovery_pairs.rds        (globin only) the pairs to test
 #   shared/qc_excluded_cells.rds      cells sceptre's default cell-QC rule removes,
 #                                     applied to the FULL-transcriptome covariates
-#   grna/<method>.rds                 binary 754 guides x 207,324 cells, one per method
+#   grna/<method>.rds                 binary guides x 207,324 cells, one per method
 #   assigned_cells_per_target.csv     cells assigned per target and method (all / after QC)
-# Refuses to run if the output directory already exists.
+# Refuses to run if <out_root>/shared or <out_root>/grna already exists.
 
 suppressPackageStartupMessages({
   library(Matrix); library(sceptre); library(ondisc); library(data.table)
@@ -39,7 +50,14 @@ fishash_csv     <- file.path(bench, "guide_assignment", "outputs", "gb_c1_full",
                              "assignments_fishash_gasperini.csv")
 fishashplus_csv <- file.path(bench, "guide_assignment", "outputs", "gasperini_fishashplus_refit100",
                              "assignments_fishashplus_gasperini.csv")
-out_root <- file.path(bench, "association", "assign-pos-control", "input_data", "gasperini_allcells")
+DATASETS <- c("gasperini_allcells", "gasperini_allcells_globin")
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 1 || !args[1] %in% DATASETS) {
+  stop("usage: build-dataset.R <", paste(DATASETS, collapse = "|"), ">")
+}
+dataset  <- args[1]
+out_root <- file.path(bench, "association", "assign-pos-control", "input_data", dataset)
+cat("dataset:", dataset, "\nout:", out_root, "\n\n")
 
 THRESHOLDS <- c(3L, 5L, 10L)          # thresholding: assigned iff raw count >= t
 N_CELLS    <- 207324L
@@ -51,7 +69,11 @@ QC_P_MITO        <- 0.2
 N_FISHASH     <- 6971335L
 N_FISHASHPLUS <- 7405793L
 
-if (dir.exists(out_root)) stop("output directory already exists, not overwriting: ", out_root)
+for (d in c("shared", "grna")) {
+  if (dir.exists(file.path(out_root, d))) {
+    stop("output already exists, not overwriting: ", file.path(out_root, d))
+  }
+}
 
 # ---- load --------------------------------------------------------------------
 cat("reading sceptre object + ODMs from", pipe_dir, "\n")
@@ -68,18 +90,37 @@ barcodes  <- rownames(cov_df)
 stopifnot(length(barcodes) == N_CELLS, !anyDuplicated(barcodes),
           identical(rownames(grna_odm), target_df$grna_id))
 
-# ---- targets and guides ------------------------------------------------------
-tss_df <- target_df[startsWith(target_df$grna_target, "ENSG"),
-                    c("grna_id", "grna_target", "chr", "start", "end")]
-rownames(tss_df) <- NULL
-genes <- unique(tss_df$grna_target)
-stopifnot(nrow(tss_df) == 754L, length(genes) == 377L,
-          all(genes %in% rownames(response_odm)))
-tss_rows <- match(tss_df$grna_id, rownames(grna_odm))    # rows of grna.odm, in tss_df order
-cat("targets:", length(genes), "; guides:", nrow(tss_df), "\n")
+# ---- guides, targets and genes for this dataset -------------------------------
+discovery_pairs <- NULL
+if (dataset == "gasperini_allcells") {
+  guide_df <- target_df[startsWith(target_df$grna_target, "ENSG"),
+                        c("grna_id", "grna_target", "chr", "start", "end")]
+  genes <- unique(guide_df$grna_target)                  # on-target: gene == target
+  stopifnot(nrow(guide_df) == 754L, length(genes) == 377L)
+} else if (dataset == "gasperini_allcells_globin") {
+  spec_dir <- file.path(out_root, "spec")
+  spec_df  <- read.csv(file.path(spec_dir, "grna_target_data_frame.csv"), stringsAsFactors = FALSE)
+  discovery_pairs <- readRDS(file.path(spec_dir, "discovery_pairs.rds"))
+  # the spec relabels guides of the same table: same guides, same order
+  stopifnot(identical(spec_df$grna_id, target_df$grna_id),
+            is.character(discovery_pairs$grna_target), is.character(discovery_pairs$response_id),
+            !anyDuplicated(discovery_pairs))
+  guide_df <- spec_df[spec_df$grna_target %in% discovery_pairs$grna_target, c("grna_id", "grna_target")]
+  genes <- unique(discovery_pairs$response_id)
+  stopifnot(nrow(guide_df) == 14L, length(unique(guide_df$grna_target)) == 10L,
+            length(genes) == 13L, nrow(discovery_pairs) == 130L,
+            all(discovery_pairs$grna_target %in% guide_df$grna_target))
+}
+rownames(guide_df) <- NULL
+stopifnot(all(genes %in% rownames(response_odm)), !anyDuplicated(guide_df$grna_id))
+guide_rows <- match(guide_df$grna_id, rownames(grna_odm))  # rows of grna.odm, in guide_df order
+stopifnot(!anyNA(guide_rows))
+targets <- unique(guide_df$grna_target)
+n_guides <- nrow(guide_df)
+cat("targets:", length(targets), "; guides:", n_guides, "; genes:", length(genes), "\n")
 
-# ---- response matrix (377 genes x all cells) ---------------------------------
-cat("\nreading response.odm rows for the 377 target genes\n")
+# ---- response matrix (genes x all cells) -------------------------------------
+cat("\nreading response.odm rows for the", length(genes), "genes\n")
 read_rows <- function(odm, rows, n_cells) {
   ilist <- jlist <- xlist <- vector("list", length(rows))
   for (k in seq_along(rows)) {
@@ -130,14 +171,14 @@ cat("\ncell QC (full covariates): n_umis removes", length(excl_umis),
     "; n_nonzero removes", length(excl_nonzero), "; p_mito removes", length(excl_p_mito),
     "; total removed", length(qc_excluded), "; kept", length(qc_kept), "\n")
 
-# ---- raw gRNA counts for the 754 guides --------------------------------------
-cat("\nreading grna.odm rows for the 754 guides\n")
-grna_counts <- read_rows(grna_odm, tss_rows, N_CELLS)    # rows in tss_df order
+# ---- raw gRNA counts for the dataset's guides --------------------------------
+cat("\nreading grna.odm rows for the", n_guides, "guides\n")
+grna_counts <- read_rows(grna_odm, guide_rows, N_CELLS)  # rows in guide_df order
 cat("  ", nrow(grna_counts), "x", ncol(grna_counts), ";", length(grna_counts@x), "nonzeros\n")
 
 binary <- function(i, j) {
-  m <- sparseMatrix(i = i, j = j, x = 1, dims = c(nrow(tss_df), N_CELLS))
-  dimnames(m) <- list(tss_df$grna_id, barcodes)
+  m <- sparseMatrix(i = i, j = j, x = 1, dims = c(n_guides, N_CELLS))
+  dimnames(m) <- list(guide_df$grna_id, barcodes)
   m
 }
 grna <- list()
@@ -148,10 +189,10 @@ fa <- fread(fishash_csv, colClasses = c("integer", "integer"))
 stopifnot(identical(names(fa), c("cell_id", "grna_id")), nrow(fa) == N_FISHASH,
           !anyDuplicated(fa), all(fa$cell_id %in% seq_len(N_CELLS)),
           all(fa$grna_id %in% seq_along(rownames(grna_odm))))
-fa <- fa[grna_id %in% tss_rows]
-grna$fishash <- binary(match(fa$grna_id, tss_rows), fa$cell_id)
-fa_counts <- grna_counts[cbind(match(fa$grna_id, tss_rows), fa$cell_id)]
-cat("  ", N_FISHASH, "assignments in total;", nrow(fa), "on the 754 TSS guides;",
+fa <- fa[grna_id %in% guide_rows]
+grna$fishash <- binary(match(fa$grna_id, guide_rows), fa$cell_id)
+fa_counts <- grna_counts[cbind(match(fa$grna_id, guide_rows), fa$cell_id)]
+cat("  ", N_FISHASH, "assignments in total;", nrow(fa), "on the", n_guides, "guides;",
     "raw count at those entries: min", min(fa_counts), ", zero in", sum(fa_counts == 0), "\n")
 rm(fa)
 
@@ -163,10 +204,10 @@ stopifnot(identical(names(fp), c("cell_id", "grna_id")), nrow(fp) == N_FISHASHPL
           all(fp$grna_id %in% rownames(grna_odm)))
 fp[, j := as.integer(sub("^CELL_", "", cell_id))]
 stopifnot(all(fp$j %in% seq_len(N_CELLS)))
-fp <- fp[grna_id %in% tss_df$grna_id]
-grna$fishashplus <- binary(match(fp$grna_id, tss_df$grna_id), fp$j)
-fp_counts <- grna_counts[cbind(match(fp$grna_id, tss_df$grna_id), fp$j)]
-cat("  ", N_FISHASHPLUS, "assignments in total;", nrow(fp), "on the 754 TSS guides;",
+fp <- fp[grna_id %in% guide_df$grna_id]
+grna$fishashplus <- binary(match(fp$grna_id, guide_df$grna_id), fp$j)
+fp_counts <- grna_counts[cbind(match(fp$grna_id, guide_df$grna_id), fp$j)]
+cat("  ", N_FISHASHPLUS, "assignments in total;", nrow(fp), "on the", n_guides, "guides;",
     "raw count at those entries: min", min(fp_counts), "\n")
 # run_fishashplus.R sets min_count = 2, so every assigned entry must have count >= 2;
 # a wrong cell or guide mapping would put assignments on entries below that
@@ -182,16 +223,16 @@ for (t in THRESHOLDS) {
 
 # ---- per-target assigned cells ----------------------------------------------
 per_target <- rbindlist(lapply(names(grna), function(m) {
-  by_target <- lapply(genes, function(g) {
-    rows <- which(tss_df$grna_target == g)
+  by_target <- lapply(targets, function(g) {
+    rows <- which(guide_df$grna_target == g)
     any_guide <- Matrix::colSums(grna[[m]][rows, , drop = FALSE]) > 0
-    data.table(method = m, grna_target = g,
+    data.table(method = m, grna_target = g, n_guides = length(rows),
                n_cells_all = sum(any_guide), n_cells_qc = sum(any_guide[qc_kept]))
   })
   rbindlist(by_target)
 }))
-cat("\nassigned cells per target (union of its 2 guides):\n")
-print(per_target[, .(total_assignments_754 = sum(grna[[method[1]]]),
+cat("\nassigned cells per target (union of its guides):\n")
+print(per_target[, .(total_assignments = sum(grna[[method[1]]]),
                      min_cells = min(n_cells_all), median_cells = median(n_cells_all),
                      targets_with_0 = sum(n_cells_all == 0),
                      targets_with_0_after_qc = sum(n_cells_qc == 0)), by = method])
@@ -200,7 +241,8 @@ print(per_target[, .(total_assignments_754 = sum(grna[[method[1]]]),
 for (d in c("shared", "grna")) dir.create(file.path(out_root, d), recursive = TRUE)
 saveRDS(response_matrix, file.path(out_root, "shared", "response_matrix.rds"))
 write.csv(cell_covariates, file.path(out_root, "shared", "cell_covariates.csv"), row.names = FALSE)
-write.csv(tss_df, file.path(out_root, "shared", "grna_target_data_frame.csv"), row.names = FALSE)
+write.csv(guide_df, file.path(out_root, "shared", "grna_target_data_frame.csv"), row.names = FALSE)
+if (!is.null(discovery_pairs)) saveRDS(discovery_pairs, file.path(out_root, "shared", "discovery_pairs.rds"))
 saveRDS(list(excluded_idx = qc_excluded, excluded_barcodes = barcodes[qc_excluded],
              n_removed = c(n_umis = length(excl_umis), n_nonzero = length(excl_nonzero),
                            p_mito = length(excl_p_mito), total = length(qc_excluded)),
