@@ -146,10 +146,10 @@ All 130 pairs (promoter guide groups included, shown as "Other"):
 plot_logp(res)
 ```
 
-Promoter guide groups removed (90 enhancer pairs: 18 highlighted, 72 other):
+Promoter guide groups removed (78 enhancer pairs, 6 guide groups x 13 genes: 18 highlighted, 60 other):
 
 ```{r logp-enhancer-pairs, fig.width = 9, fig.height = 9.5}
 res_enh <- res |> filter(target_group == "enhancer")
-stopifnot(all(count(res_enh, method, qc)$n == 90))
+stopifnot(all(count(res_enh, method, qc)$n == 6 * 13))
 plot_logp(res_enh)
 ```
