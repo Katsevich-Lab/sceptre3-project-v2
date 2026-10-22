@@ -1,12 +1,19 @@
 #!/usr/bin/env Rscript
-# sceptre positive-control (power check) run on the full-Gasperini dataset from
-# build-dataset.R, for one assignment method and one cell-QC arm.
+# sceptre positive-control run on a full-Gasperini dataset from build-dataset.R,
+# for one assignment method and one cell-QC arm.
 #
-#   OUT=<LOCAL_BENCHMARKING_DIR>/association/assign-pos-control/outputs/<method>_<qc>
+#   OUT=<LOCAL_BENCHMARKING_DIR>/association/assign-pos-control/outputs/<dataset>/<method>_<qc>
 #   mkdir -p $OUT && SIF=<pipeline-images>/sceptre.sif \
 #     sbatch -c 2 -t 1:00:00 -o $OUT/sceptre-%j.out \
-#     ../../guide-assignment/grna-simulator/run-in-image.sh run-sceptre.R <method> <qc>
+#     ../../guide-assignment/grna-simulator/run-in-image.sh run-sceptre.R <dataset> <method> <qc>
 #
+#   <dataset> gasperini_allcells        377 TSS pairs (target vs its own gene), built
+#                                       by construct_positive_control_pairs(), tested
+#                                       with run_power_check()
+#             gasperini_allcells_globin 130 globin control pairs from
+#                                       shared/discovery_pairs.rds, tested with
+#                                       run_discovery_analysis() (same test; the
+#                                       output adds BH-adjusted columns)
 #   <method>  fishash | fishashplus | thresh3 | thresh5 | thresh10
 #   <qc>      none    : no cell QC (as pos-control-pipeline/bin/run_sceptre.R)
 #             default : sceptre's default cell-QC rule, applied in build-dataset.R
@@ -19,28 +26,33 @@
 # high MOI, *_full covariates in the formula, two-sided, guides pooled per
 # target, no pairwise QC. Every argument is written out, defaults included.
 #
-# Writes <OUT>/association_on_target.csv: get_result(..., "run_power_check")
-# plus n_trt_cells (cells in use assigned either guide of the target).
+# Writes <OUT>/association_on_target.csv: the sceptre result (power check or
+# discovery analysis) plus n_trt_cells (cells in use assigned any guide of the
+# target).
 
 suppressPackageStartupMessages({ library(Matrix); library(sceptre) })
 source("~/.Rprofile")                                    # .get_config_path()
 
 args <- commandArgs(trailingOnly = TRUE)
-METHODS <- c("fishash", "fishashplus", "thresh3", "thresh5", "thresh10")
-if (length(args) != 2 || !args[1] %in% METHODS || !args[2] %in% c("none", "default")) {
-  stop("usage: run-sceptre.R <", paste(METHODS, collapse = "|"), "> <none|default>")
+DATASETS <- c(gasperini_allcells = 377L, gasperini_allcells_globin = 130L)   # dataset = n pairs
+METHODS  <- c("fishash", "fishashplus", "thresh3", "thresh5", "thresh10")
+if (length(args) != 3 || !args[1] %in% names(DATASETS) || !args[2] %in% METHODS ||
+    !args[3] %in% c("none", "default")) {
+  stop("usage: run-sceptre.R <", paste(names(DATASETS), collapse = "|"), "> <",
+       paste(METHODS, collapse = "|"), "> <none|default>")
 }
-method <- args[1]; qc <- args[2]
+dataset <- args[1]; method <- args[2]; qc <- args[3]
+use_discovery <- dataset == "gasperini_allcells_globin"
 
 bench   <- .get_config_path("LOCAL_BENCHMARKING_DIR")
-in_root <- file.path(bench, "association", "assign-pos-control", "input_data", "gasperini_allcells")
-out_dir <- file.path(bench, "association", "assign-pos-control", "outputs", paste0(method, "_", qc))
+in_root <- file.path(bench, "association", "assign-pos-control", "input_data", dataset)
+out_dir <- file.path(bench, "association", "assign-pos-control", "outputs", dataset, paste0(method, "_", qc))
 out_csv <- file.path(out_dir, "association_on_target.csv")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 if (file.exists(out_csv)) stop("result already exists, not overwriting: ", out_csv)
-cat("method:", method, "| qc:", qc, "\nout:", out_dir, "\n\n")
+cat("dataset:", dataset, "| method:", method, "| qc:", qc, "\nout:", out_dir, "\n\n")
 
-N_CELLS <- 207324L; N_PAIRS <- 377L
+N_CELLS <- 207324L; N_PAIRS <- DATASETS[[dataset]]
 
 # ---- inputs ------------------------------------------------------------------
 response_matrix <- readRDS(file.path(in_root, "shared", "response_matrix.rds"))
@@ -73,13 +85,24 @@ scep <- import_data(
   response_names         = NA_character_
 )
 
-pc_pairs <- construct_positive_control_pairs(scep)
-cat("positive control pairs:", nrow(pc_pairs), "\n")
-stopifnot(nrow(pc_pairs) == N_PAIRS, all(pc_pairs$grna_target == pc_pairs$response_id))
+no_pairs <- data.frame(grna_target = character(0), response_id = character(0))
+if (use_discovery) {
+  disc_pairs <- readRDS(file.path(in_root, "shared", "discovery_pairs.rds"))
+  pc_pairs   <- no_pairs
+  cat("discovery pairs:", nrow(disc_pairs), "\n")
+  stopifnot(nrow(disc_pairs) == N_PAIRS,
+            all(disc_pairs$grna_target %in% grna_target_df$grna_target),
+            all(disc_pairs$response_id %in% rownames(response_matrix)))
+} else {
+  disc_pairs <- no_pairs
+  pc_pairs   <- construct_positive_control_pairs(scep)
+  cat("positive control pairs:", nrow(pc_pairs), "\n")
+  stopifnot(nrow(pc_pairs) == N_PAIRS, all(pc_pairs$grna_target == pc_pairs$response_id))
+}
 
 scep <- set_analysis_parameters(
   sceptre_object            = scep,
-  discovery_pairs           = data.frame(grna_target = character(0), response_id = character(0)),
+  discovery_pairs           = disc_pairs,
   positive_control_pairs    = pc_pairs,
   side                      = "both",
   grna_integration_strategy = "union",
@@ -111,7 +134,8 @@ stopifnot(crm[["n_cells_rm_user_specified"]] == length(cells_to_remove),
           length(scep@cells_in_use) == N_CELLS - length(cells_to_remove))
 print(scep)
 
-scep <- run_power_check(
+analysis_fn <- if (use_discovery) run_discovery_analysis else run_power_check
+scep <- analysis_fn(
   sceptre_object = scep,
   output_amount  = 2,
   print_progress = TRUE,
@@ -119,17 +143,17 @@ scep <- run_power_check(
   n_processors   = "auto",
   log_dir        = tempdir()
 )
-results <- get_result(scep, "run_power_check")
+results <- get_result(scep, if (use_discovery) "run_discovery_analysis" else "run_power_check")
 stopifnot(nrow(results) == N_PAIRS)
 
-# ---- treatment-cell counts (cells in use, either guide of the target) --------
+# ---- treatment-cell counts (cells in use, any guide of the target) -----------
 in_use <- scep@cells_in_use
 n_trt <- vapply(results$grna_target, function(g) {
   rows <- which(grna_target_df$grna_target == g)
   sum(Matrix::colSums(grna_matrix[rows, in_use, drop = FALSE]) > 0)
 }, integer(1))
 results$n_trt_cells <- unname(n_trt)
-results$method <- method; results$qc <- qc
+results$dataset <- dataset; results$method <- method; results$qc <- qc
 
 write.csv(results, out_csv, row.names = FALSE)
 cat("\nwrote", out_csv, "\n")

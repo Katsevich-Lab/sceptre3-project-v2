@@ -15,7 +15,7 @@ source("~/.Rprofile")
 # 10 sceptre positive-control runs: 5 assignment methods x 2 cell-QC arms,
 # 377 TSS pairs each. Each CSV already carries `method` and `qc` columns.
 out_dir <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
-                     "association", "assign-pos-control", "outputs")
+                     "association", "assign-pos-control", "outputs", "gasperini_allcells")
 runs <- expand_grid(method = c("fishash", "fishashplus", "thresh3", "thresh5", "thresh10"),
                     qc     = c("none", "default"))
 
