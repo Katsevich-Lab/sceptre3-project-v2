@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = FALSE)
 ```
 
 globin enhancer and promoter positive controls on gasperini
+
 ```{r load-results, echo=FALSE}
 library(tidyverse)
 source("~/.Rprofile")
@@ -32,7 +33,7 @@ stopifnot(nrow(res) == 10 * 130,
           all(count(res, method, qc)$n == 130))
 ```
 
-Experiment: compute p-values for the 130 globin control pairs in Gasperini for different assignments. These pairs are from 10 guide groups (enhancers HS1 to HS4 and globin promoters) tested against each of the 13 genes they were tested against in the original paper.
+Experiment: compute p-values for the 130 globin control pairs in Gasperini for different assignments. These pairs are from 10 guide groups (enhancers HS1 to HS4 and globin promoters) tested against each of the 13 genes they were tested against in the original paper. We focus on the 18 pairs formed by the 6 guide groups targeting enhancers, and the genes HBE1, HBG1, and HBG2.
 
 Assignment methods:
 
@@ -149,9 +150,9 @@ plot_logp <- function(d) {
 <!-- plot_logp(res) -->
 <!-- ``` -->
 
-Promoter guide groups removed (78 enhancer pairs, 6 guide groups x 13 genes: 18 highlighted, 60 other):
+First we compare the fishash+ p-values with those from fishash or thresholding at 5. The promoter guide groups are removed, so 78 pairs remain.
 
-```{r logp-enhancer-pairs, fig.width = 9, fig.height = 9.5, fig.cap="Only the 78 enhancer-targeting pairs. The 18 pairs for enhancer-targeting guide group x (globin gene expressed by K562 cells) are highlighted."}
+```{r logp-enhancer-pairs, fig.width = 9, fig.height = 9.5, fig.cap="Only the 78 enhancer-targeting pairs. Fishash+ appears to slightly improve over fishash in this tiny sample, with stronger evidence that it improves over thresholding."}
 res_enh <- res |> filter(target_group == "enhancer")
 stopifnot(all(count(res_enh, method, qc)$n == 6 * 13))
 plot_logp(res_enh)
@@ -160,7 +161,7 @@ plot_logp(res_enh)
 This suggests that fishash+ adds power. 
 
 
-The same comparison on `z_orig`, the observed test statistic before sceptre compares it with its fitted skew-normal null. Unlike the p-value, it has no 1e-250 floor. Knockdown gives negative z, so for those pairs a point above the diagonal means fishash+ has the stronger (more negative) z.
+The same comparison on `z_orig`, the observed test statistic before sceptre compares it with its fitted skew-normal null. 
 
 ```{r z-plot-helper}
 plot_z <- function(d) {
@@ -211,13 +212,15 @@ plot_z <- function(d) {
 <!-- plot_z(res) -->
 <!-- ``` -->
 
-Promoter guide groups removed (78 enhancer pairs: 18 highlighted, 60 other):
+The promoter guide groups are still removed (78 enhancer pairs: 18 highlighted, 60 other). There is clear evidence that fishash+ improves over thresholding, and a suggestion that it improves over fishash.
 
 ```{r z-enhancer-pairs, fig.width = 9, fig.height = 9.5}
 plot_z(res_enh)
 ```
 
-What are the extra cells fishash+ assigns? For each of the 9 enhancer-targeting guides: the cells assigned that guide by fishash+ but not by fishash, and that guide's gRNA UMI count in each of those cells. These are exactly the (guide, cell) entries the unassign runs below act on. Assignments do not depend on QC; the QC column drops the cells removed by cell QC.
+What are the extra cells fishash+ assigns? For each of the 9 enhancer-targeting guides, we show the UMI counts for (guide, cell) pairs that fishash+ called perturbed, but fishash did not. They are indeed all small, with 2 being the universal mode. Note that every guide-cell pair that fishash assigns is also assigned by fishash+, so the converse plot is empty. 
+
+So fishash+ is adding a lot of cells with tiny UMI counts. Do those help or hurt power?
 
 ```{r extra-cells-umi, fig.width = 8, fig.height = 17}
 # thesis histogram style: exact bins 0..10 then doubling widths, log10(count + 1),
@@ -284,7 +287,7 @@ ggplot(b$counts) +
         strip.text.y = element_blank())
 ```
 
-Unassigning fishash+'s extra calls: for each guide, the (guide, cell) entries fishash+ assigns and fishash does not are set to unassigned if their UMI count is below a threshold, so those cells become controls for that guide group. Unassigning all of them gives exactly fishash's assignment. "Before" is fishash+ as is.
+Unassigning fishash+'s extra calls: for each guide, the (guide, cell) entries fishash+ assigns and fishash does not are set to unassigned if their UMI count is below a threshold, so those cells become controls for that guide group. Unassigning all of them gives exactly fishash's assignment, since in this situation fishash's assignments are perfectly nested in fishash+'s. "Before" is fishash+ as is, so this shows the change in fishash+'s p-values when those "questionable" calls are removed.
 
 ```{r load-unassign}
 unassign_runs <- expand_grid(qc = c("none", "default"), t = c("3", "4", "inf"))
@@ -307,7 +310,7 @@ unassign_df <- res_un |>
 stopifnot(!anyNA(unassign_df$p_before))
 ```
 
-Points below the diagonal: fishash+ before unassigning has the smaller p.
+Points below the diagonal: fishash+ before unassigning has the smaller p. I do not see evidence that removing those small UMI guide-cell pairs helps. 
 
 ```{r unassign-logp, fig.width = 9, fig.height = 13}
 counts_p <- unassign_df |>
@@ -335,7 +338,7 @@ ggplot(unassign_df, aes(x = -log10(p_before), y = -log10(p_after),
   theme(legend.position = "bottom")
 ```
 
-Knockdown gives negative z, so for those pairs a point above the diagonal means fishash+ before unassigning has the stronger (more negative) z.
+Checking the z scores: again, I see no evidence that unassigning those small counts helped.
 
 ```{r unassign-z, fig.width = 9, fig.height = 13}
 Z_MAX <- 40    # keep pairs with |z| <= Z_MAX both before and after; Inf keeps all
@@ -366,3 +369,5 @@ ggplot(z_df, aes(x = z_before, y = z_after, colour = pair_group, shape = pair_gr
   theme_bw() +
   theme(legend.position = "bottom")
 ```
+
+
