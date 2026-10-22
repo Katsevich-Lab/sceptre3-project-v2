@@ -6,6 +6,9 @@ output:
 date: "2026-10-22"
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
 
 globin enhancer and promoter positive controls on gasperini
 ```{r load-results, echo=FALSE}
@@ -213,4 +216,69 @@ Promoter guide groups removed (78 enhancer pairs: 18 highlighted, 60 other):
 
 ```{r z-enhancer-pairs, fig.width = 9, fig.height = 9.5}
 plot_z(res_enh)
+```
+
+What are the extra cells fishash+ assigns? For each enhancer guide group: the cells assigned to the group (any of its guides) by fishash+ but by none of its guides under fishash, and the group's gRNA UMI count in each of those cells (summed over its guides; one guide for HS1, HS3, HS4). Assignments do not depend on QC; the QC column drops the cells removed by cell QC.
+
+```{r extra-cells-umi, fig.width = 8, fig.height = 12}
+# thesis histogram style: exact bins 0..10 then doubling widths, log10(count + 1),
+# one bin structure shared by every panel
+source("../../../benchmarking/guide-assignment/assignment-analysis/assignment-helpers.R")
+
+in_root <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                     "association", "assign-pos-control", "input_data", "gasperini_allcells_globin")
+fa <- readRDS(file.path(in_root, "grna", "fishash.rds"))        # binary, guides x cells
+fp <- readRDS(file.path(in_root, "grna", "fishashplus.rds"))
+guide_df <- read.csv(file.path(in_root, "shared", "grna_target_data_frame.csv"), stringsAsFactors = FALSE)
+qc_excl  <- readRDS(file.path(in_root, "shared", "qc_excluded_cells.rds"))$excluded_idx
+stopifnot(identical(dimnames(fa), dimnames(fp)), identical(rownames(fp), guide_df$grna_id))
+
+# raw counts for the 14 guides, from the full gRNA ODM (columns in the same order)
+grna_odm <- ondisc::initialize_odm_from_backing_file(
+  file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+            "guide_assignment", "input_data", "gasperini", "sceptre-pipeline", "grna.odm"))
+odm_rows <- match(rownames(fp), rownames(grna_odm))
+stopifnot(!anyNA(odm_rows))
+grna_counts <- t(vapply(odm_rows, function(r) as.numeric(grna_odm[r, ]), numeric(ncol(fp))))
+dimnames(grna_counts) <- dimnames(fp)
+# every fishash+ assignment sits on a count >= 2 (run_fishashplus.R min_count = 2)
+stopifnot(all(grna_counts[as.matrix(fp) == 1] >= 2))
+
+enh_targets <- target_tags |> filter(target_group == "enhancer")
+extra <- map_dfr(enh_targets$grna_target, function(g) {
+  rows  <- which(guide_df$grna_target == g)
+  in_fp <- Matrix::colSums(fp[rows, , drop = FALSE]) > 0
+  in_fa <- Matrix::colSums(fa[rows, , drop = FALSE]) > 0
+  cells <- which(in_fp & !in_fa)
+  tibble(grna_target = g, cell = cells,
+         umi = colSums(grna_counts[rows, cells, drop = FALSE]))
+})
+
+extra_qc <- bind_rows(
+  extra |> mutate(qc = "No cell QC"),
+  extra |> filter(!cell %in% qc_excl) |> mutate(qc = "Default cell QC")
+) |>
+  mutate(qc = factor(qc, levels = c("No cell QC", "Default cell QC")),
+         grna_target = factor(grna_target, levels = enh_targets$grna_target))
+
+# panel labels: element, number of guides, number of extra cells
+panel_labels <- extra_qc |>
+  count(grna_target, qc, .drop = FALSE) |>
+  mutate(element = enh_targets$element[match(grna_target, enh_targets$grna_target)],
+         guides  = map_int(as.character(grna_target), \(g) sum(guide_df$grna_target == g)),
+         label   = paste0(element, " (", guides, if_else(guides > 1, " guides", " guide"),
+                          "): ", n, " extra cells"))
+
+b <- bin_umi_counts(extra_qc, c("grna_target", "qc"))
+ggplot(b$counts) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = logp1(count)),
+            fill = "#D55E00", colour = NA) +
+  geom_text(data = panel_labels, aes(label = label), x = Inf, y = Inf,
+            hjust = 1.05, vjust = 1.4, size = 2.8) +
+  facet_grid(grna_target ~ qc) +
+  umi_hist_scales(b) +
+  labs(x = "gRNA UMI count (guide group total)", y = "Number of cells") +
+  theme_thesis() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        strip.text.y = element_blank())
 ```
