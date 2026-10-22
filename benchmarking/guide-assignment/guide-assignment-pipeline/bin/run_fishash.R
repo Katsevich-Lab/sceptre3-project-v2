@@ -34,7 +34,10 @@ dataset_id <- args[2]
 # refit in {0, 10} (main.nf:391); its plotting helper labels refit=10 as
 # "fishash" and does not show refit=0, so 10 is the method as published and 0
 # isolates the correction. The realized iteration count is reported below.
-REFIT         <- 10      # fishash_analysis bin/run_fishash.R, run at 10
+REFIT         <- 100     # a cap, not a count: fishash stops once the assignments stop
+                         # changing. fishash_analysis ran 10; at MOI 30 that cap was hit
+                         # before convergence, so it is raised to let the iteration reach
+                         # its fixed point. Runs that converged within 10 are unaffected.
 PADJ_CUTOFF   <- 0.05    # package default
 EXCLUDE_EMPTY <- TRUE    # package default, set explicitly upstream too
 

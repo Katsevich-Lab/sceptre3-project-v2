@@ -14,6 +14,11 @@
 # children. So it asks for the partition maximum (7 days); tasks set their own
 # --time from the config CSV. Account and partition are left to the cluster
 # defaults; executor settings for the tasks come from ~/.nextflow/config.
+#
+# Optional: QUEUE_SIZE=<n> caps how many tasks run at once (Nextflow -qs),
+# overriding the lab config's queueSize. The cap counts tasks, not CPUs, so size
+# it from the largest per-task CPU request to stay inside the lab's CPU limit:
+#   QUEUE_SIZE=24 sbatch run-benchmarking.sh <RUN_ID>
 #SBATCH -J grna-assignment
 #SBATCH -c 1
 #SBATCH -t 7-00:00:00
@@ -54,6 +59,7 @@ cp "$CONFIG" "${OUT_DIR}/"
   echo "host:       $(hostname)"
   echo "git_branch: $(git rev-parse --abbrev-ref HEAD)"
   echo "git_commit: $(git rev-parse HEAD)"
+  echo "queue_size: ${QUEUE_SIZE:-lab config default}"
   echo "uncommitted changes (full diff in run-info.diff if any):"
   git status --short | sed 's/^/  /'
 } > "${OUT_DIR}/run-info.txt"
@@ -67,11 +73,17 @@ export NXF_APPTAINER=true
 export APPTAINER_TMPDIR="${TMPDIR:-/tmp}"
 export NXF_SINGULARITY_CMD=apptainer
 
+QUEUE_ARGS=()
+if [ -n "${QUEUE_SIZE:-}" ]; then
+  QUEUE_ARGS=(-qs "$QUEUE_SIZE")
+fi
+
 nextflow \
   -log "${OUT_DIR}/nextflow.log" \
   -C ~/.nextflow/config \
   -C guide-assignment-pipeline/nextflow.config \
   run guide-assignment-pipeline/main.nf \
+  "${QUEUE_ARGS[@]}" \
   --run_id "${RUN_ID}" \
   --out_base_dir "${OUT_BASE}" \
   -with-report   "${OUT_DIR}/report.html" \
