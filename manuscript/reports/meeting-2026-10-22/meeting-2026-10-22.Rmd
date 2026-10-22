@@ -142,14 +142,75 @@ plot_logp <- function(d) {
 
 All 130 pairs (promoter guide groups included, shown as "Other"):
 
-```{r logp-all-pairs, fig.width = 9, fig.height = 9.5}
+```{r logp-all-pairs, fig.width = 9, fig.height = 9.5,fig.cap="All 130 pairs flagged as positive controls. The 18 pairs for enhancer-targeting guide group x (globin gene expressed by K562 cells) are highlighted."}
 plot_logp(res)
 ```
 
 Promoter guide groups removed (78 enhancer pairs, 6 guide groups x 13 genes: 18 highlighted, 60 other):
 
-```{r logp-enhancer-pairs, fig.width = 9, fig.height = 9.5}
+```{r logp-enhancer-pairs, fig.width = 9, fig.height = 9.5, fig.cap="Only the 78 enhancer-targeting pairs. The same 18 are highlighted. "}
 res_enh <- res |> filter(target_group == "enhancer")
 stopifnot(all(count(res_enh, method, qc)$n == 6 * 13))
 plot_logp(res_enh)
+```
+
+This suggests that fishash+ adds power. 
+
+
+The same comparison on `z_orig`, the observed test statistic before sceptre compares it with its fitted skew-normal null. Unlike the p-value, it has no 1e-250 floor. Knockdown gives negative z, so for th
+ose pairs a point above the diagonal means fishash+ has the stronger (more negative) z.
+
+```{r z-plot-helper}
+plot_z <- function(d) {
+  z_wide <- d |>
+    select(grna_target, response_id, pair_group, qc, method, z_orig) |>
+    pivot_wider(names_from = method, values_from = z_orig)
+
+  plot_df <- z_wide |>
+    pivot_longer(c(fishash, thresh5), names_to = "comparator", values_to = "z_comparator") |>
+    mutate(qc = factor(qc, levels = c("none", "default"),
+                       labels = c("No cell QC", "Default cell QC")),
+           comparator = factor(comparator, levels = c("fishash", "thresh5"),
+                               labels = c("vs fishash", "vs threshold = 5")))
+
+  # counts for the highlighted pairs only, by |z| so the sign of the effect does not matter
+  counts <- plot_df |>
+    filter(pair_group == levels(pair_group)[1]) |>
+    group_by(qc, comparator) |>
+    summarise(fp_larger  = sum(abs(fishashplus) > abs(z_comparator)),
+              cmp_larger = sum(abs(fishashplus) < abs(z_comparator)),
+              ties       = sum(abs(fishashplus) == abs(z_comparator)),
+              .groups = "drop") |>
+    mutate(label = paste0("highlighted pairs:\nfishash+ larger |z|: ", fp_larger,
+                          "\ncomparator larger |z|: ", cmp_larger,
+                          "\nties: ", ties))
+
+  ggplot(plot_df, aes(x = fishashplus, y = z_comparator, colour = pair_group, shape = pair_group)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
+    geom_hline(yintercept = 0, colour = "grey85") +
+    geom_vline(xintercept = 0, colour = "grey85") +
+    geom_point(alpha = 0.7, size = 1.8) +
+    geom_text(data = counts, aes(label = label), x = Inf, y = -Inf,
+              hjust = 1.05, vjust = -0.3, size = 2.5, inherit.aes = FALSE) +
+    scale_colour_manual(values = c("#D55E00", "grey40"), name = NULL) +
+    scale_shape_manual(values = c(16, 17), name = NULL) +
+    facet_grid(comparator ~ qc) +
+    coord_equal() +
+    labs(x = "fishash+ z", y = "Comparator z") +
+    theme_bw() +
+    theme(legend.position = "bottom")
+}
+```
+
+
+All 130 pairs (promoter guide groups included, shown as "Other"):
+
+```{r z-all-pairs, fig.width = 9, fig.height = 9.5}
+plot_z(res)
+```
+
+Promoter guide groups removed (78 enhancer pairs: 18 highlighted, 60 other):
+
+```{r z-enhancer-pairs, fig.width = 9, fig.height = 9.5}
+plot_z(res_enh)
 ```
