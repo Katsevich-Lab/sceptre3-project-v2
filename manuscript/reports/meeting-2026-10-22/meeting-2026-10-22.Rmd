@@ -32,7 +32,7 @@ stopifnot(nrow(res) == 10 * 130,
           all(count(res, method, qc)$n == 130))
 ```
 
-Experiment: compute p-values for the 130 globin control pairs in Gasperini for different assignments: the 10 control guide groups (enhancers HS1 to HS4 and globin promoters) tested against each of the 13 genes they were tested against in the original paper.
+Experiment: compute p-values for the 130 globin control pairs in Gasperini for different assignments. These pairs are from 10 guide groups (enhancers HS1 to HS4 and globin promoters) tested against each of the 13 genes they were tested against in the original paper.
 
 Assignment methods:
 
@@ -143,15 +143,15 @@ plot_logp <- function(d) {
 }
 ```
 
-All 130 pairs (promoter guide groups included, shown as "Other"):
+<!-- All 130 pairs (promoter guide groups included, shown as "Other"): -->
 
-```{r logp-all-pairs, fig.width = 9, fig.height = 9.5,fig.cap="All 130 pairs flagged as positive controls. The 18 pairs for enhancer-targeting guide group x (globin gene expressed by K562 cells) are highlighted."}
-plot_logp(res)
-```
+<!-- ```{r logp-all-pairs, fig.width = 9, fig.height = 9.5,fig.cap="All 130 pairs flagged as positive controls. The 18 pairs for enhancer-targeting guide group x (globin gene expressed by K562 cells) are highlighted."} -->
+<!-- plot_logp(res) -->
+<!-- ``` -->
 
 Promoter guide groups removed (78 enhancer pairs, 6 guide groups x 13 genes: 18 highlighted, 60 other):
 
-```{r logp-enhancer-pairs, fig.width = 9, fig.height = 9.5, fig.cap="Only the 78 enhancer-targeting pairs. The same 18 are highlighted. "}
+```{r logp-enhancer-pairs, fig.width = 9, fig.height = 9.5, fig.cap="Only the 78 enhancer-targeting pairs. The 18 pairs for enhancer-targeting guide group x (globin gene expressed by K562 cells) are highlighted."}
 res_enh <- res |> filter(target_group == "enhancer")
 stopifnot(all(count(res_enh, method, qc)$n == 6 * 13))
 plot_logp(res_enh)
@@ -160,8 +160,7 @@ plot_logp(res_enh)
 This suggests that fishash+ adds power. 
 
 
-The same comparison on `z_orig`, the observed test statistic before sceptre compares it with its fitted skew-normal null. Unlike the p-value, it has no 1e-250 floor. Knockdown gives negative z, so for th
-ose pairs a point above the diagonal means fishash+ has the stronger (more negative) z.
+The same comparison on `z_orig`, the observed test statistic before sceptre compares it with its fitted skew-normal null. Unlike the p-value, it has no 1e-250 floor. Knockdown gives negative z, so for those pairs a point above the diagonal means fishash+ has the stronger (more negative) z.
 
 ```{r z-plot-helper}
 plot_z <- function(d) {
@@ -206,11 +205,11 @@ plot_z <- function(d) {
 ```
 
 
-All 130 pairs (promoter guide groups included, shown as "Other"):
+<!-- All 130 pairs (promoter guide groups included, shown as "Other"): -->
 
-```{r z-all-pairs, fig.width = 9, fig.height = 9.5}
-plot_z(res)
-```
+<!-- ```{r z-all-pairs, fig.width = 9, fig.height = 9.5} -->
+<!-- plot_z(res) -->
+<!-- ``` -->
 
 Promoter guide groups removed (78 enhancer pairs: 18 highlighted, 60 other):
 
