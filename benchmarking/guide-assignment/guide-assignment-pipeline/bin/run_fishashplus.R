@@ -26,10 +26,13 @@ rds_fp     <- args[1]
 dataset_id <- args[2]
 
 # Every fishash_plus() argument is named here so the settings can be read without
-# opening the package. All are the PACKAGE DEFAULTS (fishashplus 0.1.0).
+# opening the package. All are the PACKAGE DEFAULTS (fishashplus 0.1.0) except REFIT.
 Q         <- 0.05   # target false discovery rate (Guo-Sarkar)
-REFIT     <- 10     # ambient-field refits after the first pass; stops early once
-                    # the assignment stops changing (at most REFIT + 1 iterations)
+REFIT     <- 100    # ambient-field refits after the first pass; stops early once
+                    # the assignment stops changing (at most REFIT + 1 iterations).
+                    # NOT the package default (10): at MOI 30 the default cap was hit
+                    # before convergence, so the cap is raised to let the iteration
+                    # reach its fixed point; converged runs are unaffected.
 MIN_COUNT <- 2      # minimum count for an entry to be assigned
 
 cat("Loading:", rds_fp, "\n")
