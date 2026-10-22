@@ -217,9 +217,9 @@ Promoter guide groups removed (78 enhancer pairs: 18 highlighted, 60 other):
 plot_z(res_enh)
 ```
 
-What are the extra cells fishash+ assigns? For each enhancer guide group: the cells assigned to the group (any of its guides) by fishash+ but by none of its guides under fishash, and the group's gRNA UMI count in each of those cells (summed over its guides; one guide for HS1, HS3, HS4). Assignments do not depend on QC; the QC column drops the cells removed by cell QC.
+What are the extra cells fishash+ assigns? For each of the 9 enhancer-targeting guides: the cells assigned that guide by fishash+ but not by fishash, and that guide's gRNA UMI count in each of those cells. These are exactly the (guide, cell) entries the unassign runs below act on. Assignments do not depend on QC; the QC column drops the cells removed by cell QC.
 
-```{r extra-cells-umi, fig.width = 8, fig.height = 12}
+```{r extra-cells-umi, fig.width = 8, fig.height = 17}
 # thesis histogram style: exact bins 0..10 then doubling widths, log10(count + 1),
 # one bin structure shared by every panel
 source("../../../benchmarking/guide-assignment/assignment-analysis/assignment-helpers.R")
@@ -243,14 +243,19 @@ dimnames(grna_counts) <- dimnames(fp)
 # every fishash+ assignment sits on a count >= 2 (run_fishashplus.R min_count = 2)
 stopifnot(all(grna_counts[as.matrix(fp) == 1] >= 2))
 
+# one panel row per enhancer-targeting guide, in guide-group order
 enh_targets <- target_tags |> filter(target_group == "enhancer")
-extra <- map_dfr(enh_targets$grna_target, function(g) {
-  rows  <- which(guide_df$grna_target == g)
-  in_fp <- Matrix::colSums(fp[rows, , drop = FALSE]) > 0
-  in_fa <- Matrix::colSums(fa[rows, , drop = FALSE]) > 0
-  cells <- which(in_fp & !in_fa)
-  tibble(grna_target = g, cell = cells,
-         umi = colSums(grna_counts[rows, cells, drop = FALSE]))
+enh_guides  <- guide_df |>
+  filter(grna_target %in% enh_targets$grna_target) |>
+  arrange(match(grna_target, enh_targets$grna_target)) |>
+  mutate(guide_label = paste0(sub("pos_control_", "", grna_target), "\n", grna_id))
+stopifnot(nrow(enh_guides) == 9)
+
+# per (guide, cell) entry: assigned by fishash+, not by fishash; that guide's own count
+extra <- map_dfr(seq_len(nrow(enh_guides)), function(k) {
+  i     <- match(enh_guides$grna_id[k], rownames(fp))
+  cells <- which(fp[i, ] == 1 & fa[i, ] == 0)
+  tibble(guide_label = enh_guides$guide_label[k], cell = cells, umi = grna_counts[i, cells])
 })
 
 extra_qc <- bind_rows(
@@ -258,25 +263,22 @@ extra_qc <- bind_rows(
   extra |> filter(!cell %in% qc_excl) |> mutate(qc = "Default cell QC")
 ) |>
   mutate(qc = factor(qc, levels = c("No cell QC", "Default cell QC")),
-         grna_target = factor(grna_target, levels = enh_targets$grna_target))
+         guide_label = factor(guide_label, levels = enh_guides$guide_label))
 
-# panel labels: element, number of guides, number of extra cells
+# panel labels: guide group, guide, number of extra cells
 panel_labels <- extra_qc |>
-  count(grna_target, qc, .drop = FALSE) |>
-  mutate(element = enh_targets$element[match(grna_target, enh_targets$grna_target)],
-         guides  = map_int(as.character(grna_target), \(g) sum(guide_df$grna_target == g)),
-         label   = paste0(element, " (", guides, if_else(guides > 1, " guides", " guide"),
-                          "): ", n, " extra cells"))
+  count(guide_label, qc, .drop = FALSE) |>
+  mutate(label = paste0(sub("\n", ", ", guide_label), ": ", n, " extra cells"))
 
-b <- bin_umi_counts(extra_qc, c("grna_target", "qc"))
+b <- bin_umi_counts(extra_qc, c("guide_label", "qc"))
 ggplot(b$counts) +
   geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = logp1(count)),
             fill = "#D55E00", colour = NA) +
   geom_text(data = panel_labels, aes(label = label), x = Inf, y = Inf,
-            hjust = 1.05, vjust = 1.4, size = 2.8) +
-  facet_grid(grna_target ~ qc) +
+            hjust = 1.02, vjust = 1.4, size = 2.4) +
+  facet_grid(guide_label ~ qc) +
   umi_hist_scales(b) +
-  labs(x = "gRNA UMI count (guide group total)", y = "Number of cells") +
+  labs(x = "gRNA UMI count (that guide)", y = "Number of cells") +
   theme_thesis() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
         strip.text.y = element_blank())
