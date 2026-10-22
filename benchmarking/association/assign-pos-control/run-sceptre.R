@@ -2,10 +2,12 @@
 # sceptre positive-control run on a full-Gasperini dataset from build-dataset.R,
 # for one assignment method and one cell-QC arm.
 #
-#   OUT=<LOCAL_BENCHMARKING_DIR>/association/assign-pos-control/outputs/<dataset>/<method>_<qc>
+#   OUT=<LOCAL_BENCHMARKING_DIR>/association/assign-pos-control/outputs/<dataset>/<run name>
 #   mkdir -p $OUT && SIF=<pipeline-images>/sceptre.sif \
 #     sbatch -c 2 -t 1:00:00 -o $OUT/sceptre-%j.out \
-#     ../../guide-assignment/grna-simulator/run-in-image.sh run-sceptre.R <dataset> <method> <qc>
+#     ../../guide-assignment/grna-simulator/run-in-image.sh run-sceptre.R <dataset> <method> <qc> [<unassign>]
+#
+#   <run name> = <method>_<qc>, or <method>_<qc>_unassign<unassign> when <unassign> is not none
 #
 #   <dataset> gasperini_allcells        377 TSS pairs (target vs its own gene), built
 #                                       by construct_positive_control_pairs(), tested
@@ -21,6 +23,14 @@
 #                       additional_cells_to_remove. sceptre's own cell filters are
 #                       set to remove nothing, because they would use totals over
 #                       only the 377 genes in this response matrix.
+#   <unassign> none (default): the method's assignments as they are.
+#             inf or an integer t (method fishashplus only): unassign every (guide,
+#             cell) entry that fishash+ assigns and fishash does not, if its raw
+#             count is < t (inf: all of them), so those cells become controls for
+#             that guide's group. Entry by entry, so each guide group loses only its
+#             own such cells. "<", to match thresholding's ">=": t = 4 unassigns the
+#             entries at counts 2 and 3. With inf this is fishash's assignment
+#             wherever fishash's calls are a subset of fishash+'s.
 #
 # Settings otherwise follow pos-control-pipeline/bin/run_sceptre.R (Gasperini):
 # high MOI, *_full covariates in the formula, two-sided, guides pooled per
@@ -28,29 +38,34 @@
 #
 # Writes <OUT>/association_on_target.csv: the sceptre result (power check or
 # discovery analysis) plus n_trt_cells (cells in use assigned any guide of the
-# target).
+# target), and with <unassign> the columns unassign and n_unassigned (entries
+# unassigned over all of the dataset's guides).
 
-suppressPackageStartupMessages({ library(Matrix); library(sceptre) })
+suppressPackageStartupMessages({ library(Matrix); library(sceptre); library(ondisc) })
 source("~/.Rprofile")                                    # .get_config_path()
 
 args <- commandArgs(trailingOnly = TRUE)
 DATASETS <- c(gasperini_allcells = 377L, gasperini_allcells_globin = 130L)   # dataset = n pairs
 METHODS  <- c("fishash", "fishashplus", "thresh3", "thresh5", "thresh10")
-if (length(args) != 3 || !args[1] %in% names(DATASETS) || !args[2] %in% METHODS ||
-    !args[3] %in% c("none", "default")) {
-  stop("usage: run-sceptre.R <", paste(names(DATASETS), collapse = "|"), "> <",
-       paste(METHODS, collapse = "|"), "> <none|default>")
-}
-dataset <- args[1]; method <- args[2]; qc <- args[3]
+usage <- paste0("usage: run-sceptre.R <", paste(names(DATASETS), collapse = "|"), "> <",
+                paste(METHODS, collapse = "|"), "> <none|default> [<none|inf|integer>]")
+if (!length(args) %in% 3:4 || !args[1] %in% names(DATASETS) || !args[2] %in% METHODS ||
+    !args[3] %in% c("none", "default")) stop(usage)
+dataset  <- args[1]; method <- args[2]; qc <- args[3]
+unassign <- if (length(args) == 4) args[4] else "none"
+if (!(unassign %in% c("none", "inf") || grepl("^[1-9][0-9]*$", unassign))) stop(usage)
+if (unassign != "none" && method != "fishashplus") stop("<unassign> applies to method fishashplus only")
+unassign_thresh <- switch(unassign, none = NA_real_, inf = Inf, as.numeric(unassign))
 use_discovery <- dataset == "gasperini_allcells_globin"
 
-bench   <- .get_config_path("LOCAL_BENCHMARKING_DIR")
-in_root <- file.path(bench, "association", "assign-pos-control", "input_data", dataset)
-out_dir <- file.path(bench, "association", "assign-pos-control", "outputs", dataset, paste0(method, "_", qc))
-out_csv <- file.path(out_dir, "association_on_target.csv")
+bench    <- .get_config_path("LOCAL_BENCHMARKING_DIR")
+in_root  <- file.path(bench, "association", "assign-pos-control", "input_data", dataset)
+run_name <- paste0(method, "_", qc, if (unassign != "none") paste0("_unassign", unassign))
+out_dir  <- file.path(bench, "association", "assign-pos-control", "outputs", dataset, run_name)
+out_csv  <- file.path(out_dir, "association_on_target.csv")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 if (file.exists(out_csv)) stop("result already exists, not overwriting: ", out_csv)
-cat("dataset:", dataset, "| method:", method, "| qc:", qc, "\nout:", out_dir, "\n\n")
+cat("dataset:", dataset, "| method:", method, "| qc:", qc, "| unassign:", unassign, "\nout:", out_dir, "\n\n")
 
 N_CELLS <- 207324L; N_PAIRS <- DATASETS[[dataset]]
 
@@ -68,6 +83,48 @@ stopifnot(ncol(response_matrix) == N_CELLS, ncol(grna_matrix) == N_CELLS,
           all(grna_matrix@x == 1))
 cat("response:", nrow(response_matrix), "x", ncol(response_matrix),
     "| grna:", nrow(grna_matrix), "x", ncol(grna_matrix), ";", sum(grna_matrix), "assignments\n")
+
+# ---- optional: unassign fishash+-only entries with raw count < t -------------
+n_unassigned <- 0L
+if (unassign != "none") {
+  fa <- readRDS(file.path(in_root, "grna", "fishash.rds"))
+  stopifnot(identical(dimnames(fa), dimnames(grna_matrix)))
+  diff_entries <- summary(drop0(grna_matrix - fa))       # i, j, x: x = 1 fishash+ only, -1 fishash only
+  n_fishash_only <- sum(diff_entries$x == -1)
+  diff_entries <- diff_entries[diff_entries$x == 1, ]
+  # raw counts at those entries, from the full gRNA ODM (columns in the same order)
+  grna_odm <- initialize_odm_from_backing_file(file.path(
+    bench, "guide_assignment", "input_data", "gasperini", "sceptre-pipeline", "grna.odm"))
+  odm_rows <- match(rownames(grna_matrix), rownames(grna_odm))
+  stopifnot(!anyNA(odm_rows))
+  diff_counts <- numeric(nrow(diff_entries))
+  for (g in unique(diff_entries$i)) {
+    k <- which(diff_entries$i == g)
+    v <- grna_odm[odm_rows[g], ]
+    stopifnot(length(v) == N_CELLS)
+    diff_counts[k] <- v[diff_entries$j[k]]
+  }
+  stopifnot(all(diff_counts >= 2))                       # fishash+ min_count = 2
+  cat("fishash+ \\ fishash: ", nrow(diff_entries), " (guide, cell) entries; count distribution:\n", sep = "")
+  print(table(diff_counts))
+  cat("fishash \\ fishash+:", n_fishash_only, "entries\n")
+
+  drop <- diff_entries[diff_counts < unassign_thresh, ]
+  if (nrow(drop) > 0) {
+    grna_matrix[cbind(drop$i, drop$j)] <- 0
+    grna_matrix <- drop0(grna_matrix)
+  }
+  n_unassigned <- nrow(drop)
+  stopifnot(all(grna_matrix@x == 1))
+  cat("unassigned", n_unassigned, "entries (count <", unassign_thresh, ");",
+      sum(grna_matrix), "assignments left\n")
+  # with inf and fishash's calls a subset of fishash+'s, this must be fishash's matrix
+  if (is.infinite(unassign_thresh) && n_fishash_only == 0) {
+    stopifnot(nnzero(grna_matrix - fa) == 0)
+    cat("unassign inf: identical to fishash's assignment matrix\n")
+  }
+  cat("\n")
+}
 
 covariates_to_use <- c("response_n_nonzero_full", "response_n_umis_full",
                        "grna_n_nonzero_full", "grna_n_umis_full", "prep_batch")
@@ -154,6 +211,7 @@ n_trt <- vapply(results$grna_target, function(g) {
 }, integer(1))
 results$n_trt_cells <- unname(n_trt)
 results$dataset <- dataset; results$method <- method; results$qc <- qc
+if (unassign != "none") { results$unassign <- unassign; results$n_unassigned <- n_unassigned }
 
 write.csv(results, out_csv, row.names = FALSE)
 cat("\nwrote", out_csv, "\n")
