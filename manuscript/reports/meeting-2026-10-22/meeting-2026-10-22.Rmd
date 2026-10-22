@@ -310,7 +310,7 @@ unassign_df <- res_un |>
 stopifnot(!anyNA(unassign_df$p_before))
 ```
 
-Points below the diagonal: fishash+ before unassigning has the smaller p. I do not see evidence that removing those small UMI guide-cell pairs helps. 
+This could suggest that removing the guide-cell pairs with UMI counts of 2 and 3 helps, but there is no evidence that removing just the UMI counts of 2 helps. Very little evidence either way in such a small sample.
 
 ```{r unassign-logp, fig.width = 9, fig.height = 13}
 counts_p <- unassign_df |>
@@ -338,7 +338,7 @@ ggplot(unassign_df, aes(x = -log10(p_before), y = -log10(p_after),
   theme(legend.position = "bottom")
 ```
 
-Checking the z scores: again, I see no evidence that unassigning those small counts helped.
+Checking the z scores: again,  In this case there is no evidence of any change.
 
 ```{r unassign-z, fig.width = 9, fig.height = 13}
 Z_MAX <- 40    # keep pairs with |z| <= Z_MAX both before and after; Inf keeps all
@@ -370,7 +370,7 @@ ggplot(z_df, aes(x = z_before, y = z_after, colour = pair_group, shape = pair_gr
   theme(legend.position = "bottom")
 ```
 
-The same unassignment on the 377 TSS positive controls (each target's promoter guides tested against that target gene). Here too fishash's assignments are nested in fishash+'s for all 754 guides, so unassigning all of fishash+'s extra calls gives exactly fishash's assignment.
+The same unassignment experiment on the 377 on-target positive controls. Here too fishash's assignments are nested in fishash+'s for all 754 guides, so unassigning all of fishash+'s extra calls gives exactly fishash's assignment.
 
 ```{r load-unassign-tss}
 tss_dir <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
@@ -396,7 +396,7 @@ tss_unassign_df <- tss_after |>
 stopifnot(!anyNA(tss_unassign_df$p_before))
 ```
 
-Points below the diagonal: fishash+ before unassigning has the smaller p.
+Points below the diagonal: fishash+ before unassigning has the smaller p. 
 
 ```{r unassign-logp-tss, fig.width = 9, fig.height = 13}
 tss_counts_p <- tss_unassign_df |>
@@ -412,15 +412,16 @@ ggplot(tss_unassign_df, aes(x = -log10(p_before), y = -log10(p_after))) +
   geom_hex(bins = 40) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
   geom_text(data = tss_counts_p, aes(label = label), x = -Inf, y = Inf,
-            hjust = -0.05, vjust = 1.2, size = 2.5, inherit.aes = FALSE) +
+            hjust = -0.05, vjust = 1., size = 2.5, inherit.aes = FALSE) +
   scale_fill_viridis_c(trans = "log10", name = "Pairs") +
   facet_grid(unassign ~ qc) +
   coord_equal() +
   labs(x = "fishash+ -log10 p (before)", y = "-log10 p after unassigning") +
-  theme_bw()
+  theme_bw() +
+  ggtitle("Comparing p-values for all 377 on-targets")
 ```
 
-Knockdown gives negative z, so for those pairs a point above the diagonal means fishash+ before unassigning has the stronger (more negative) z.
+On-target z-score analysis.
 
 ```{r unassign-z-tss, fig.width = 9, fig.height = 13}
 TSS_Z_MAX <- Inf   # keep pairs with |z| <= TSS_Z_MAX both before and after; Inf keeps all
@@ -452,7 +453,8 @@ ggplot(tss_z_df, aes(x = z_before, y = z_after)) +
   facet_grid(unassign ~ qc) +
   coord_equal() +
   labs(x = "fishash+ z (before)", y = "z after unassigning") +
-  theme_bw()
+  theme_bw() +
+   ggtitle("Comparing z-scores for all 377 on-targets")
 ```
 
 
