@@ -337,16 +337,22 @@ ggplot(unassign_df, aes(x = -log10(p_before), y = -log10(p_after),
 Knockdown gives negative z, so for those pairs a point above the diagonal means fishash+ before unassigning has the stronger (more negative) z.
 
 ```{r unassign-z, fig.width = 9, fig.height = 13}
+Z_MAX <- 40    # keep pairs with |z| <= Z_MAX both before and after; Inf keeps all
+
+z_df <- unassign_df |> filter(abs(z_before) <= Z_MAX, abs(z_after) <= Z_MAX)
+
 counts_z <- unassign_df |>
   filter(pair_group == levels(pair_group)[1]) |>
   group_by(unassign, qc) |>
-  summarise(before_larger = sum(abs(z_before) > abs(z_after)),
-            after_larger  = sum(abs(z_before) < abs(z_after)),
-            ties          = sum(abs(z_before) == abs(z_after)), .groups = "drop") |>
+  summarise(n_dropped     = sum(abs(z_before) > Z_MAX | abs(z_after) > Z_MAX),
+            before_larger = sum(abs(z_before) > abs(z_after) & abs(z_before) <= Z_MAX & abs(z_after) <= Z_MAX),
+            after_larger  = sum(abs(z_before) < abs(z_after) & abs(z_before) <= Z_MAX & abs(z_after) <= Z_MAX),
+            ties          = sum(abs(z_before) == abs(z_after) & abs(z_before) <= Z_MAX), .groups = "drop") |>
   mutate(label = paste0("highlighted pairs:\nbefore larger |z|: ", before_larger,
-                        "\nafter larger |z|: ", after_larger, "\nties: ", ties))
+                        "\nafter larger |z|: ", after_larger, "\nties: ", ties,
+                        if (is.finite(Z_MAX)) paste0("\ndropped (|z| > ", Z_MAX, "): ", n_dropped) else ""))
 
-ggplot(unassign_df, aes(x = z_before, y = z_after, colour = pair_group, shape = pair_group)) +
+ggplot(z_df, aes(x = z_before, y = z_after, colour = pair_group, shape = pair_group)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
   geom_hline(yintercept = 0, colour = "grey85") +
   geom_vline(xintercept = 0, colour = "grey85") +
