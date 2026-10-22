@@ -1,0 +1,155 @@
+---
+title: "meeting-2026-10-22"
+output:
+  pdf_document: default
+  html_document: default
+date: "2026-10-22"
+---
+
+
+globin enhancer and promoter positive controls on gasperini
+```{r load-results, echo=FALSE}
+library(tidyverse)
+source("~/.Rprofile")
+
+# 10 sceptre runs: 5 assignment methods x 2 cell-QC arms, 130 globin control
+# pairs each (10 control targets x 13 genes, the positive_ctrl rows of GEO
+# GSE120861_all_deg_results.at_scale). Each CSV carries `dataset`, `method`, `qc`.
+out_dir <- file.path(.get_config_path("LOCAL_BENCHMARKING_DIR"),
+                     "association", "assign-pos-control", "outputs", "gasperini_allcells_globin")
+runs <- expand_grid(method = c("fishash", "fishashplus", "thresh3", "thresh5", "thresh10"),
+                    qc     = c("none", "default"))
+
+res <- map2(runs$method, runs$qc, \(m, q)
+  read_csv(file.path(out_dir, paste0(m, "_", q), "association_on_target.csv"),
+           show_col_types = FALSE)) |>
+  bind_rows()
+
+stopifnot(nrow(res) == 10 * 130,
+          all(count(res, method, qc)$n == 130))
+```
+
+Experiment: compute p-values for the 130 globin control pairs in Gasperini for different assignments: the 10 control guide groups (enhancers HS1 to HS4 and globin promoters) tested against each of the 13 genes they were tested against in the original paper.
+
+Assignment methods:
+
+1. fishash
+
+2. fishash+
+
+3. thresholding with a threshold of 3, 5, and 10
+
+This was done with and without cellwise QC (using SCEPTRE default if QC was done). No pairwise QC was done.
+
+```{r pair-tags}
+# Gene groups. ENSG -> gene names from GSE120861_all_deg_results.at_scale.txt.
+gene_tags <- tribble(
+  ~response_id,      ~gene,      ~gene_group,
+  "ENSG00000213931", "HBE1",     "globin",
+  "ENSG00000213934", "HBG1",     "globin",
+  "ENSG00000196565", "HBG2",     "globin",
+  "ENSG00000244734", "HBB",      "borderline",
+  "ENSG00000223609", "HBD",      "borderline",
+  "ENSG00000132256", "TRIM5",    "unlikely",
+  "ENSG00000121236", "TRIM6",    "unlikely",
+  "ENSG00000132109", "TRIM21",   "unlikely",
+  "ENSG00000167333", "TRIM68",   "unlikely",
+  "ENSG00000183251", "OR51B4",   "unlikely",
+  "ENSG00000242180", "OR51B5",   "unlikely",
+  "ENSG00000167359", "OR51I1",   "unlikely",
+  "ENSG00000051009", "FAM160A2", "unlikely"
+) |>
+  mutate(gene_group = factor(gene_group, levels = c("globin", "borderline", "unlikely")))
+
+# Guide groups (control targets): HS1 to HS4 enhancers vs globin promoters.
+target_tags <- tribble(
+  ~grna_target,                               ~element,   ~target_group,
+  "pos_control_Klannchr_HS1",                 "HS1",      "enhancer",
+  "pos_control_HS2_Klann_mosaic",             "HS2",      "enhancer",
+  "pos_control_KlannHS2g_HS2_A",              "HS2",      "enhancer",
+  "pos_control_KlannHS2g_HS2_B",              "HS2",      "enhancer",
+  "pos_control_Klannchr1_HS3",                "HS3",      "enhancer",
+  "pos_control_Klannchr1_HS4",                "HS4",      "enhancer",
+  "pos_control_HBE1_tss_Klann_mosaic",        "HBE1 TSS", "promoter",
+  "pos_control_mosaic_HB_HBE1_tss_A",         "HBE1 TSS", "promoter",
+  "pos_control_mosaic_HB_HBE1_tss_B",         "HBE1 TSS", "promoter",
+  "pos_control_Klannchr1_HBG1_HBG1_tss_both", "HBG1 TSS", "promoter"
+) |>
+  mutate(target_group = factor(target_group, levels = c("enhancer", "promoter")))
+
+pair_tags <- cross_join(target_tags, gene_tags)
+
+stopifnot(nrow(pair_tags) == 130,
+          setequal(paste(pair_tags$grna_target, pair_tags$response_id),
+                   paste(res$grna_target, res$response_id)))
+
+res <- res |> left_join(pair_tags, by = c("grna_target", "response_id"))
+
+# Very likely positive controls, chosen from biology (not from these results):
+# the LCR enhancers HS1 to HS4 acting on the globins expressed in K562. Promoter
+# guide groups are excluded so on-target knockdowns are not highlighted.
+res <- res |>
+  mutate(pair_group = if_else(target_group == "enhancer" & gene_group == "globin",
+                              "Enhancer x HBE1/HBG1/HBG2", "Other"),
+         pair_group = factor(pair_group, levels = c("Enhancer x HBE1/HBG1/HBG2", "Other")))
+stopifnot(sum(res$pair_group == "Enhancer x HBE1/HBG1/HBG2") == 10 * 18)
+```
+
+```{r logp-plot-helper}
+# -log10 p, fishash+ (x) against fishash and threshold 5 (y), one panel per
+# comparator x QC arm. Points below the diagonal: fishash+ has the smaller p.
+P_FLOOR <- 1e-250   # sceptre's smallest reported p-value
+
+plot_logp <- function(d) {
+  p_wide <- d |>
+    select(grna_target, response_id, pair_group, qc, method, p_value) |>
+    pivot_wider(names_from = method, values_from = p_value)
+
+  plot_df <- p_wide |>
+    pivot_longer(c(fishash, thresh5), names_to = "comparator", values_to = "p_comparator") |>
+    mutate(qc = factor(qc, levels = c("none", "default"),
+                       labels = c("No cell QC", "Default cell QC")),
+           comparator = factor(comparator, levels = c("fishash", "thresh5"),
+                               labels = c("vs fishash", "vs threshold = 5")),
+           x = -log10(fishashplus), y = -log10(p_comparator))
+
+  # counts for the highlighted pairs only
+  counts <- plot_df |>
+    filter(pair_group == levels(pair_group)[1]) |>
+    group_by(qc, comparator) |>
+    summarise(fp_smaller  = sum(fishashplus < p_comparator),
+              cmp_smaller = sum(fishashplus > p_comparator),
+              ties        = sum(fishashplus == p_comparator),
+              .groups = "drop") |>
+    mutate(label = paste0("highlighted pairs:\nfishash+ smaller p (below): ", fp_smaller,
+                          "\ncomparator smaller p (above): ", cmp_smaller,
+                          "\nties (incl. both at 1e-250): ", ties))
+
+  ggplot(plot_df, aes(x = x, y = y, colour = pair_group, shape = pair_group)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
+    geom_point(alpha = 0.7, size = 1.8) +
+    geom_text(data = counts, aes(label = label), x = -Inf, y = Inf,
+              hjust = -0.05, vjust = 1.2, size = 2.5, inherit.aes = FALSE) +
+    scale_colour_manual(values = c("#D55E00", "grey40"), name = NULL) +
+    scale_shape_manual(values = c(16, 17), name = NULL) +
+    facet_grid(comparator ~ qc) +
+    coord_equal() +
+    labs(x = "fishash+ -log10 p", y = "Comparator -log10 p") +
+    theme_bw() +
+    theme(legend.position = "bottom")
+}
+```
+
+All 130 pairs (promoter guide groups included, shown as "Other"):
+
+```{r logp-all-pairs, fig.width = 9, fig.height = 9.5}
+plot_logp(res)
+```
+
+Promoter guide groups removed (90 enhancer pairs: 18 highlighted, 72 other):
+
+```{r logp-enhancer-pairs, fig.width = 9, fig.height = 9.5}
+res_enh <- res |> filter(target_group == "enhancer")
+stopifnot(all(count(res_enh, method, qc)$n == 90))
+plot_logp(res_enh)
+```
