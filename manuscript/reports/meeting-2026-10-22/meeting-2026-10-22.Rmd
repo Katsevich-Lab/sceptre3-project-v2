@@ -282,3 +282,82 @@ ggplot(b$counts) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
         strip.text.y = element_blank())
 ```
+
+Unassigning fishash+'s extra calls: for each guide, the (guide, cell) entries fishash+ assigns and fishash does not are set to unassigned if their UMI count is below a threshold, so those cells become controls for that guide group. Unassigning all of them gives exactly fishash's assignment. "Before" is fishash+ as is.
+
+```{r load-unassign}
+unassign_runs <- expand_grid(qc = c("none", "default"), t = c("3", "4", "inf"))
+res_un <- map2(unassign_runs$qc, unassign_runs$t, \(q, t)
+  read_csv(file.path(out_dir, paste0("fishashplus_", q, "_unassign", t), "association_on_target.csv"),
+           col_types = cols(unassign = col_character()), show_col_types = FALSE)) |>
+  bind_rows()
+stopifnot(nrow(res_un) == 6 * 130, all(count(res_un, qc, unassign)$n == 130))
+
+before <- res |>
+  filter(method == "fishashplus") |>
+  select(grna_target, response_id, qc, pair_group, p_before = p_value, z_before = z_orig)
+
+unassign_df <- res_un |>
+  select(grna_target, response_id, qc, unassign, p_after = p_value, z_after = z_orig) |>
+  left_join(before, by = c("grna_target", "response_id", "qc")) |>
+  mutate(qc = factor(qc, levels = c("none", "default"), labels = c("No cell QC", "Default cell QC")),
+         unassign = factor(unassign, levels = c("3", "4", "inf"),
+                           labels = c("unassign count < 3", "unassign count < 4", "unassign all (= fishash)")))
+stopifnot(!anyNA(unassign_df$p_before))
+```
+
+Points below the diagonal: fishash+ before unassigning has the smaller p.
+
+```{r unassign-logp, fig.width = 9, fig.height = 13}
+counts_p <- unassign_df |>
+  filter(pair_group == levels(pair_group)[1]) |>
+  group_by(unassign, qc) |>
+  summarise(before_smaller = sum(p_before < p_after),
+            after_smaller  = sum(p_before > p_after),
+            ties           = sum(p_before == p_after), .groups = "drop") |>
+  mutate(label = paste0("highlighted pairs:\nbefore smaller p (below): ", before_smaller,
+                        "\nafter smaller p (above): ", after_smaller,
+                        "\nties (incl. both at 1e-250): ", ties))
+
+ggplot(unassign_df, aes(x = -log10(p_before), y = -log10(p_after),
+                        colour = pair_group, shape = pair_group)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_point(alpha = 0.7, size = 1.8) +
+  geom_text(data = counts_p, aes(label = label), x = -Inf, y = Inf,
+            hjust = -0.05, vjust = 1.2, size = 2.5, inherit.aes = FALSE) +
+  scale_colour_manual(values = c("#D55E00", "grey40"), name = NULL) +
+  scale_shape_manual(values = c(16, 17), name = NULL) +
+  facet_grid(unassign ~ qc) +
+  coord_equal() +
+  labs(x = "fishash+ -log10 p (before)", y = "-log10 p after unassigning") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Knockdown gives negative z, so for those pairs a point above the diagonal means fishash+ before unassigning has the stronger (more negative) z.
+
+```{r unassign-z, fig.width = 9, fig.height = 13}
+counts_z <- unassign_df |>
+  filter(pair_group == levels(pair_group)[1]) |>
+  group_by(unassign, qc) |>
+  summarise(before_larger = sum(abs(z_before) > abs(z_after)),
+            after_larger  = sum(abs(z_before) < abs(z_after)),
+            ties          = sum(abs(z_before) == abs(z_after)), .groups = "drop") |>
+  mutate(label = paste0("highlighted pairs:\nbefore larger |z|: ", before_larger,
+                        "\nafter larger |z|: ", after_larger, "\nties: ", ties))
+
+ggplot(unassign_df, aes(x = z_before, y = z_after, colour = pair_group, shape = pair_group)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_hline(yintercept = 0, colour = "grey85") +
+  geom_vline(xintercept = 0, colour = "grey85") +
+  geom_point(alpha = 0.7, size = 1.8) +
+  geom_text(data = counts_z, aes(label = label), x = Inf, y = -Inf,
+            hjust = 1.05, vjust = -0.3, size = 2.5, inherit.aes = FALSE) +
+  scale_colour_manual(values = c("#D55E00", "grey40"), name = NULL) +
+  scale_shape_manual(values = c(16, 17), name = NULL) +
+  facet_grid(unassign ~ qc) +
+  coord_equal() +
+  labs(x = "fishash+ z (before)", y = "z after unassigning") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
